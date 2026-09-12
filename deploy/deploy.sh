@@ -33,6 +33,9 @@ tar \
   --exclude='node_modules' \
   --exclude='.next' \
   --exclude='data' \
+  --exclude='.env' \
+  --exclude='.env.local' \
+  --exclude='.env.production' \
   --exclude='dev.db' \
   --exclude='dev.db-journal' \
   --exclude='*.tsbuildinfo' \

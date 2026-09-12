@@ -1,3 +1,4 @@
+export const metadata = { title: "حراج جایگاه تبلیغاتی · میدان بنیان‌گذاران تپسل" };
 import { requireUser } from "@/lib/auth";
 import { getPhase, phaseAtLeast } from "@/lib/phase";
 import { Container, PageHeader, Locked, Alert } from "@/components/ui";

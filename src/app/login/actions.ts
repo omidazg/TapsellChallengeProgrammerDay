@@ -37,5 +37,5 @@ export async function loginAction(input: { email: string; password: string }): P
 
   await createSession(user.id);
   // redirect یک NEXT_REDIRECT پرتاب می‌کند؛ باید بیرون از try/catch بماند
-  redirect("/team");
+  redirect("/");
 }

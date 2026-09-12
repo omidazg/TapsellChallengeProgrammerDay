@@ -147,17 +147,17 @@ export function BuildForm({ editable, submitted, initial }: { editable: boolean;
   );
 }
 
-function ImagesField({ images, setImages, disabled }: { images: string[]; setImages: (v: string[]) => void; disabled: boolean }) {
+function ImagesField({ images, setImages, disabled }: { images: string[]; setImages: React.Dispatch<React.SetStateAction<string[]>>; disabled: boolean }) {
   const [draft, setDraft] = useState("");
 
   function addImage(url: string) {
     const v = url.trim();
-    if (!v || images.length >= MAX_IMAGES) return;
-    setImages([...images, v]);
+    if (!v) return;
+    setImages((prev) => (prev.length >= MAX_IMAGES ? prev : [...prev, v]));
     setDraft("");
   }
   function removeImage(idx: number) {
-    setImages(images.filter((_, i) => i !== idx));
+    setImages((prev) => prev.filter((_, i) => i !== idx));
   }
 
   return (

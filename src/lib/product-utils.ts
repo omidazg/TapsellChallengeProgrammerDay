@@ -1,3 +1,4 @@
+import { fa } from "./persian";
 import { DEFAULTS } from "./constants";
 
 
@@ -90,7 +91,7 @@ export function buildChecklist(p: ProductForChecklist): ChecklistItem[] {
     { key: "name", label: "نام و توضیح", done: p.name.trim().length > 0 && p.description.trim().length > 0 },
     { key: "demo", label: "لینک دمو", done: p.demoUrl.trim().length > 0 },
     { key: "teaser", label: "تیزر", done: p.teaserUrl.trim().length > 0 },
-    { key: "images", label: `حداقل ${MIN_IMAGES_FOR_SUBMIT} تصویر`, done: images.length >= MIN_IMAGES_FOR_SUBMIT },
+    { key: "images", label: `حداقل ${fa(MIN_IMAGES_FOR_SUBMIT)} تصویر`, done: images.length >= MIN_IMAGES_FOR_SUBMIT },
     { key: "price", label: "قیمت", done: p.price >= DEFAULTS.minPrice && p.price <= DEFAULTS.maxPrice },
     { key: "special", label: "نسخهٔ ویژه", done: p.specialName.trim().length > 0 },
     { key: "submit", label: "ثبت نهایی", done: !!p.submittedAt },
