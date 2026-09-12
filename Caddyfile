@@ -3,11 +3,17 @@
 
 	# فایل‌های استاتیک Next.js هش‌دار هستند؛ یک سال کش می‌شوند.
 	@static path /_next/static/* /brand/* /fonts/*
-	header @static Cache-Control "public, max-age=31536000, immutable"
+	header @static {
+		Cache-Control "public, max-age=31536000, immutable"
+		defer
+	}
 
 	# مسیرهای polling هرگز کش نشوند
 	@api path /api/*
-	header @api Cache-Control "no-store"
+	header @api {
+		Cache-Control "no-store"
+		defer
+	}
 
 	header {
 		X-Content-Type-Options nosniff

@@ -52,7 +52,7 @@ else
 fi
 
 echo "==> Building and starting containers on the server"
-"${SSH[@]}" "cd '$REMOTE_DIR' && docker compose up -d --build"
+"${SSH[@]}" "cd '$REMOTE_DIR' && docker compose up -d --build && docker compose up -d --force-recreate caddy"
 
 echo "==> Recent container status"
 "${SSH[@]}" "cd '$REMOTE_DIR' && docker compose ps"
