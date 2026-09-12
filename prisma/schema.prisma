@@ -1,0 +1,282 @@
+// میدان بنیان‌گذاران تپسل — مدل داده
+// SQLite برای سادگی استقرار؛ برای ~۱۰۰ کاربر کافی است.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---------- کاربر و تیم ----------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  nickname     String
+  role         String   // BUILDER | STORYTELLER | DEALMAKER
+  power        String   // HYPE | BARGAIN | ANGEL | SECOND_WIND | INSIDER | SHIELD
+  powerUsed    Boolean  @default(false)
+  coffee       Int      @default(5)
+  bugs         Int      @default(50)
+  sleep        Int      @default(7)
+  confidence   Int      @default(100)
+  avatarSeed   String   @default("")
+  isAdmin      Boolean  @default(false)
+  department   String   @default("")
+  createdAt    DateTime @default(now())
+
+  teamId       String?
+  team         Team?    @relation(fields: [teamId], references: [id])
+
+  seedWallet   Int      @default(100) // کیف بذر
+  buyWallet    Int      @default(100) // کیف خرید
+
+  investments  Investment[]
+  purchases    Purchase[]
+  bids         Bid[]
+  hearts       Heart[]
+  ledger       LedgerEntry[]
+  invitesSent  TeamInvite[] @relation("inviter")
+  chats        DueDiligenceMessage[]
+}
+
+model Team {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  logoSeed    String   @default("")
+  treasury    Int      @default(0) // خزانهٔ تیم = سرمایهٔ جذب‌شده
+  createdAt   DateTime @default(now())
+  members     User[]
+  idea        Idea?
+  product     Product?
+  invites     TeamInvite[]
+  adSlotBids  AdSlotBid[]
+  score       TeamScore?
+  flags       CollusionFlag[]
+}
+
+model TeamInvite {
+  id        String   @id @default(cuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id])
+  email     String
+  inviterId String
+  inviter   User     @relation("inviter", fields: [inviterId], references: [id])
+  status    String   @default("PENDING") // PENDING | ACCEPTED | DECLINED
+  createdAt DateTime @default(now())
+}
+
+// ---------- ایده و سرمایه‌گذاری ----------
+
+model Idea {
+  id            String   @id @default(cuid())
+  teamId        String   @unique
+  team          Team     @relation(fields: [teamId], references: [id])
+  title         String
+  oneLiner      String
+  problem       String
+  audience      String
+  buildPlan     String   // چه چیزی در ۴۸ ساعت ساخته می‌شود
+  coverUrl      String   @default("")
+  fundingCap    Int      // سقف سرمایه
+  revenueShare  Int      // درصد سود سرمایه‌گذار ۲۰..۶۰
+  analystClarity     Int?    // ۰..۱۰۰
+  analystFeasibility Int?
+  analystNovelty     Int?
+  analystSummary     String? // متن فارسی تحلیل‌گر
+  submittedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  investments   Investment[]
+  chats         DueDiligenceMessage[]
+}
+
+model Investment {
+  id         String   @id @default(cuid())
+  ideaId     String
+  idea       Idea     @relation(fields: [ideaId], references: [id])
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  amount     Int
+  selfFunded Boolean  @default(false) // سرمایه‌گذاری روی تیم خود
+  createdAt  DateTime @default(now())
+  @@index([ideaId])
+  @@index([userId])
+}
+
+model DueDiligenceMessage {
+  id        String   @id @default(cuid())
+  ideaId    String
+  idea      Idea     @relation(fields: [ideaId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  question  String
+  answer    String
+  createdAt DateTime @default(now())
+}
+
+// ---------- محصول و بازار ----------
+
+model Product {
+  id            String   @id @default(cuid())
+  teamId        String   @unique
+  team          Team     @relation(fields: [teamId], references: [id])
+  name          String
+  tagline       String   @default("")
+  description   String   @default("")
+  demoUrl       String   @default("")
+  teaserUrl     String   @default("")
+  images        String   @default("[]") // JSON array of urls
+  price         Int      @default(20)   // ۵..۵۰
+  specialName   String   @default("")   // نسخهٔ ویژه برای حراج زنده
+  specialDesc   String   @default("")
+  specialStart  Int      @default(20)
+  submittedAt   DateTime?
+  juryQuality   Int?     // ۰..۱۰۰ داوران
+  juryTeaser    Int?
+  aiQuality     Int?     // پیش‌نمرهٔ هوش مصنوعی
+  aiNotes       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  purchases     Purchase[]
+  hearts        Heart[]
+  auction       Auction?
+}
+
+model Purchase {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  amount    Int      // سکهٔ پرداختی (بعد از تخفیف)
+  discount  Int      @default(0)
+  createdAt DateTime @default(now())
+  @@index([productId])
+  @@index([userId])
+}
+
+model Heart {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  @@unique([productId, userId])
+}
+
+// ---------- حراج زنده ----------
+
+model Auction {
+  id          String    @id @default(cuid())
+  productId   String    @unique
+  product     Product   @relation(fields: [productId], references: [id])
+  order       Int       @default(0)      // ترتیب اجرا
+  startPrice  Int       @default(20)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  status      String    @default("SCHEDULED") // SCHEDULED | LIVE | ENDED
+  winnerId    String?
+  finalPrice  Int?
+  extensions  Int       @default(0)
+  bids        Bid[]
+}
+
+model Bid {
+  id        String   @id @default(cuid())
+  auctionId String
+  auction   Auction  @relation(fields: [auctionId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  amount    Int
+  createdAt DateTime @default(now())
+  @@index([auctionId, amount])
+}
+
+// ---------- حراج جایگاه تبلیغاتی ----------
+
+model AdSlot {
+  id        String   @id @default(cuid())
+  kind      String   // BANNER | FEATURED | PUSH
+  hourStart DateTime // بازهٔ یک‌ساعته در روز بازار
+  status    String   @default("OPEN") // OPEN | CLOSED
+  winnerTeamId String?
+  pricePaid Int?
+  bids      AdSlotBid[]
+  @@unique([kind, hourStart])
+}
+
+model AdSlotBid {
+  id        String   @id @default(cuid())
+  slotId    String
+  slot      AdSlot   @relation(fields: [slotId], references: [id])
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id])
+  amount    Int
+  createdAt DateTime @default(now())
+  @@unique([slotId, teamId])
+}
+
+// ---------- دفتر کل، امتیاز، تنظیمات ----------
+
+model LedgerEntry {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  teamId    String?
+  wallet    String   // SEED | BUY | TREASURY
+  delta     Int
+  reason    String   // INVEST | PURCHASE | BID_HOLD | BID_RELEASE | ADSLOT | DIVIDEND | PENALTY | ADMIN
+  refId     String?
+  createdAt DateTime @default(now())
+  @@index([userId])
+  @@index([teamId])
+}
+
+model TeamScore {
+  id              String   @id @default(cuid())
+  teamId          String   @unique
+  team            Team     @relation(fields: [teamId], references: [id])
+  grossSales      Int      @default(0)
+  dividendsPaid   Int      @default(0)
+  netSales        Int      @default(0)
+  externalCapital Int      @default(0)
+  investorRoi     Float    @default(0)
+  uniqueBuyers    Int      @default(0)
+  hearts          Int      @default(0)
+  unspentPenalty  Float    @default(0)
+  ptsSales        Float    @default(0)
+  ptsCapital      Float    @default(0)
+  ptsRoi          Float    @default(0)
+  ptsQuality      Float    @default(0)
+  ptsTeaser       Float    @default(0)
+  ptsCommunity    Float    @default(0)
+  total           Float    @default(0)
+  computedAt      DateTime @default(now())
+}
+
+model CollusionFlag {
+  id        String   @id @default(cuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id])
+  otherTeamId String
+  amountAB  Int
+  amountBA  Int
+  note      String   @default("")
+  createdAt DateTime @default(now())
+}
+
+model Setting {
+  key   String @id
+  value String
+}
+
+// کلیدهای Setting:
+// phase: REGISTRATION | IDEATION | SEED_ROUND | BUILD | MARKET | AUCTION | CLOSED
+// phase_ends_at: ISO
+// seed_wallet, buy_wallet, max_per_target, penalty_per_coin ...

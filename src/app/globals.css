@@ -1,26 +1,89 @@
 @import "tailwindcss";
 
+/* پالت تپسل */
+@theme {
+  --color-brand-red: #e10126;
+  --color-brand-red-dark: #b8001e;
+  --color-brand-cyan: #00b8e0;
+  --color-brand-cyan-dark: #0095b8;
+  --color-brand-navy: #002d47;
+  --color-brand-slate: #6f8fa1;
+  --color-brand-ice: #f3fbff;
+  --color-brand-mist: #d7effc;
+  --color-brand-sky: #eaf4fa;
+  --color-gold: #f5a524;
+  --color-ok: #49ba86;
+
+  --font-sans: var(--font-vazir), Tahoma, sans-serif;
+
+  --radius-pill: 999px;
+  --shadow-card: 0 1px 2px rgba(0, 45, 71, 0.06), 0 10px 30px -12px rgba(0, 45, 71, 0.22);
+  --shadow-lift: 0 18px 40px -16px rgba(0, 45, 71, 0.35);
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #ffffff;
+  --bg-soft: #f3fbff;
+  --ink: #002d47;
+  --muted: #6f8fa1;
+  --line: #d7effc;
+  --surface: #ffffff;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html { direction: rtl; }
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01";
+  -webkit-font-smoothing: antialiased;
 }
+
+/* اعداد فارسی در همه‌جا */
+.fa-num { font-variant-numeric: tabular-nums; }
+
+/* دکمه‌ها به سبک تپسل */
+.btn { @apply inline-flex items-center justify-center gap-2 rounded-pill px-6 py-2.5 font-bold transition-all duration-200 select-none disabled:opacity-50 disabled:pointer-events-none; }
+.btn-primary { @apply btn bg-brand-red text-white hover:bg-brand-red-dark hover:shadow-lift active:scale-[0.98]; }
+.btn-cyan { @apply btn bg-brand-cyan text-white hover:bg-brand-cyan-dark hover:shadow-lift active:scale-[0.98]; }
+.btn-ghost { @apply btn bg-transparent text-brand-navy border border-brand-mist hover:bg-brand-ice; }
+.btn-navy { @apply btn bg-brand-navy text-white hover:bg-[#013b5c] hover:shadow-lift; }
+
+.card { @apply bg-white rounded-3xl border border-brand-mist shadow-card; }
+.chip { @apply inline-flex items-center gap-1 rounded-pill px-3 py-1 text-xs font-bold; }
+.chip-red { @apply chip bg-red-50 text-brand-red; }
+.chip-cyan { @apply chip bg-brand-mist text-brand-cyan-dark; }
+.chip-navy { @apply chip bg-brand-sky text-brand-navy; }
+.chip-gold { @apply chip bg-amber-50 text-amber-700; }
+.chip-ok { @apply chip bg-emerald-50 text-emerald-700; }
+
+.input { @apply w-full rounded-2xl border border-brand-mist bg-white px-4 py-3 text-brand-navy placeholder:text-brand-slate/70 focus:outline-none focus:ring-2 focus:ring-brand-cyan/40 focus:border-brand-cyan transition; }
+.label { @apply block text-sm font-bold text-brand-navy mb-1.5; }
+
+/* انیمیشن‌ها */
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes pop { 0% { transform: scale(0.9); opacity: 0; } 60% { transform: scale(1.04); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(225,1,38,.45);} 100% { box-shadow: 0 0 0 16px rgba(225,1,38,0);} }
+@keyframes float { 0%,100% { transform: translateY(0);} 50% { transform: translateY(-8px);} }
+@keyframes ticker { from { transform: translateX(0);} to { transform: translateX(100%);} }
+@keyframes confetti-fall { 0% { transform: translateY(-10vh) rotate(0);} 100% { transform: translateY(110vh) rotate(720deg);} }
+
+.anim-rise { animation: rise .5s cubic-bezier(.2,.8,.2,1) both; }
+.anim-pop { animation: pop .4s cubic-bezier(.2,.8,.2,1) both; }
+.anim-float { animation: float 4s ease-in-out infinite; }
+.pulse-ring { animation: pulse-ring 1.4s ease-out infinite; }
+.stagger > * { animation: rise .5s cubic-bezier(.2,.8,.2,1) both; }
+.stagger > *:nth-child(2) { animation-delay: .06s; }
+.stagger > *:nth-child(3) { animation-delay: .12s; }
+.stagger > *:nth-child(4) { animation-delay: .18s; }
+.stagger > *:nth-child(5) { animation-delay: .24s; }
+.stagger > *:nth-child(6) { animation-delay: .30s; }
+.stagger > *:nth-child(n+7) { animation-delay: .36s; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+/* پس‌زمینهٔ نقطه‌ای تپسل */
+.bg-dots { background-image: radial-gradient(rgba(0,184,224,.18) 1px, transparent 1px); background-size: 22px 22px; }
+.bg-hero { background: radial-gradient(1200px 500px at 80% -10%, #d7effc 0%, transparent 60%), radial-gradient(800px 400px at 10% 110%, #fde2e6 0%, transparent 60%), #ffffff; }

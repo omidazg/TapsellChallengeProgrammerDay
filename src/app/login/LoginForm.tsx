@@ -1,0 +1,47 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import Link from "next/link";
+import { Alert } from "@/components/ui";
+import { loginAction } from "./actions";
+
+export function LoginForm() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    startTransition(async () => {
+      const res = await loginAction({ email, password });
+      if (res?.error) setError(res.error);
+    });
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="card p-6 md:p-8 anim-rise">
+      <div className="grid gap-4">
+        {error && <Alert kind="error">{error}</Alert>}
+        <div>
+          <label className="label" htmlFor="email">ایمیل</label>
+          <input id="email" type="email" dir="ltr" className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required />
+        </div>
+        <div>
+          <label className="label" htmlFor="password">رمز عبور</label>
+          <input id="password" type="password" dir="ltr" className="input" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        </div>
+        <button type="submit" disabled={pending} className="btn-primary mt-2 w-full">
+          {pending ? "در حال ورود…" : "ورود"}
+        </button>
+      </div>
+      <p className="mt-6 text-center text-sm text-brand-slate">
+        هنوز حساب نساخته‌ای؟{" "}
+        <Link href="/register" className="font-bold text-brand-cyan-dark">
+          ثبت‌نام کن
+        </Link>
+      </p>
+    </form>
+  );
+}
