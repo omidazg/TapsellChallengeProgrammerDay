@@ -104,11 +104,17 @@ function Cell({ cell, myTeamId, onDone }: { cell: SlotCell; myTeamId: string | n
           <input
             type="number"
             min={1}
+            aria-label={`مبلغ پیشنهاد برای ${AD_SLOT_KINDS[cell.kind as Kind].label} ساعت ${jtime(new Date(cell.hourStart))}`}
             className="input !py-1.5 !px-2 !text-sm w-20"
             value={value}
             onChange={(e) => setValue(Number(e.target.value))}
           />
-          <button disabled={pending || value <= 0} onClick={submit} className="btn-cyan !px-2.5 !py-1.5 !text-xs disabled:opacity-40">
+          <button
+            disabled={pending || value <= 0}
+            onClick={submit}
+            aria-label={`${cell.myBid !== null ? "ویرایش پیشنهاد" : "پیشنهاد"} برای ${AD_SLOT_KINDS[cell.kind as Kind].label} ساعت ${jtime(new Date(cell.hourStart))}`}
+            className="btn-cyan !px-2.5 !py-1.5 !text-xs disabled:opacity-40"
+          >
             {cell.myBid !== null ? "ویرایش" : "پیشنهاد"}
           </button>
         </div>

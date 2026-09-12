@@ -1,8 +1,10 @@
 import Link from "next/link";
 import Image from "next/image";
 import { requireUser } from "@/lib/auth";
-import { getPhase, phaseIndex } from "@/lib/phase";
+import { getPhase, getSettingInt, phaseIndex } from "@/lib/phase";
+import { DEFAULTS } from "@/lib/constants";
 import { PageHeader, Container, Empty, Locked, Coin } from "@/components/ui";
+import { UnspentReminder } from "@/components/UnspentReminder";
 import { fa, coins } from "@/lib/persian";
 import { getMarketProducts, getCurrentAdSlotWinners, type MarketSort } from "@/lib/market";
 import { SalesTicker } from "./SalesTicker";
@@ -18,7 +20,7 @@ const SORTS: { key: MarketSort; label: string }[] = [
 
 export default async function MarketPage({ searchParams }: { searchParams: Promise<{ sort?: string }> }) {
   const user = await requireUser();
-  const { phase } = await getPhase();
+  const { phase, endsAt } = await getPhase();
   const sp = await searchParams;
 
   if (phaseIndex(phase) < phaseIndex("BUILD")) {
@@ -36,7 +38,11 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
   const closed = phaseIndex(phase) > phaseIndex("MARKET");
   const readOnly = browsingOnly || closed;
   const sort = (SORTS.find((s) => s.key === sp.sort)?.key ?? "all") as MarketSort;
-  const [products, adWinners] = await Promise.all([getMarketProducts(sort), readOnly ? Promise.resolve([]) : getCurrentAdSlotWinners()]);
+  const maxPerTarget = await getSettingInt("max_per_target", DEFAULTS.maxPerTarget);
+  const [products, adWinners] = await Promise.all([
+    getMarketProducts(sort, { userId: user.id, maxPerTarget }),
+    readOnly ? Promise.resolve([]) : getCurrentAdSlotWinners(),
+  ]);
 
   const banner = adWinners.find((w) => w.kind === "BANNER");
   const featured = adWinners.find((w) => w.kind === "FEATURED");
@@ -67,16 +73,31 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
 
         {!readOnly && <SalesTicker buyWallet={user.buyWallet} />}
 
-        <div className="flex flex-wrap gap-2">
-          {SORTS.map((s) => (
-            <Link
-              key={s.key}
-              href={s.key === "all" ? "/market" : `/market?sort=${s.key}`}
-              className={sort === s.key ? "chip bg-brand-navy text-white" : "chip-navy hover:bg-brand-mist"}
-            >
-              {s.label}
-            </Link>
-          ))}
+        {phase === "MARKET" && (
+          <UnspentReminder
+            phase={phase}
+            phaseLabel="فاز «روز بازار»"
+            endsAt={endsAt ? endsAt.toISOString() : null}
+            coinsLeft={user.buyWallet}
+            penaltyPerCoin={DEFAULTS.penaltyPerCoin}
+          />
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-2">
+            {SORTS.map((s) => (
+              <Link
+                key={s.key}
+                href={s.key === "all" ? "/market" : `/market?sort=${s.key}`}
+                className={sort === s.key ? "chip bg-brand-navy text-white" : "chip-navy hover:bg-brand-mist"}
+              >
+                {s.label}
+              </Link>
+            ))}
+          </div>
+          <Link href="/guide#market" className="text-xs font-bold text-brand-cyan-dark hover:underline">
+            راهنما: چطور بخرم؟
+          </Link>
         </div>
 
         {ordered.length === 0 ? (
@@ -87,7 +108,12 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
               const isFeatured = featured?.teamId === p.teamId;
               const isOwnTeam = user.teamId === p.teamId;
               return (
-                <Link key={p.id} href={`/market/${p.slug}`} className="card overflow-hidden anim-rise hover:shadow-lift transition group">
+                <Link
+                  key={p.id}
+                  href={`/market/${p.slug}`}
+                  aria-label={`${p.name} از تیم ${p.teamName}، قیمت ${coins(p.price)}`}
+                  className="card overflow-hidden anim-rise hover:shadow-lift transition group"
+                >
                   <div className="relative aspect-[8/5]">
                     <Image src={p.cover} alt={p.name} fill sizes="400px" className="object-cover group-hover:scale-[1.03] transition" unoptimized />
                     {isFeatured && <span className="chip-gold absolute top-2 right-2">ویژه</span>}
@@ -99,7 +125,7 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
                     <div className="font-black text-brand-navy truncate">{p.name}</div>
                     {p.tagline && <p className="text-xs text-brand-slate line-clamp-2">{p.tagline}</p>}
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                      <Coin n={p.price} />
+                      <Coin n={p.price} label="سکه" />
                       <div className="flex items-center gap-2 text-xs text-brand-slate">
                         <span>🛒 {fa(p.sold)}</span>
                         <span>❤️ {fa(p.hearts)}</span>
@@ -111,8 +137,10 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
                       <span className="chip-navy w-full justify-center mt-1">بازار بسته شد</span>
                     ) : isOwnTeam ? (
                       <span className="chip-navy w-full justify-center mt-1">تیم خودت</span>
+                    ) : p.limitReached ? (
+                      <span className="chip-red w-full justify-center mt-1">به سقف خریدت از این محصول رسیده‌ای</span>
                     ) : (
-                      <span className="btn-primary w-full mt-1">خرید — {coins(p.price)}</span>
+                      <span className="chip-navy w-full justify-center mt-1 group-hover:bg-brand-mist transition">مشاهده و خرید ←</span>
                     )}
                   </div>
                 </Link>

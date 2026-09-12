@@ -41,6 +41,7 @@ model User {
   ledger       LedgerEntry[]
   invitesSent  TeamInvite[] @relation("inviter")
   chats        DueDiligenceMessage[]
+  notifications Notification[]
 }
 
 model Team {
@@ -268,6 +269,29 @@ model CollusionFlag {
   amountAB  Int
   amountBA  Int
   note      String   @default("")
+  createdAt DateTime @default(now())
+}
+
+// ---------- اعلان‌ها ----------
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  kind      String
+  title     String
+  body      String    @default("")
+  href      String    @default("")
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  @@index([userId, readAt])
+}
+
+model Announcement {
+  id        String   @id @default(cuid())
+  text      String
+  level     String   @default("info") // info | warning | danger
+  active    Boolean  @default(true)
   createdAt DateTime @default(now())
 }
 

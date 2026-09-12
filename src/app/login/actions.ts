@@ -4,6 +4,7 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { verifyPassword, createSession } from "@/lib/auth";
+import { safeNext } from "./next";
 
 const loginSchema = z.object({
   email: z.string().trim().toLowerCase().max(120).email(),
@@ -19,7 +20,7 @@ const GENERIC = "ایمیل یا رمز عبور اشتباه است.";
  */
 const DUMMY_HASH = "$2b$10$/OBLsQLxVqFmbniuCWdlUeg2IcBqHWKNiL39oJV5Ko33qQXDAU55m";
 
-export async function loginAction(input: { email: string; password: string }): Promise<{ error: string } | never> {
+export async function loginAction(input: { email: string; password: string; next?: string | null }): Promise<{ error: string } | never> {
   const parsed = loginSchema.safeParse(input);
   if (!parsed.success) {
     return { error: "ایمیل یا رمز عبور را کامل وارد کن." };
@@ -37,5 +38,5 @@ export async function loginAction(input: { email: string; password: string }): P
 
   await createSession(user.id);
   // redirect یک NEXT_REDIRECT پرتاب می‌کند؛ باید بیرون از try/catch بماند
-  redirect("/");
+  redirect(safeNext(input.next) ?? "/");
 }

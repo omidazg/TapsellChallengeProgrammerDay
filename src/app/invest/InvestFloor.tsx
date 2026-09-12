@@ -15,16 +15,20 @@ export function InvestFloor({
   ownTeamId,
   interactive,
   filter,
+  aiOff = false,
 }: {
   ideas: IdeaCardData[];
   ownTeamId: string | null;
   interactive: boolean;
   filter: FloorFilter;
+  aiOff?: boolean;
 }) {
+  // بدون هوش مصنوعی، رتبهٔ تحلیل‌گر وجود ندارد؛ این گزینهٔ مرتب‌سازی پنهان می‌شود.
+  const visibleFilters = aiOff ? FILTERS.filter((f) => f.key !== "topAnalyst") : FILTERS;
   return (
     <div>
       <div className="flex flex-wrap gap-2 mb-6">
-        {FILTERS.map((f) => (
+        {visibleFilters.map((f) => (
           <Link
             key={f.key}
             href={f.key === "all" ? "/invest" : `/invest?filter=${f.key}`}

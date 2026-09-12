@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { Avatar } from "@/components/Avatar";
-import { Alert } from "@/components/ui";
+import { Alert, Locked } from "@/components/ui";
 import { ROLES, POWERS, type RoleKey, type PowerKey } from "@/lib/constants";
 import { fa, jdatetime } from "@/lib/persian";
 import type { RoleCoverage, TeamWithMembers } from "@/lib/team";
@@ -16,13 +16,17 @@ export function TeamPanel({
   coverage,
   currentUserId,
   registrationOpen,
+  formingOpen,
 }: {
   team: TeamWithMembers;
   coverage: RoleCoverage[];
   currentUserId: string;
   registrationOpen: boolean;
+  formingOpen: boolean;
 }) {
   const full = team.members.length >= TEAM_FULL;
+  const missingRoles = coverage.filter((c) => !c.present);
+  const incomplete = team.members.length < TEAM_FULL || missingRoles.length > 0;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -41,6 +45,10 @@ export function TeamPanel({
           </div>
           {registrationOpen && <LeaveButton />}
         </div>
+
+        {incomplete && (
+          <IncompleteTeamCard team={team} missingRoles={missingRoles} formingOpen={formingOpen} />
+        )}
 
         <div>
           <h3 className="mb-3 text-lg font-black text-brand-navy">اعضای تیم ({fa(team.members.length)} از {fa(TEAM_FULL)})</h3>
@@ -67,8 +75,13 @@ export function TeamPanel({
           </div>
         </div>
 
-        {registrationOpen && (
-          <InviteForm full={full} pendingInvites={team.invites} />
+        {formingOpen ? (
+          <InviteForm full={full} pendingInvites={team.invites} slug={team.slug} />
+        ) : (
+          <Locked
+            title="دعوت و پیوستن به تیم بسته است"
+            desc="فاز اتاق ایده به پایان رسیده؛ برای تغییر ترکیب تیم با برگزارکننده هماهنگ کن."
+          />
         )}
       </div>
 
@@ -79,6 +92,87 @@ export function TeamPanel({
           <ChecklistItem done={!!team.product?.submittedAt} label="محصول ثبت شده؟" href="/build" />
         </div>
       </div>
+    </div>
+  );
+}
+
+function IncompleteTeamCard({
+  team,
+  missingRoles,
+  formingOpen,
+}: {
+  team: TeamWithMembers;
+  missingRoles: RoleCoverage[];
+  formingOpen: boolean;
+}) {
+  const pct = Math.round((team.members.length / TEAM_FULL) * 100);
+  const missingText =
+    missingRoles.length > 0 ? `نقش ${missingRoles.map((r) => r.label).join("، ")} خالی است.` : "";
+
+  return (
+    <div className="card border-2 border-brand-red/30 bg-red-50/60 p-5 anim-pop">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-black text-brand-red">⚠️ تیمت هنوز کامل نیست{missingText ? `: ${missingText}` : "."}</h3>
+        <span className="text-xs font-bold text-brand-navy fa-num">اعضا {fa(team.members.length)}/{fa(TEAM_FULL)}</span>
+      </div>
+      <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-white">
+        <div className="h-full rounded-full bg-brand-red transition-all" style={{ width: `${pct}%` }} />
+      </div>
+
+      {formingOpen ? (
+        <p className="mt-3 text-sm text-brand-navy">
+          یک هم‌تیمی دعوت کن یا لینک پیوستن تیمت را برایش بفرست — تا پایان فاز «اتاق ایده» فرصت داری.
+        </p>
+      ) : (
+        <p className="mt-3 text-sm text-brand-navy">
+          فاز اتاق ایده به پایان رسیده؛ دیگر نمی‌توانی عضو جدید اضافه کنی. برای تکمیل تیم با برگزارکننده هماهنگ کن.
+        </p>
+      )}
+
+      <div className="mt-3">
+        <CopyJoinLink slug={team.slug} />
+      </div>
+    </div>
+  );
+}
+
+function CopyJoinLink({ slug }: { slug: string }) {
+  const [copied, setCopied] = useState(false);
+  const inputId = useMemo(() => `join-link-${slug}`, [slug]);
+
+  function link() {
+    if (typeof window === "undefined") return `/join/${slug}`;
+    return `${window.location.origin}/join/${slug}`;
+  }
+
+  async function copy() {
+    const url = link();
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      const el = document.getElementById(inputId) as HTMLInputElement | null;
+      if (el) {
+        el.focus();
+        el.select();
+      }
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <input
+        id={inputId}
+        readOnly
+        dir="ltr"
+        value={link()}
+        onFocus={(e) => e.currentTarget.select()}
+        className="input !py-1.5 !px-3 flex-1 min-w-0 sm:min-w-[260px] text-xs"
+      />
+      <button type="button" onClick={copy} className="btn-cyan !py-1.5 !px-3 text-sm shrink-0">
+        {copied ? "کپی شد ✓" : "کپی لینک دعوت"}
+      </button>
     </div>
   );
 }
@@ -118,21 +212,34 @@ function LeaveButton() {
   );
 }
 
-function InviteForm({ full, pendingInvites }: { full: boolean; pendingInvites: TeamWithMembers["invites"] }) {
+function InviteForm({
+  full,
+  pendingInvites,
+  slug,
+}: {
+  full: boolean;
+  pendingInvites: TeamWithMembers["invites"];
+  slug: string;
+}) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
+  const [okEmail, setOkEmail] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  function joinLink() {
+    if (typeof window === "undefined") return `/join/${slug}`;
+    return `${window.location.origin}/join/${slug}`;
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setOk(false);
+    setOkEmail(null);
     startTransition(async () => {
       const res = await inviteAction({ email });
       if (res.error) setError(res.error);
       else {
-        setOk(true);
+        setOkEmail(email);
         setEmail("");
       }
     });
@@ -150,9 +257,14 @@ function InviteForm({ full, pendingInvites }: { full: boolean; pendingInvites: T
               <Alert kind="error">{error}</Alert>
             </div>
           )}
-          {ok && (
-            <div className="w-full">
-              <Alert kind="ok">دعوت‌نامه ارسال شد.</Alert>
+          {okEmail && (
+            <div className="w-full space-y-1">
+              <Alert kind="ok">
+                دعوت ثبت شد؛ چون ایمیلی ارسال نمی‌شود، این لینک را برای {okEmail} بفرست:
+              </Alert>
+              <div dir="ltr" className="break-all rounded-xl bg-brand-ice px-3 py-2 text-xs font-bold text-brand-navy">
+                {joinLink()}
+              </div>
             </div>
           )}
           <input
@@ -160,12 +272,12 @@ function InviteForm({ full, pendingInvites }: { full: boolean; pendingInvites: T
             dir="ltr"
             required
             className="input flex-1 min-w-0 sm:min-w-[220px]"
-            placeholder="email@example.com"
+            placeholder="ایمیل هم‌تیمی‌ات"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
           <button type="submit" disabled={pending} className="btn-primary w-full sm:w-auto">
-            {pending ? "در حال ارسال…" : "دعوت کن"}
+            {pending ? "در حال ثبت…" : "دعوت کن"}
           </button>
         </form>
       )}

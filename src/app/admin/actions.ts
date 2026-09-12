@@ -3,7 +3,9 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
-import { setPhase, PHASES, type Phase } from "@/lib/phase";
+import { PHASES, type Phase } from "@/lib/phase";
+import { transitionTo } from "@/lib/phase-transition";
+import { settleGame } from "@/lib/settlement";
 import { setSetting, SETTING_KEYS } from "@/lib/admin";
 
 export type AdminActionState = { error?: string; ok?: boolean };
@@ -26,10 +28,40 @@ export async function setPhaseAction(prevState: AdminActionState, formData: Form
   const endsAt = parsed.data.endsAt ? new Date(parsed.data.endsAt) : null;
   if (parsed.data.endsAt && Number.isNaN(endsAt?.getTime())) return { error: "زمان پایان نامعتبر است" };
 
-  await setPhase(parsed.data.phase, endsAt);
+  // transitionTo تنها نقطهٔ ورود تغییر فاز است: اعلان می‌فرستد و در CLOSED تسویه را اجرا می‌کند.
+  await transitionTo(parsed.data.phase, endsAt);
   revalidatePath("/admin");
+  revalidatePath("/admin/settlement");
+  revalidatePath("/results");
   revalidatePath("/");
   return { ok: true };
+}
+
+export type SettleActionState = AdminActionState & {
+  dividendsPaid?: number;
+  teams?: number;
+  alreadySettled?: boolean;
+};
+
+/** اجرای دستی تسویهٔ نهایی توسط برگزارکننده (ایدمپوتنت). */
+export async function settleNowAction(): Promise<SettleActionState> {
+  await requireAdmin();
+  try {
+    const result = await settleGame();
+    revalidatePath("/admin/settlement");
+    revalidatePath("/results");
+    revalidatePath("/wallet");
+    revalidatePath("/leaderboard");
+    return {
+      ok: true,
+      alreadySettled: result.alreadySettled,
+      dividendsPaid: result.dividendsPaid,
+      teams: result.teams,
+    };
+  } catch (e) {
+    console.error("settleNowAction failed", e);
+    return { error: "اجرای تسویه با خطا روبه‌رو شد" };
+  }
 }
 
 const settingsSchema = z.object({

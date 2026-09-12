@@ -17,32 +17,41 @@ export type MarketCard = {
   price: number;
   sold: number;
   hearts: number;
+  /** آیا بازدیدکننده به سقف مجاز خرید از این محصول رسیده است (در نبود viewer همیشه false) */
+  limitReached: boolean;
 };
 
-/** فهرست محصولات بازار برای گرید اصلی، با مرتب‌سازی */
-export async function getMarketProducts(sort: MarketSort = "all"): Promise<MarketCard[]> {
+/** فهرست محصولات بازار برای گرید اصلی، با مرتب‌سازی؛ با دادن viewer، سقف خریدِ او هم مشخص می‌شود */
+export async function getMarketProducts(
+  sort: MarketSort = "all",
+  viewer?: { userId: string; maxPerTarget: number }
+): Promise<MarketCard[]> {
   const products = await prisma.product.findMany({
     where: { submittedAt: { not: null } },
     include: {
       team: { select: { id: true, name: true, slug: true, logoSeed: true } },
-      purchases: { select: { amount: true } },
+      purchases: { select: { amount: true, userId: true } },
       hearts: { select: { id: true } },
     },
   });
 
-  const cards: MarketCard[] = products.map((p) => ({
-    id: p.id,
-    slug: p.team.slug,
-    name: p.name,
-    tagline: p.tagline,
-    cover: coverUrl(parseImages(p.images), p.team.slug),
-    teamName: p.team.name,
-    teamLogoSeed: p.team.logoSeed,
-    teamId: p.team.id,
-    price: p.price,
-    sold: p.purchases.reduce((a, x) => a + x.amount, 0),
-    hearts: p.hearts.length,
-  }));
+  const cards: MarketCard[] = products.map((p) => {
+    const viewerSpent = viewer ? p.purchases.filter((x) => x.userId === viewer.userId).reduce((a, x) => a + x.amount, 0) : 0;
+    return {
+      id: p.id,
+      slug: p.team.slug,
+      name: p.name,
+      tagline: p.tagline,
+      cover: coverUrl(parseImages(p.images), p.team.slug),
+      teamName: p.team.name,
+      teamLogoSeed: p.team.logoSeed,
+      teamId: p.team.id,
+      price: p.price,
+      sold: p.purchases.reduce((a, x) => a + x.amount, 0),
+      hearts: p.hearts.length,
+      limitReached: viewer ? viewerSpent >= viewer.maxPerTarget : false,
+    };
+  });
 
   switch (sort) {
     case "top":

@@ -10,6 +10,31 @@ import { placeBidAction, secondWindAction } from "./actions";
 import type { AuctionState } from "@/lib/auction";
 
 const QUICK_STEPS = [0, 2, 5] as const;
+const FLASH_TITLE = "🔔 پیشنهادت شکسته شد";
+const FLASH_MS = 5000;
+const FLASH_INTERVAL_MS = 900;
+
+/** بوق کوتاه با WebAudio، بدون فایل صوتی. */
+function playBeep() {
+  try {
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.35);
+    osc.onended = () => ctx.close().catch(() => {});
+  } catch {
+    /* نادیده گرفتن خطای صوتی (مثلاً مرورگرهای بدون تعامل کاربر) */
+  }
+}
 
 function mmss(ms: number) {
   if (ms <= 0) return "۰۰:۰۰";
@@ -39,6 +64,51 @@ export function AuctionStage({
   const lastFetchedId = useRef<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(() =>
+    typeof Notification !== "undefined" ? Notification.permission : "unsupported"
+  );
+  const flashTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const flashStop = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const originalTitle = useRef<string>("");
+
+  useEffect(() => {
+    originalTitle.current = document.title;
+    return () => {
+      if (flashTimer.current) clearInterval(flashTimer.current);
+      if (flashStop.current) clearTimeout(flashStop.current);
+      document.title = originalTitle.current;
+    };
+  }, []);
+
+  const requestNotifPermission = useCallback(() => {
+    if (typeof Notification === "undefined") return;
+    Notification.requestPermission().then((p) => setNotifPermission(p));
+  }, []);
+
+  /** واکنش وقتی کاربر «شکسته» می‌شود: بوق، چشمک عنوان، و (در صورت اجازه) اعلان مرورگر. */
+  const triggerOutbidAlert = useCallback(() => {
+    playBeep();
+
+    if (flashTimer.current) clearInterval(flashTimer.current);
+    if (flashStop.current) clearTimeout(flashStop.current);
+    let flashed = false;
+    flashTimer.current = setInterval(() => {
+      document.title = flashed ? originalTitle.current : FLASH_TITLE;
+      flashed = !flashed;
+    }, FLASH_INTERVAL_MS);
+    flashStop.current = setTimeout(() => {
+      if (flashTimer.current) clearInterval(flashTimer.current);
+      document.title = originalTitle.current;
+    }, FLASH_MS);
+
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      try {
+        new Notification("پیشنهادت شکسته شد", { body: "یک پیشنهاد بالاتر روی این حراج ثبت شد.", icon: "/brand/favicon.svg" });
+      } catch {
+        /* نادیده گرفتن خطای اعلان مرورگر */
+      }
+    }
+  }, []);
 
   /** یک بار وضعیت حراج جاری را می‌گیرد؛ برای polling و برای تازه‌سازی بلافاصله پس از پیشنهاد. */
   const fetchState = useCallback(
@@ -58,7 +128,10 @@ export function AuctionStage({
 
         // «پیشنهادت شکسته شد» فقط وقتی که پیش‌تر بالاترین بودم و حالا نیستم.
         const iAmHighestNow = data.highest?.userId === currentUser.id;
-        if (wasHighest.current && !iAmHighestNow && data.highest) setOutbid(true);
+        if (wasHighest.current && !iAmHighestNow && data.highest) {
+          setOutbid(true);
+          triggerOutbidAlert();
+        }
         if (iAmHighestNow) setOutbid(false);
         wasHighest.current = iAmHighestNow;
 
@@ -74,7 +147,7 @@ export function AuctionStage({
         return null;
       }
     },
-    [currentUser.id, router]
+    [currentUser.id, router, triggerOutbidAlert]
   );
 
   // پیدا کردن حراج زندهٔ فعلی
@@ -228,6 +301,12 @@ export function AuctionStage({
             </div>
           )}
           {error && <Alert kind="error">{error}</Alert>}
+
+          {notifPermission !== "unsupported" && notifPermission !== "granted" && (
+            <button type="button" onClick={requestNotifPermission} className="btn-ghost !py-1.5 !px-3 text-xs">
+              🔔 اعلان مرورگر
+            </button>
+          )}
 
           {isLive && isMyTeam && <Alert kind="info">این نسخهٔ ویژهٔ تیم خودت است؛ نمی‌توانی روی آن پیشنهاد بدهی.</Alert>}
 

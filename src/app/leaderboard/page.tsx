@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/db";
 import { getPhase } from "@/lib/phase";
+import { getCurrentUser } from "@/lib/auth";
 import { computeScores, topInvestors } from "@/lib/scoring";
+import { getSettledAt, loadSettledOutput } from "@/lib/settlement";
+import type { TeamResult } from "@/lib/economy/types";
 import { PageHeader, Container, Alert, Empty } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { fa } from "@/lib/persian";
@@ -9,23 +12,47 @@ import Link from "next/link";
 export const metadata = { title: "جدول امتیازات" };
 
 export default async function LeaderboardPage() {
-  const [{ phase }, output, teams, users] = await Promise.all([
+  // پس از تسویهٔ نهایی، امتیازهای ثبت‌شده ملاک است تا جدول با نتایج پرداخت‌شده یکی باشد.
+  const settledAt = await getSettledAt();
+  const [{ phase }, output, teams, users, viewer] = await Promise.all([
     getPhase(),
-    computeScores(),
+    settledAt ? loadSettledOutput() : computeScores(),
     prisma.team.findMany({ select: { id: true, name: true, slug: true, logoSeed: true } }),
     prisma.user.findMany({ select: { id: true, nickname: true, avatarSeed: true } }),
+    getCurrentUser(),
   ]);
 
   const teamMap = new Map(teams.map((t) => [t.id, t]));
   const userMap = new Map(users.map((u) => [u.id, u]));
   const closed = phase === "CLOSED";
 
+  // معیار نمایشی: پیش از پایان بازی فروش خالص (عمومی)، پس از آن امتیاز کل نهایی.
+  const metricOf = (t: TeamResult) => (closed ? t.total : t.netSales);
+  const metricLabel = closed ? "امتیاز کل" : "فروش خالص";
+
   // پیش از پایان بازی حتی ترتیب رتبه هم نباید لو برود؛ فهرست بر اساس فروش خالص مرتب می‌شود.
   const ranked = closed
     ? [...output.teams].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
     : [...output.teams].sort((a, b) => b.netSales - a.netSales || b.hearts - a.hearts);
-  const podium = closed ? ranked.slice(0, 3) : [];
+  const podium = ranked.slice(0, 3);
   const investors = closed ? topInvestors(output).filter((i) => i.invested > 0).slice(0, 10) : [];
+
+  const ownTeamId = viewer?.teamId ?? null;
+  const ownIndex = ownTeamId ? ranked.findIndex((t) => t.teamId === ownTeamId) : -1;
+  let nearestRival: { team?: { name: string; slug: string; logoSeed: string }; delta: number; ahead: boolean } | null = null;
+  if (ownIndex >= 0) {
+    const own = ranked[ownIndex];
+    const ownMetric = metricOf(own);
+    let best: { t: (typeof ranked)[number]; delta: number } | null = null;
+    for (const t of ranked) {
+      if (t.teamId === ownTeamId) continue;
+      const delta = Math.abs(metricOf(t) - ownMetric);
+      if (!best || delta < best.delta) best = { t, delta };
+    }
+    if (best) {
+      nearestRival = { team: teamMap.get(best.t.teamId), delta: best.delta, ahead: metricOf(best.t) > ownMetric };
+    }
+  }
 
   return (
     <>
@@ -37,14 +64,41 @@ export default async function LeaderboardPage() {
           </Alert>
         )}
 
-        {closed && ranked.length > 0 && (
+        {ranked.length > 0 && (
           <div className="grid grid-cols-3 gap-3 items-end stagger">
             {[podium[1], podium[0], podium[2]].map((t, i) =>
               t ? (
-                <PodiumCard key={t.teamId} rank={t.rank ?? i + 1} team={teamMap.get(t.teamId)} total={t.total} tall={i === 1} />
+                <PodiumCard
+                  key={t.teamId}
+                  rank={i === 0 ? 2 : i === 1 ? 1 : 3}
+                  team={teamMap.get(t.teamId)}
+                  value={metricOf(t)}
+                  metricLabel={metricLabel}
+                  tall={i === 1}
+                />
               ) : (
                 <div key={i} />
               )
+            )}
+          </div>
+        )}
+
+        {ownTeamId && ownIndex >= 0 && (
+          <div className="card p-4 flex flex-wrap items-center justify-between gap-3 anim-pop bg-brand-ice ring-2 ring-brand-red">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="chip-red shrink-0">تیم تو</span>
+              <Avatar seed={teamMap.get(ownTeamId)?.logoSeed || ownTeamId} size={28} />
+              <span className="font-bold text-brand-navy truncate">{teamMap.get(ownTeamId)?.name ?? "—"}</span>
+            </div>
+            {nearestRival && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-brand-slate">نزدیک‌ترین رقیب:</span>
+                <Avatar seed={nearestRival.team?.logoSeed || "?"} size={24} />
+                <span className="font-bold text-brand-navy">{nearestRival.team?.name ?? "—"}</span>
+                <span className={`font-black fa-num ${nearestRival.ahead ? "text-brand-red" : "text-emerald-600"}`}>
+                  {nearestRival.ahead ? `${fa(Math.round(nearestRival.delta))} جلوتر` : `${fa(Math.round(nearestRival.delta))} عقب‌تر`}
+                </span>
+              </div>
             )}
           </div>
         )}
@@ -57,14 +111,18 @@ export default async function LeaderboardPage() {
             <div className="md:hidden space-y-3 stagger">
               {ranked.map((t) => {
                 const team = teamMap.get(t.teamId);
+                const isOwn = t.teamId === ownTeamId;
                 return (
-                  <div key={t.teamId} className="card p-4 space-y-2 anim-rise">
+                  <div key={t.teamId} className={`card p-4 space-y-2 anim-rise ${isOwn ? "ring-2 ring-brand-red" : ""}`}>
                     <div className="flex items-center justify-between gap-2">
                       <Link href={team ? `/market/${team.slug}` : "#"} className="flex items-center gap-2 font-bold text-brand-navy hover:text-brand-cyan-dark min-w-0">
                         <Avatar seed={team?.logoSeed || t.teamId} size={28} />
                         <span className="truncate">{team?.name ?? "—"}</span>
                       </Link>
-                      {closed && <span className="chip-navy shrink-0 fa-num">رتبه {fa(t.rank ?? 0)}</span>}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {isOwn && <span className="chip-red fa-num">تیم تو</span>}
+                        {closed && <span className="chip-navy fa-num">رتبه {fa(t.rank ?? 0)}</span>}
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs text-brand-slate">
                       <div>فروش خالص: <span className="fa-num font-bold text-brand-navy">{fa(t.netSales)}</span></div>
@@ -106,13 +164,15 @@ export default async function LeaderboardPage() {
                 <tbody>
                   {ranked.map((t) => {
                     const team = teamMap.get(t.teamId);
+                    const isOwn = t.teamId === ownTeamId;
                     return (
-                      <tr key={t.teamId} className="border-b border-brand-mist last:border-0">
+                      <tr key={t.teamId} className={`border-b border-brand-mist last:border-0 ${isOwn ? "bg-brand-ice" : ""}`}>
                         {closed && <td className="px-4 py-3 font-black fa-num text-brand-navy">{fa(t.rank ?? 0)}</td>}
                         <td className="px-4 py-3">
                           <Link href={team ? `/market/${team.slug}` : "#"} className="flex items-center gap-2 font-bold text-brand-navy hover:text-brand-cyan-dark">
                             <Avatar seed={team?.logoSeed || t.teamId} size={28} />
                             {team?.name ?? "—"}
+                            {isOwn && <span className="chip-red !text-[11px]">تیم تو</span>}
                           </Link>
                         </td>
                         <td className="px-4 py-3 fa-num">{fa(t.netSales)}</td>
@@ -177,14 +237,27 @@ export default async function LeaderboardPage() {
   );
 }
 
-function PodiumCard({ rank, team, total, tall }: { rank: number; team?: { name: string; slug: string; logoSeed: string }; total: number; tall?: boolean }) {
+function PodiumCard({
+  rank,
+  team,
+  value,
+  metricLabel,
+  tall,
+}: {
+  rank: number;
+  team?: { name: string; slug: string; logoSeed: string };
+  value: number;
+  metricLabel: string;
+  tall?: boolean;
+}) {
   const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : "🥉";
   return (
     <div className={`card p-4 text-center anim-pop ${tall ? "pt-8 ring-2 ring-amber-300" : ""}`}>
       <div className="text-3xl">{medal}</div>
       <Avatar seed={team?.logoSeed || rank.toString()} size={56} className="mx-auto mt-2" />
       <div className="mt-2 font-black text-brand-navy truncate">{team?.name ?? "—"}</div>
-      <div className="mt-1 text-brand-red font-black fa-num">{fa(Math.round(total))}</div>
+      <div className="mt-1 text-brand-red font-black fa-num">{fa(Math.round(value))}</div>
+      <div className="text-[11px] text-brand-slate">{metricLabel}</div>
     </div>
   );
 }

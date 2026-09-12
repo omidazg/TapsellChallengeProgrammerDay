@@ -12,6 +12,7 @@ export const metadata = { title: "اتاق ایده" };
 export default async function IdeaPage() {
   const user = await requireUser();
   const { phase } = await getPhase();
+  const aiOff = !process.env.ANTHROPIC_API_KEY;
 
   if (!user.teamId) {
     return (
@@ -113,7 +114,7 @@ export default async function IdeaPage() {
           </div>
         </div>
 
-        <AnalystCard clarity={idea.analystClarity} feasibility={idea.analystFeasibility} novelty={idea.analystNovelty} summary={idea.analystSummary} />
+        <AnalystCard clarity={idea.analystClarity} feasibility={idea.analystFeasibility} novelty={idea.analystNovelty} summary={idea.analystSummary} aiOff={aiOff} />
       </Container>
     </>
   );

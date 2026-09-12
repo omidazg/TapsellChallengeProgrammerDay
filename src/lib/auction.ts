@@ -2,6 +2,7 @@ import { prisma } from "./db";
 import { getPhase, getSettingInt } from "./phase";
 import { DEFAULTS } from "./constants";
 import { fa } from "./persian";
+import { notifyUser } from "./notifications";
 // اقتصاد خالص: nextMinBid و shouldExtendAuction از موتور اقتصاد می‌آیند.
 import { nextMinBid, shouldExtendAuction } from "./economy/engine";
 
@@ -131,7 +132,7 @@ export async function placeBid(auctionId: string, userId: string, amount: number
   const antiSnipeWindow = await getSettingInt("anti_snipe_window_sec", DEFAULTS.antiSnipeWindowSec);
   const antiSnipeExtend = await getSettingInt("anti_snipe_extend_sec", DEFAULTS.antiSnipeExtendSec);
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const auction = await tx.auction.findUnique({ where: { id: auctionId }, include: { product: true } });
     if (!auction) throw new Error("حراج پیدا نشد");
     if (auction.status !== "LIVE" || !auction.endsAt) throw new Error("این حراج در حال حاضر زنده نیست");
@@ -169,8 +170,19 @@ export async function placeBid(auctionId: string, userId: string, amount: number
       await tx.auction.update({ where: { id: auctionId }, data: { endsAt, extensions: { increment: 1 } } });
     }
 
-    return { ok: true as const, amount, endsAt };
+    return { ok: true as const, amount, endsAt, outbidUserId: highest && highest.userId !== userId ? highest.userId : null };
   });
+
+  if (result.outbidUserId) {
+    await notifyUser(result.outbidUserId, {
+      kind: "OUTBID",
+      title: "پیشنهادت شکسته شد",
+      body: "یک پیشنهاد بالاتر روی این حراج ثبت شد.",
+      href: "/auction",
+    }).catch(() => {});
+  }
+
+  return result;
 }
 
 /** قدرت «نفس دوم»: دو دقیقه تمدید یک حراج زنده، یک‌بار در کل بازی برای هر کاربر. */

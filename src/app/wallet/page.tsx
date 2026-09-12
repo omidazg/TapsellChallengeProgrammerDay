@@ -96,9 +96,16 @@ function LedgerTable({ entries }: { entries: { id: string; wallet: string; delta
             <tr key={e.id} className="border-b border-brand-mist last:border-0">
               <td className="px-4 py-3">{WALLET_LABEL[e.wallet] ?? e.wallet}</td>
               <td className="px-4 py-3">{LEDGER_REASON_LABEL[e.reason] ?? e.reason}</td>
-              <td className={`px-4 py-3 font-black fa-num ${e.delta >= 0 ? "text-emerald-600" : "text-brand-red"}`}>
-                {e.delta >= 0 ? "+" : ""}
-                {fa(e.delta)}
+              <td className="px-4 py-3">
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-black fa-num ${
+                    e.delta >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-brand-red"
+                  }`}
+                >
+                  {/* علامت منهای فارسی (U+2212) تا در متن راست‌چین وارونه دیده نشود */}
+                  <span aria-hidden>{e.delta >= 0 ? "+" : "−"}</span>
+                  {fa(Math.abs(e.delta))}
+                </span>
               </td>
               <td className="px-4 py-3 text-brand-slate">{jdatetime(e.createdAt)}</td>
             </tr>

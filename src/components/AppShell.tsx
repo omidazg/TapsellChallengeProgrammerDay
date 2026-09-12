@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { PHASE_LABEL, type Phase } from "@/lib/phases";
 import { fa, duration } from "@/lib/persian";
 import { Avatar } from "./Avatar";
+import { NotificationBell } from "./NotificationBell";
 
 type ShellUser = { id: string; nickname: string; isAdmin: boolean; seedWallet: number; buyWallet: number; teamName: string | null; avatarSeed: string };
 
@@ -64,9 +65,13 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
                   <span className="text-brand-slate">|</span>
                   <span title="کیف خرید">🛒 {fa(user.buyWallet)}</span>
                 </Link>
-                <Link href="/profile" className="flex items-center shrink-0" aria-label="پروفایل">
+                <NotificationBell phase={phase} />
+                <Link href="/profile" className="flex items-center shrink-0" aria-label="پروفایل" title={user.nickname}>
                   <Avatar seed={user.avatarSeed || user.id} size={32} />
                 </Link>
+                <form action="/logout" method="post" className="hidden lg:block">
+                  <button type="submit" className="btn-ghost !py-1.5 !px-3 text-xs" title="خروج از حساب">خروج</button>
+                </form>
                 <button
                   type="button"
                   className="lg:hidden inline-flex items-center justify-center size-10 rounded-full border border-brand-mist text-brand-navy hover:bg-brand-ice shrink-0"
@@ -140,6 +145,12 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
                 <span>🌱 کیف بذر: {fa(user.seedWallet)}</span>
                 <span>🛒 کیف خرید: {fa(user.buyWallet)}</span>
               </div>
+              <div className="mt-3">
+                <NotificationBell phase={phase} variant="mobile" />
+              </div>
+              <form action="/logout" method="post" className="mt-3">
+                <button type="submit" className="btn-ghost w-full !text-brand-red !border-red-100 hover:!bg-red-50">🚪 خروج از حساب</button>
+              </form>
             </nav>
           </div>
         )}

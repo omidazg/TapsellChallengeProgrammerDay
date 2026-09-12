@@ -22,9 +22,17 @@ export function PhaseForm({ phase, endsAt, phases }: { phase: string; endsAt: st
   const [state, formAction] = useActionState<AdminActionState, FormData>(setPhaseAction, {});
   const localEndsAt = endsAt ? toLocalInputValue(new Date(endsAt)) : "";
 
+  const currentIdx = phases.findIndex((p) => p.value === phase);
+  const next = currentIdx >= 0 && currentIdx < phases.length - 1 ? phases[currentIdx + 1] : null;
+
   return (
     <form action={formAction} className="card p-4 sm:p-6 space-y-4 anim-rise">
       <h2 className="text-lg font-black text-brand-navy">کنترل فاز بازی</h2>
+      {next && (
+        <p className="text-xs text-brand-slate">
+          با پایان زمان، فاز خودکار به «{next.label}» می‌رود (به‌شرط روشن بودن «پیشروی خودکار فاز» در تنظیمات زمان‌بند).
+        </p>
+      )}
       {state.error && <Alert kind="error">{state.error}</Alert>}
       {state.ok && <Alert kind="ok">فاز به‌روزرسانی شد.</Alert>}
       <div className="grid sm:grid-cols-2 gap-4">

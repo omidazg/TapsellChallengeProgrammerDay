@@ -1,11 +1,21 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { getPhase, PHASES, PHASE_LABEL } from "@/lib/phase";
-import { getAdminCounts, getSettingsMap, SETTING_KEYS, SETTING_LABELS } from "@/lib/admin";
+import {
+  getAdminCounts,
+  getSettingsMap,
+  SETTING_KEYS,
+  SETTING_LABELS,
+  getSchedulerSettingsMap,
+  SCHEDULER_SETTING_KEYS,
+  SCHEDULER_SETTING_LABELS,
+  SCHEDULER_SETTING_KINDS,
+} from "@/lib/admin";
 import { PageHeader, Container, Stat } from "@/components/ui";
 import { fa, coins } from "@/lib/persian";
 import { PhaseForm } from "./PhaseForm";
 import { SettingsForm, type SettingField } from "./SettingsForm";
+import { updateSchedulerSettingsAction } from "./scheduler-actions";
 
 export const metadata = { title: "پنل برگزارکننده" };
 
@@ -16,11 +26,18 @@ const SUBPAGES = [
   { href: "/admin/flags", label: "پرچم‌های تخلف", emoji: "🚩" },
   { href: "/admin/users", label: "کاربران", emoji: "🧑‍💻" },
   { href: "/admin/export", label: "خروجی گزارش‌ها", emoji: "📤" },
+  { href: "/admin/settlement", label: "تسویهٔ نهایی", emoji: "🧾" },
+  { href: "/admin/announcements", label: "اطلاعیه‌ها", emoji: "📢" },
 ];
 
 export default async function AdminPage() {
   await requireAdmin();
-  const [{ phase, endsAt }, counts, settings] = await Promise.all([getPhase(), getAdminCounts(), getSettingsMap()]);
+  const [{ phase, endsAt }, counts, settings, schedulerSettings] = await Promise.all([
+    getPhase(),
+    getAdminCounts(),
+    getSettingsMap(),
+    getSchedulerSettingsMap(),
+  ]);
 
   const phaseOptions = PHASES.map((p) => ({ value: p, label: PHASE_LABEL[p] }));
   const settingFields: SettingField[] = SETTING_KEYS.map((key) => ({
@@ -28,6 +45,12 @@ export default async function AdminPage() {
     label: SETTING_LABELS[key],
     value: key === "market_starts_at" ? toLocalInputValue(settings[key]) : settings[key],
     kind: key === "market_starts_at" ? "datetime" : "number",
+  }));
+  const schedulerFields: SettingField[] = SCHEDULER_SETTING_KEYS.map((key) => ({
+    key,
+    label: SCHEDULER_SETTING_LABELS[key],
+    value: schedulerSettings[key],
+    kind: SCHEDULER_SETTING_KINDS[key],
   }));
 
   return (
@@ -53,6 +76,11 @@ export default async function AdminPage() {
 
         <PhaseForm phase={phase} endsAt={endsAt ? endsAt.toISOString() : null} phases={phaseOptions} />
         <SettingsForm fields={settingFields} />
+        <SettingsForm
+          fields={schedulerFields}
+          action={updateSchedulerSettingsAction}
+          title="زمان‌بند خودکار"
+        />
       </Container>
     </>
   );

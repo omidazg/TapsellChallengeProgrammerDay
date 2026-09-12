@@ -8,7 +8,13 @@ export const revalidate = 0;
 export async function GET() {
   const { phase, endsAt } = await getPhase();
   return NextResponse.json(
-    { phase, label: PHASE_LABEL[phase], endsAt: endsAt ? endsAt.toISOString() : null },
+    {
+      phase,
+      label: PHASE_LABEL[phase],
+      endsAt: endsAt ? endsAt.toISOString() : null,
+      // برای تصحیح اختلاف ساعت کلاینت نسبت به سرور (کلاک‌اسکیو) در PhaseCountdown.
+      serverNow: new Date().toISOString(),
+    },
     { headers: { "Cache-Control": "no-store, max-age=0" } }
   );
 }

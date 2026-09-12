@@ -4,6 +4,7 @@ import { DEFAULTS } from "@/lib/constants";
 import { getIdeasForFloor, parseFloorFilter } from "@/lib/idea";
 import { totalInvestedByUser } from "@/lib/invest";
 import { PageHeader, Container, Locked, Stat, Alert } from "@/components/ui";
+import { UnspentReminder } from "@/components/UnspentReminder";
 import { fa, coins } from "@/lib/persian";
 import { InvestFloor } from "./InvestFloor";
 
@@ -11,8 +12,9 @@ export const metadata = { title: "طبقهٔ سرمایه‌گذاری" };
 
 export default async function InvestPage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
   const user = await requireUser();
-  const { phase } = await getPhase();
+  const { phase, endsAt } = await getPhase();
   const sp = await searchParams;
+  const aiOff = !process.env.ANTHROPIC_API_KEY;
   const filter = parseFloorFilter(sp.filter);
 
   if (phaseIndex(phase) < phaseIndex("SEED_ROUND")) {
@@ -63,7 +65,18 @@ export default async function InvestPage({ searchParams }: { searchParams: Promi
             </Alert>
           </div>
         )}
-        <InvestFloor ideas={ideas} ownTeamId={user.teamId} interactive={interactive} filter={filter} />
+        {interactive && (
+          <div className="mb-6">
+            <UnspentReminder
+              phase={phase}
+              phaseLabel="فاز «دور سرمایه‌گذاری»"
+              endsAt={endsAt ? endsAt.toISOString() : null}
+              coinsLeft={user.seedWallet}
+              penaltyPerCoin={DEFAULTS.penaltyPerCoin}
+            />
+          </div>
+        )}
+        <InvestFloor ideas={ideas} ownTeamId={user.teamId} interactive={interactive} filter={filter} aiOff={aiOff} />
       </Container>
     </>
   );

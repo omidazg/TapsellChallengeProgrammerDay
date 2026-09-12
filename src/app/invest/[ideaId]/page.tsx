@@ -25,15 +25,19 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
 
   if (phaseIndex(phase) < phaseIndex("SEED_ROUND")) {
     return (
-      <Container className="pt-10">
-        <Locked title="هنوز زود است" desc="طبقهٔ سرمایه‌گذاری از فاز «دور سرمایه‌گذاری» باز می‌شود." />
-      </Container>
+      <>
+        <PageHeader eyebrow="طبقهٔ سرمایه‌گذاری" title="سرمایه‌گذاری" />
+        <Container>
+          <Locked title="هنوز زود است" desc="طبقهٔ سرمایه‌گذاری از فاز «دور سرمایه‌گذاری» باز می‌شود." />
+        </Container>
+      </>
     );
   }
 
   const idea = await getIdeaDetail(ideaId, user.id);
   if (!idea || !idea.submittedAt) notFound();
 
+  const aiOff = !process.env.ANTHROPIC_API_KEY;
   const interactive = phase === "SEED_ROUND";
   const maxPerTarget = await getSettingInt("max_per_target", DEFAULTS.maxPerTarget);
   const capLeft = Math.max(0, idea.fundingCap - idea.raised);
@@ -95,9 +99,15 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
             </div>
           </div>
 
-          <AnalystCard clarity={idea.analystClarity} feasibility={idea.analystFeasibility} novelty={idea.analystNovelty} summary={idea.analystSummary} />
+          <AnalystCard
+            clarity={idea.analystClarity}
+            feasibility={idea.analystFeasibility}
+            novelty={idea.analystNovelty}
+            summary={idea.analystSummary}
+            aiOff={aiOff}
+          />
 
-          <DueDiligenceChat ideaId={idea.id} chats={idea.chats} />
+          <DueDiligenceChat ideaId={idea.id} chats={idea.chats} aiOff={aiOff} />
         </div>
 
         <div className="space-y-6">

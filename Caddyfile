@@ -1,4 +1,23 @@
 {$SITE_ADDRESS} {
 	encode gzip zstd
-	reverse_proxy web:3000
+
+	# فایل‌های استاتیک Next.js هش‌دار هستند؛ یک سال کش می‌شوند.
+	@static path /_next/static/* /brand/* /fonts/*
+	header @static Cache-Control "public, max-age=31536000, immutable"
+
+	# مسیرهای polling هرگز کش نشوند
+	@api path /api/*
+	header @api Cache-Control "no-store"
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	reverse_proxy web:3000 {
+		health_uri /api/phase
+		health_interval 30s
+	}
 }

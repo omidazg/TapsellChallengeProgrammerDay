@@ -64,6 +64,66 @@ export async function setSetting(key: string, value: string) {
   await prisma.setting.upsert({ where: { key }, update: { value }, create: { key, value } });
 }
 
+/**
+ * تنظیمات زمان‌بند خودکار (src/lib/scheduler.ts).
+ * از SETTING_KEYS بالا جدا نگه داشته شده چون `updateSettingsAction` در actions.ts
+ * (که مالک آن تیم دیگری است) مجموعهٔ کلیدهای بالا را با zod ثابت اعتبارسنجی می‌کند؛
+ * این کلیدها با سرور-اکشن مستقل خودشان (scheduler-actions.ts) ذخیره می‌شوند.
+ */
+export const SCHEDULER_SETTING_KEYS = [
+  "auto_advance",
+  "auto_auction",
+  "auction_gap_sec",
+  "phase_hours_IDEATION",
+  "phase_hours_SEED_ROUND",
+  "phase_hours_BUILD",
+  "phase_hours_MARKET",
+  "phase_hours_AUCTION",
+] as const;
+export type SchedulerSettingKey = (typeof SCHEDULER_SETTING_KEYS)[number];
+
+export const SCHEDULER_SETTING_LABELS: Record<SchedulerSettingKey, string> = {
+  auto_advance: "پیشروی خودکار فاز",
+  auto_auction: "شروع خودکار حراج بعدی",
+  auction_gap_sec: "فاصلهٔ شروع حراج بعدی (ثانیه)",
+  phase_hours_IDEATION: "مدت فاز اتاق ایده (ساعت)",
+  phase_hours_SEED_ROUND: "مدت فاز دور سرمایه‌گذاری (ساعت)",
+  phase_hours_BUILD: "مدت فاز ساخت (ساعت)",
+  phase_hours_MARKET: "مدت فاز روز بازار (ساعت)",
+  phase_hours_AUCTION: "مدت فاز حراج زنده (ساعت)",
+};
+
+export const SCHEDULER_SETTING_KINDS: Record<SchedulerSettingKey, "boolean" | "number"> = {
+  auto_advance: "boolean",
+  auto_auction: "boolean",
+  auction_gap_sec: "number",
+  phase_hours_IDEATION: "number",
+  phase_hours_SEED_ROUND: "number",
+  phase_hours_BUILD: "number",
+  phase_hours_MARKET: "number",
+  phase_hours_AUCTION: "number",
+};
+
+const SCHEDULER_SETTING_DEFAULTS: Record<SchedulerSettingKey, string> = {
+  auto_advance: "0",
+  auto_auction: "0",
+  auction_gap_sec: "60",
+  phase_hours_IDEATION: "24",
+  phase_hours_SEED_ROUND: "24",
+  phase_hours_BUILD: "48",
+  phase_hours_MARKET: "6",
+  phase_hours_AUCTION: "2",
+};
+
+/** مقادیر جاری تنظیمات زمان‌بند، با مقدار پیش‌فرض در نبود ردیف */
+export async function getSchedulerSettingsMap(): Promise<Record<SchedulerSettingKey, string>> {
+  const rows = await prisma.setting.findMany({ where: { key: { in: [...SCHEDULER_SETTING_KEYS] } } });
+  const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  const out = {} as Record<SchedulerSettingKey, string>;
+  for (const key of SCHEDULER_SETTING_KEYS) out[key] = map[key] ?? SCHEDULER_SETTING_DEFAULTS[key];
+  return out;
+}
+
 export interface CollusionCandidate {
   teamId: string;
   otherTeamId: string;

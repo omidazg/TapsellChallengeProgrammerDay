@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { Alert } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { coins } from "@/lib/persian";
-import { renameTeamAction, removeMemberAction, deleteTeamAction, type TeamsActionState } from "./actions";
+import { renameTeamAction, removeMemberAction, deleteTeamAction, moveMemberAction, type TeamsActionState } from "./actions";
 
 type Member = { id: string; nickname: string; avatarSeed: string; role: string };
 export type TeamRowData = {
@@ -18,11 +18,13 @@ export type TeamRowData = {
   productSubmitted: boolean;
 };
 
-export function TeamRow({ team }: { team: TeamRowData }) {
+export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id: string; name: string }[] }) {
   const [renaming, setRenaming] = useState(false);
   const [renameState, renameAction] = useActionState<TeamsActionState, FormData>(renameTeamAction, {});
   const [removeState, removeAction] = useActionState<TeamsActionState, FormData>(removeMemberAction, {});
   const [deleteState, deleteAction] = useActionState<TeamsActionState, FormData>(deleteTeamAction, {});
+  const [moveState, moveAction] = useActionState<TeamsActionState, FormData>(moveMemberAction, {});
+  const otherTeams = allTeams.filter((t) => t.id !== team.id);
 
   return (
     <div className="card p-4 sm:p-6 space-y-3 anim-rise">
@@ -56,16 +58,32 @@ export function TeamRow({ team }: { team: TeamRowData }) {
 
       <div className="flex flex-wrap gap-2">
         {team.members.map((m) => (
-          <form key={m.id} action={removeAction} className="flex items-center gap-1.5 rounded-pill bg-brand-ice px-2.5 py-1.5">
-            <input type="hidden" name="userId" value={m.id} />
+          <div key={m.id} className="flex items-center gap-1.5 rounded-pill bg-brand-ice px-2.5 py-1.5">
             <Avatar seed={m.avatarSeed || m.id} size={22} />
             <span className="text-sm font-bold text-brand-navy">{m.nickname}</span>
-            <button type="submit" className="text-brand-red text-xs font-bold hover:underline" title="حذف از تیم">✕</button>
-          </form>
+            {otherTeams.length > 0 && (
+              <form action={moveAction} className="flex items-center gap-1">
+                <input type="hidden" name="userId" value={m.id} />
+                <select name="targetTeamId" defaultValue="" className="input !py-0.5 !px-1.5 !text-[11px] !w-auto">
+                  <option value="" disabled>انتقال به…</option>
+                  {otherTeams.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <button type="submit" className="text-brand-navy text-xs font-bold hover:underline" title="انتقال به تیم دیگر">↪</button>
+              </form>
+            )}
+            <form action={removeAction}>
+              <input type="hidden" name="userId" value={m.id} />
+              <button type="submit" className="text-brand-red text-xs font-bold hover:underline" title="حذف از تیم">✕</button>
+            </form>
+          </div>
         ))}
         {team.members.length === 0 && <span className="text-xs text-brand-slate">بدون عضو</span>}
       </div>
       {removeState.error && <Alert kind="error">{removeState.error}</Alert>}
+      {moveState.error && <Alert kind="error">{moveState.error}</Alert>}
+      {moveState.ok && <Alert kind="ok">کاربر منتقل شد.</Alert>}
 
       {team.members.length === 0 && (
         <form action={deleteAction}>

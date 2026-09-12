@@ -7,7 +7,14 @@ import { createTeamAction, joinMatchmakingAction, acceptInviteAction, declineInv
 
 type InviteRow = TeamInvite & { team: Team; inviter: User };
 
-export function NoTeamPanel({ invites, registrationOpen }: { invites: InviteRow[]; registrationOpen: boolean }) {
+export function NoTeamPanel({
+  invites,
+  formingOpen,
+}: {
+  invites: InviteRow[];
+  registrationOpen?: boolean;
+  formingOpen: boolean;
+}) {
   return (
     <div className="space-y-8">
       {invites.length > 0 && (
@@ -15,21 +22,23 @@ export function NoTeamPanel({ invites, registrationOpen }: { invites: InviteRow[
           <h2 className="mb-3 text-lg font-black text-brand-navy">دعوت‌نامه‌های در انتظار</h2>
           <div className="grid gap-3 sm:grid-cols-2 stagger">
             {invites.map((inv) => (
-              <InviteCard key={inv.id} invite={inv} disabled={!registrationOpen} />
+              <InviteCard key={inv.id} invite={inv} disabled={!formingOpen} />
             ))}
           </div>
         </div>
       )}
 
-      {registrationOpen ? (
+      {formingOpen ? (
         <div className="grid gap-6 md:grid-cols-2">
           <CreateTeamCard />
           <MatchmakingCard />
         </div>
       ) : (
-        <Locked title="تشکیل تیم بسته است" desc="فاز ثبت‌نام و تیم به پایان رسیده؛ دیگر نمی‌توانی تیم بسازی یا بپیوندی." />
+        <Locked
+          title="تشکیل تیم بسته است"
+          desc="فاز اتاق ایده به پایان رسیده؛ دیگر نمی‌توانی تیم بسازی یا بپیوندی. برای تغییر ترکیب تیم با برگزارکننده هماهنگ کن."
+        />
       )}
-
     </div>
   );
 }

@@ -5,20 +5,21 @@ import { useFormStatus } from "react-dom";
 import { Avatar } from "@/components/Avatar";
 import { jdatetime } from "@/lib/persian";
 import { Alert } from "@/components/ui";
+import { AiUnavailable } from "@/components/AiUnavailable";
 import { dueDiligenceAction, type ChatActionState } from "../actions";
 
 type ChatRow = { id: string; userId: string; nickname: string; avatarSeed: string; question: string; answer: string; createdAt: Date };
 
-function AskButton() {
+function AskButton({ disabled = false }: { disabled?: boolean }) {
   const status = useFormStatus();
   return (
-    <button type="submit" disabled={status.pending} className="btn-cyan w-full sm:w-auto shrink-0">
+    <button type="submit" disabled={disabled || status.pending} className="btn-cyan w-full sm:w-auto shrink-0 disabled:opacity-50">
       {status.pending ? "در حال پرسیدن…" : "پرسیدن"}
     </button>
   );
 }
 
-export function DueDiligenceChat({ ideaId, chats }: { ideaId: string; chats: ChatRow[] }) {
+export function DueDiligenceChat({ ideaId, chats, aiOff = false }: { ideaId: string; chats: ChatRow[]; aiOff?: boolean }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [state, formAction] = useActionState<ChatActionState, FormData>(dueDiligenceAction, {});
 
@@ -30,6 +31,7 @@ export function DueDiligenceChat({ ideaId, chats }: { ideaId: string; chats: Cha
     <div className="card p-6 anim-rise">
       <h3 className="font-black text-brand-navy mb-4">چت بررسی دقیق</h3>
 
+      {aiOff && <div className="mb-4"><AiUnavailable /></div>}
       {state.aiUnavailable && <Alert kind="info">تحلیل‌گر هوش مصنوعی در دسترس نیست.</Alert>}
       {state.error && <Alert kind="error">{state.error}</Alert>}
 
@@ -53,8 +55,16 @@ export function DueDiligenceChat({ ideaId, chats }: { ideaId: string; chats: Cha
 
       <form ref={formRef} action={formAction} className="flex flex-col sm:flex-row gap-2">
         <input type="hidden" name="ideaId" value={ideaId} />
-        <input name="question" required minLength={3} maxLength={300} className="input flex-1" placeholder="سؤالت را از متن ایده بپرس…" />
-        <AskButton />
+        <input
+          name="question"
+          required
+          minLength={3}
+          maxLength={300}
+          disabled={aiOff}
+          className="input flex-1 disabled:opacity-50"
+          placeholder="سؤالت را از متن ایده بپرس…"
+        />
+        <AskButton disabled={aiOff} />
       </form>
     </div>
   );

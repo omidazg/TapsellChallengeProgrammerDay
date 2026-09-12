@@ -113,6 +113,17 @@ export async function investCore(
           refId: investment.id,
         },
       });
+      // خزانهٔ تیم برای هر سرمایه‌گذاری (خودی و خارجی) افزایش می‌یابد،
+      // پس سطر متناظر دفتر کل هم برای هر دو ساخته می‌شود تا خزانه با دفتر کل بخواند.
+      await tx.ledgerEntry.create({
+        data: {
+          teamId: idea.teamId,
+          wallet: "TREASURY",
+          delta: amt,
+          reason: "INVEST",
+          refId: investment.id,
+        },
+      });
 
       return { ok: true, investmentId: investment.id, selfFunded };
     });

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import {
   createTeamForUser,
@@ -9,6 +10,7 @@ import {
   acceptInvite,
   declineInvite,
   leaveTeam,
+  joinBySlug,
   type TeamResult,
 } from "@/lib/team";
 
@@ -52,5 +54,17 @@ export async function declineInviteAction(inviteId: string): Promise<TeamResult>
   const user = await requireUser();
   const res = await declineInvite(user.id, inviteId);
   if (res.ok) revalidatePath("/team");
+  return res;
+}
+
+/** پیوستن از طریق لینک دعوت؛ در صورت موفقیت به /team با پرچم موفقیت هدایت می‌کند */
+export async function joinBySlugAction(slug: string): Promise<TeamResult | never> {
+  const user = await requireUser();
+  const res = await joinBySlug(user.id, slug);
+  if (res.ok) {
+    revalidatePath("/team");
+    revalidatePath("/profile");
+    redirect("/team?joined=1");
+  }
   return res;
 }

@@ -3,12 +3,14 @@ import { getCurrentUser } from "@/lib/auth";
 import { getPhase } from "@/lib/phase";
 import { PageHeader, Container, Locked } from "@/components/ui";
 import { RegisterWizard } from "./RegisterWizard";
+import { safeNext } from "./next";
 
 export const metadata = { title: "خودت را کد بزن" };
 
-export default async function RegisterPage() {
+export default async function RegisterPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+  const { next } = await searchParams;
   const user = await getCurrentUser();
-  if (user) redirect("/team");
+  if (user) redirect(safeNext(next) ?? "/team");
 
   const { phase } = await getPhase();
   if (phase !== "REGISTRATION") {
@@ -26,7 +28,7 @@ export default async function RegisterPage() {
     <>
       <PageHeader eyebrow="ثبت‌نام" title="خودت را کد بزن" desc="شخصیت بازی‌ات را بساز، نقش و قدرتت را انتخاب کن و وارد میدان شو." />
       <Container>
-        <RegisterWizard />
+        <RegisterWizard nextUrl={safeNext(next)} />
       </Container>
     </>
   );

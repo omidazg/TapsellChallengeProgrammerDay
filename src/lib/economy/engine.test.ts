@@ -353,3 +353,62 @@ describe("defaultConfig", () => {
     expect(config.weights.sales).toBe(350);
   });
 });
+
+// ---------- قراردادهایی که تسویهٔ نهایی (settleGame) به آن‌ها تکیه می‌کند ----------
+describe("settlement contract", () => {
+  it("exposes one dividend line per external investor per team", () => {
+    const out = scoreGame(defaultConfig(), [
+      baseTeam({
+        teamId: "tA",
+        revenueShare: 50,
+        investments: [
+          { userId: "b1", amount: 40, selfFunded: false },
+          { userId: "b1", amount: 20, selfFunded: false },
+          { userId: "a2", amount: 10, selfFunded: true },
+        ],
+        sales: [{ userId: "b1", amount: 50 }],
+      }),
+    ], []);
+
+    expect(out.dividends).toHaveLength(1);
+    expect(out.dividends[0]).toMatchObject({ userId: "b1", teamId: "tA", invested: 60 });
+    // استخر = ۵۰ × ۵۰٪ = ۲۵ و تنها سهام‌دار خارجی همه را می‌گیرد
+    expect(out.dividends[0].dividend).toBe(25);
+  });
+
+  it("never pays more than the revenue-share pool and matches team dividendsPaid", () => {
+    const out = scoreGame(defaultConfig(), [
+      baseTeam({
+        teamId: "tA",
+        revenueShare: 30,
+        investments: [
+          { userId: "x", amount: 33, selfFunded: false },
+          { userId: "y", amount: 67, selfFunded: false },
+        ],
+        sales: [{ userId: "z", amount: 77 }],
+      }),
+    ], []);
+
+    const paid = out.dividends.reduce((a, d) => a + d.dividend, 0);
+    expect(paid).toBeLessThanOrEqual(77 * 0.3);
+    expect(paid).toBe(out.teams[0].dividendsPaid);
+    expect(out.teams[0].netSales).toBe(77 - paid);
+  });
+
+  it("gives no dividend line when a team only has self-funded capital", () => {
+    const out = scoreGame(defaultConfig(), [
+      baseTeam({ teamId: "tS", investments: [{ userId: "s", amount: 50, selfFunded: true }], sales: [{ userId: "z", amount: 40 }] }),
+    ], []);
+    expect(out.dividends).toHaveLength(0);
+    expect(out.teams[0].dividendsPaid).toBe(0);
+    expect(out.teams[0].externalCapital).toBe(0);
+  });
+
+  it("unspent penalty grows if dividends are credited before scoring (why order matters)", () => {
+    const config = defaultConfig();
+    const beforePay: MemberWallet[] = [{ userId: "b1", teamId: "tB", seedLeft: 0, buyLeft: 10, shieldUsed: false }];
+    const afterPay: MemberWallet[] = [{ userId: "b1", teamId: "tB", seedLeft: 0, buyLeft: 10 + 25, shieldUsed: false }];
+    expect(unspentPenalty(config, beforePay)).toBeLessThan(unspentPenalty(config, afterPay));
+    expect(unspentPenalty(config, beforePay)).toBe(config.penaltyPerCoin * 10);
+  });
+});

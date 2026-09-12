@@ -1,4 +1,5 @@
 import { fa } from "@/lib/persian";
+import { AiUnavailable } from "@/components/AiUnavailable";
 
 const BARS: { key: "analystClarity" | "analystFeasibility" | "analystNovelty"; label: string; color: string }[] = [
   { key: "analystClarity", label: "وضوح", color: "bg-brand-cyan" },
@@ -11,14 +12,18 @@ export function AnalystCard({
   feasibility,
   novelty,
   summary,
+  aiOff = false,
 }: {
   clarity: number | null;
   feasibility: number | null;
   novelty: number | null;
   summary: string | null;
+  aiOff?: boolean;
 }) {
   const scores = { analystClarity: clarity, analystFeasibility: feasibility, analystNovelty: novelty };
-  if (clarity === null && feasibility === null && novelty === null) return null;
+  if (clarity === null && feasibility === null && novelty === null) {
+    return aiOff ? <AiUnavailable /> : null;
+  }
   return (
     <div className="card p-6 anim-rise">
       <div className="flex items-center gap-2 mb-4">

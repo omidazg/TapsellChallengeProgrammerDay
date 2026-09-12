@@ -7,6 +7,7 @@ import { hashPassword, isEmailAllowed, createSession, getSessionUserId } from "@
 import { getPhase, getSettingInt } from "@/lib/phase";
 import { DEFAULTS, ROLES, POWERS } from "@/lib/constants";
 import { DEPARTMENTS } from "./departments";
+import { safeNext } from "./next";
 
 
 const FIELD_ERRORS: Record<string, string> = {
@@ -35,7 +36,7 @@ const registerSchema = z.object({
   confidence: z.number().int().min(0).max(150),
 });
 
-export type RegisterInput = z.infer<typeof registerSchema>;
+export type RegisterInput = z.infer<typeof registerSchema> & { next?: string | null };
 
 export async function registerAction(input: RegisterInput): Promise<{ error: string } | never> {
   // کاربر واردشده نباید بتواند حساب دوم بسازد و نشستش را جابه‌جا کند
@@ -102,5 +103,5 @@ export async function registerAction(input: RegisterInput): Promise<{ error: str
   }
 
   await createSession(userId);
-  redirect("/team");
+  redirect(safeNext(input.next) ?? "/team");
 }

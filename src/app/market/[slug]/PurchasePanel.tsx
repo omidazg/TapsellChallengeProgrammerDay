@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { fa, coins } from "@/lib/persian";
 import { Alert, Coin } from "@/components/ui";
+import { Celebrate } from "@/components/Celebrate";
 import { purchaseAction, heartAction } from "./actions";
 
 export function PurchasePanel({
@@ -32,6 +34,7 @@ export function PurchasePanel({
   heartsCount: number;
   soldCount: number;
 }) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [useBargain, setUseBargain] = useState(false);
@@ -42,6 +45,7 @@ export function PurchasePanel({
   const [hearted, setHearted] = useState(alreadyHearted);
   const [hearts, setHearts] = useState(heartsCount);
   const [sold, setSold] = useState(soldCount);
+  const [celebrate, setCelebrate] = useState<string | null>(null);
 
   const remaining = Math.max(0, maxPerTarget - spent);
   const discount = useBargain && bargainAvailable ? Math.floor(price * 0.1) : 0;
@@ -64,6 +68,8 @@ export function PurchasePanel({
       setUseBargain(false);
       setJustBought(true);
       setTimeout(() => setJustBought(false), 1200);
+      setCelebrate("خرید انجام شد 🎉");
+      router.refresh();
     });
   }
 
@@ -77,11 +83,14 @@ export function PurchasePanel({
       }
       setHearted(true);
       setHearts((h) => h + 1);
+      setCelebrate("قلبت ثبت شد ❤️");
+      router.refresh();
     });
   }
 
   return (
     <div className="card p-5 space-y-4 anim-rise">
+      <Celebrate message={celebrate ?? ""} show={!!celebrate} onDone={() => setCelebrate(null)} />
       {error && <Alert kind="error">{error}</Alert>}
 
       <div className="flex items-center justify-between">

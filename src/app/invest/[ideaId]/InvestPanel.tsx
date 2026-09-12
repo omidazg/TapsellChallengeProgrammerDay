@@ -1,9 +1,11 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
+import { useRouter } from "next/navigation";
 import { fa, coins } from "@/lib/persian";
 import { Alert } from "@/components/ui";
+import { Celebrate } from "@/components/Celebrate";
 import { investAction, angelPowerAction, type InvestActionState } from "../actions";
 
 function SubmitButton() {
@@ -30,6 +32,17 @@ export function InvestPanel({
 }) {
   const [state, formAction] = useActionState<InvestActionState, FormData>(investAction, {});
   const [amount, setAmount] = useState(1);
+  const [celebrate, setCelebrate] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (state.ok) {
+      router.refresh();
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- واکنش به نتیجهٔ server action (منبع خارجی)، نه همگام‌سازی رندر
+      setCelebrate(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
 
   if (maxAllowed <= 0) {
     return (
@@ -45,6 +58,7 @@ export function InvestPanel({
 
   return (
     <form action={formAction} className="space-y-4">
+      <Celebrate message="سرمایه‌گذاری ثبت شد 🌱" show={celebrate} onDone={() => setCelebrate(false)} />
       <input type="hidden" name="ideaId" value={ideaId} />
       {state.error && <Alert kind="error">{state.error}</Alert>}
       {state.ok && <Alert kind="ok">سرمایه‌گذاری ثبت شد.</Alert>}
@@ -101,8 +115,21 @@ export function InvestPanel({
 
 export function AngelButton({ ideaId }: { ideaId: string }) {
   const [state, formAction] = useActionState<InvestActionState, FormData>(angelPowerAction, {});
+  const [celebrate, setCelebrate] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (state.ok) {
+      router.refresh();
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- واکنش به نتیجهٔ server action (منبع خارجی)، نه همگام‌سازی رندر
+      setCelebrate(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+
   return (
     <form action={formAction} className="space-y-2">
+      <Celebrate message="سرمایه‌گذاری ثبت شد 🌱" show={celebrate} onDone={() => setCelebrate(false)} />
       <input type="hidden" name="ideaId" value={ideaId} />
       {state.error && <Alert kind="error">{state.error}</Alert>}
       {state.ok && <Alert kind="ok">{fa(20)} سکهٔ بذر اضافه شد.</Alert>}

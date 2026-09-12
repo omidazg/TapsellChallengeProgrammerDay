@@ -4,8 +4,9 @@ import { getPhase } from "@/lib/phase";
 import { DEFAULTS, SCORE_WEIGHTS } from "@/lib/constants";
 import { computeScores, computeAwards, getSettingFloat } from "@/lib/scoring";
 import { defaultConfig, unspentPenalty } from "@/lib/economy/engine";
-import { PageHeader, Container, Stat, Locked, Empty } from "@/components/ui";
-import { fa, coins } from "@/lib/persian";
+import { getSettledAt, loadSettledOutput } from "@/lib/settlement";
+import { PageHeader, Container, Stat, Locked, Empty, Alert } from "@/components/ui";
+import { fa, coins, jdatetime } from "@/lib/persian";
 import { Confetti } from "./Confetti";
 
 export const metadata = { title: "نتایج" };
@@ -25,13 +26,17 @@ export default async function ResultsPage() {
     );
   }
 
-  const [output, teams, users, penaltyPerCoin, investments, purchases] = await Promise.all([
-    computeScores(),
+  const settledAt = await getSettledAt();
+  const settled = !!settledAt;
+
+  const [output, teams, users, penaltyPerCoin, investments, purchases, myDividendRows] = await Promise.all([
+    settled ? loadSettledOutput() : computeScores(),
     prisma.team.findMany({ select: { id: true, name: true } }),
     prisma.user.findMany({ select: { id: true, nickname: true } }),
     getSettingFloat("penalty_per_coin", DEFAULTS.penaltyPerCoin),
     prisma.investment.findMany({ where: { userId: user.id }, include: { idea: { include: { team: true } } } }),
     prisma.purchase.findMany({ where: { userId: user.id }, include: { product: { include: { team: true } } } }),
+    prisma.ledgerEntry.findMany({ where: { userId: user.id, reason: "DIVIDEND", wallet: "BUY" } }),
   ]);
 
   const teamNames = new Map(teams.map((t) => [t.id, t.name]));
@@ -40,7 +45,9 @@ export default async function ResultsPage() {
 
   const myTeam = user.teamId ? output.teams.find((t) => t.teamId === user.teamId) : undefined;
   const myDividends = output.dividends.filter((d) => d.userId === user.id);
-  const totalDividends = myDividends.reduce((a, d) => a + d.dividend, 0);
+  // سود واقعاً واریزشده = جمع سطرهای DIVIDEND دفتر کل خودِ کاربر
+  const receivedDividends = myDividendRows.reduce((a, e) => a + e.delta, 0);
+  const estimatedDividends = myDividends.reduce((a, d) => a + d.dividend, 0);
   // چند ردیف سرمایه‌گذاری روی یک تیم = چند خط سود؛ برای نمایش، هر تیم را یک‌جا جمع می‌کنیم
   const dividendByTeam = new Map<string, number>();
   for (const d of myDividends) dividendByTeam.set(d.teamId, (dividendByTeam.get(d.teamId) ?? 0) + d.dividend);
@@ -59,24 +66,42 @@ export default async function ResultsPage() {
   }
   const myInvestments = [...investedByIdea.values()];
 
-  // جریمهٔ شخصی با همان تابع موتور اقتصاد تا با امتیاز تیم هم‌خوان باشد
+  // جریمهٔ شخصی با همان تابع موتور اقتصاد تا با امتیاز تیم هم‌خوان باشد.
+  // بعد از تسویه، سود واریزشده از کیف خرید کسر می‌شود تا وضعیت «لحظهٔ تسویه» بازسازی شود
+  // (جریمه پیش از پرداخت سود محاسبه شده است).
+  const buyAtSettlement = settled ? Math.max(0, user.buyWallet - receivedDividends) : user.buyWallet;
   const myPenalty = unspentPenalty({ ...defaultConfig(), penaltyPerCoin }, [
     {
       userId: user.id,
       teamId: user.teamId,
       seedLeft: user.seedWallet,
-      buyLeft: user.buyWallet,
+      buyLeft: buyAtSettlement,
       shieldUsed: user.power === "SHIELD" && user.powerUsed,
     },
   ]);
 
-  const showConfetti = !!myTeam && (myTeam.rank ?? 99) <= 3;
+  const showConfetti = settled && !!myTeam && (myTeam.rank ?? 99) <= 3;
 
   return (
     <>
       {showConfetti && <Confetti />}
-      <PageHeader eyebrow="نتایج" title={`نتایج بازی برای ${user.nickname}`} desc="سودها پرداخت شد؛ این خلاصهٔ عملکرد توست." />
+      <PageHeader
+        eyebrow="نتایج"
+        title={`نتایج بازی برای ${user.nickname}`}
+        desc={settled ? "سودها پرداخت شد؛ این خلاصهٔ عملکرد توست." : "این خلاصهٔ عملکرد توست؛ تسویهٔ نهایی هنوز انجام نشده است."}
+      />
       <Container className="space-y-10">
+        {settled ? (
+          <Alert kind="ok">
+            💸 سودها پرداخت شد — سهم تو {coins(receivedDividends)} بود و به کیف خرید واریز شد.
+            {settledAt && <> (تسویه در {jdatetime(settledAt)})</>}
+          </Alert>
+        ) : (
+          <Alert kind="info">
+            ⏳ در انتظار تسویهٔ نهایی برگزارکننده — امتیازها و سودهای زیر پیش‌نمایش‌اند و هنوز پرداخت نشده‌اند.
+          </Alert>
+        )}
+
         {myTeam ? (
           <section className="space-y-4">
             <h2 className="text-lg font-black text-brand-navy">تیم تو: {teamNames.get(myTeam.teamId)}</h2>
@@ -106,7 +131,8 @@ export default async function ResultsPage() {
                   <tr>
                     <td className="px-3 py-2 font-bold text-brand-red">جریمهٔ خرج‌نشده</td>
                     <td className="px-3 py-2 font-bold text-brand-red fa-num" colSpan={2}>
-                      -{fa(Math.round(myTeam.unspentPenalty))}
+                      {"−"}
+                      {fa(Math.round(myTeam.unspentPenalty))}
                     </td>
                   </tr>
                 </tbody>
@@ -118,7 +144,12 @@ export default async function ResultsPage() {
         )}
 
         <section className="grid sm:grid-cols-3 gap-4 stagger">
-          <Stat label="سود سرمایه‌گذاری دریافتی" value={coins(totalDividends)} tone="cyan" />
+          <Stat
+            label={settled ? "سود سرمایه‌گذاری دریافتی" : "سود سرمایه‌گذاری (برآوردی)"}
+            value={coins(settled ? receivedDividends : estimatedDividends)}
+            hint={settled ? "واریزشده به کیف خرید" : "پس از تسویهٔ نهایی واریز می‌شود"}
+            tone="cyan"
+          />
           <Stat label="مجموع خرید در بازار" value={coins(purchases.reduce((a, p) => a + p.amount, 0))} tone="red" />
           <Stat label="جریمهٔ سکهٔ خرج‌نشدهٔ من" value={fa(Math.round(myPenalty * 10) / 10)} tone="navy" />
         </section>
@@ -134,7 +165,7 @@ export default async function ResultsPage() {
                   <tr className="text-right text-brand-slate border-b border-brand-mist">
                     <th className="px-4 py-3 font-bold">ایده</th>
                     <th className="px-4 py-3 font-bold">مبلغ</th>
-                    <th className="px-4 py-3 font-bold">سود دریافتی</th>
+                    <th className="px-4 py-3 font-bold">{settled ? "سود دریافتی" : "سود برآوردی"}</th>
                   </tr>
                 </thead>
                 <tbody>

@@ -7,12 +7,13 @@ import { Container, Stat } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { prisma } from "@/lib/db";
 import { PhaseCountdown } from "./PhaseCountdown";
+import { PhaseTimeline } from "@/components/PhaseTimeline";
 
 export default async function Home() {
   const [user, { phase, endsAt }] = await Promise.all([getCurrentUser(), getPhase()]);
 
   if (!user) {
-    return <LoggedOutLanding phase={phase} />;
+    return <LoggedOutLanding phase={phase} endsAt={endsAt ? endsAt.toISOString() : null} />;
   }
 
   const [idea, teamSize] = await Promise.all([
@@ -60,6 +61,8 @@ export default async function Home() {
           <Stat label="🛒 کیف خرید" value={coins(user.buyWallet)} tone="red" />
           {user.team && <Stat label="🏦 خزانهٔ تیم" value={coins(user.team.treasury)} tone="navy" />}
         </div>
+
+        <PhaseTimeline phase={phase} endsAt={endsAt ? endsAt.toISOString() : null} />
 
         {user.team ? (
           <Link href="/team" className="card p-5 flex items-center justify-between gap-3 hover:shadow-lift transition anim-rise">
@@ -114,13 +117,6 @@ function nextAction(user: CurrentUser, phase: Phase, hasIdea: boolean): { href: 
   }
 }
 
-const TIMELINE = [
-  { emoji: "💡", title: "اتاق ایده", desc: "۲۴ ساعت برای ثبت ایده و درخواست سرمایه." },
-  { emoji: "💰", title: "دور سرمایه‌گذاری", desc: "۲۴ ساعت برای سرمایه‌گذاری روی ایده‌های تیم‌های دیگر." },
-  { emoji: "🛠️", title: "ساخت", desc: "۴۸ ساعت برای ساخت محصول، تیزر و صفحهٔ فروش." },
-  { emoji: "🔨", title: "روز بازار و حراج زنده", desc: "بفروش، قلب بگیر و نسخهٔ ویژه‌ات را زنده حراج کن." },
-];
-
 const SCORE_ITEMS: { key: keyof typeof SCORE_WEIGHTS; label: string }[] = [
   { key: "sales", label: "فروش خالص" },
   { key: "quality", label: "کیفیت محصول" },
@@ -157,7 +153,7 @@ const FAQ = [
   },
 ];
 
-function LoggedOutLanding({ phase }: { phase: Phase }) {
+function LoggedOutLanding({ phase, endsAt }: { phase: Phase; endsAt: string | null }) {
   return (
     <>
       <section className="bg-hero bg-dots relative overflow-hidden">
@@ -171,9 +167,16 @@ function LoggedOutLanding({ phase }: { phase: Phase }) {
               <p className="mt-4 text-lg text-brand-slate max-w-xl">
                 یک بازار استارتاپی چهارروزه: ایده بده، سرمایه جذب کن، در ۴۸ ساعت بساز، در روز بازار بفروش و در حراج زنده برنده شو.
               </p>
+              {phase !== "CLOSED" && (
+                <div className="mt-6 flex items-center gap-3">
+                  <span className="text-xs text-brand-slate">زمان باقی‌مانده تا پایان این فاز</span>
+                  <PhaseCountdown endsAt={endsAt} />
+                </div>
+              )}
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link href="/register" className="btn-primary">ثبت‌نام</Link>
                 <Link href="/login" className="btn-ghost">ورود</Link>
+                <Link href="/guide" className="btn-ghost">📖 راهنمای کامل بازی</Link>
               </div>
             </div>
             <HeroIllustration />
@@ -183,16 +186,7 @@ function LoggedOutLanding({ phase }: { phase: Phase }) {
 
       <Container className="py-16 space-y-6">
         <h2 className="text-2xl font-black text-brand-navy text-center">چهار روز، چهار مرحله</h2>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger">
-          {TIMELINE.map((step, i) => (
-            <div key={step.title} className="card p-5 text-center">
-              <div className="text-3xl mb-2">{step.emoji}</div>
-              <div className="text-xs font-bold text-brand-cyan-dark mb-1">مرحلهٔ {fa(i + 1)}</div>
-              <div className="font-black text-brand-navy">{step.title}</div>
-              <p className="mt-1 text-xs text-brand-slate">{step.desc}</p>
-            </div>
-          ))}
-        </div>
+        <PhaseTimeline phase={phase} endsAt={endsAt} />
       </Container>
 
       <Container className="py-16 space-y-6">

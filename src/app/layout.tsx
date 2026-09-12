@@ -4,6 +4,7 @@ import "./globals.css";
 import { getCurrentUser } from "@/lib/auth";
 import { getPhase } from "@/lib/phase";
 import { AppShell } from "@/components/AppShell";
+import { AnnouncementBar } from "@/components/AnnouncementBar";
 
 // فونت به‌صورت self-hosted (سرور به Google Fonts دسترسی ندارد؛ فونت متغیر همهٔ وزن‌ها را پوشش می‌دهد)
 const vazir = localFont({
@@ -27,6 +28,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="fa" dir="rtl" className={vazir.variable}>
       <body className="min-h-screen bg-white text-brand-navy">
+        <AnnouncementBar />
         <AppShell
           user={user ? { id: user.id, nickname: user.nickname, isAdmin: user.isAdmin, seedWallet: user.seedWallet, buyWallet: user.buyWallet, teamName: user.team?.name ?? null, avatarSeed: user.avatarSeed } : null}
           phase={phaseInfo.phase}

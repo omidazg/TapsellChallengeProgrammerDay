@@ -15,7 +15,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type Stats = { coffee: number; bugs: number; sleep: number; confidence: number };
 
-export function RegisterWizard() {
+export function RegisterWizard({ nextUrl }: { nextUrl?: string | null }) {
   const [step, setStep] = useState(0);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -85,6 +85,7 @@ export function RegisterWizard() {
         bugs: stats.bugs,
         sleep: stats.sleep,
         confidence: stats.confidence,
+        next: nextUrl,
       });
       if (res?.error) {
         setError(res.error);
@@ -98,7 +99,7 @@ export function RegisterWizard() {
     <div className="mx-auto max-w-3xl">
       <ol className="mb-8 flex items-center justify-between stagger">
         {STEPS.map((label, i) => (
-          <li key={label} className="flex flex-1 items-center gap-2">
+          <li key={label} aria-current={i === step ? "step" : undefined} className="flex flex-1 items-center gap-1.5 sm:gap-2">
             <span
               className={`flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-black ${
                 i === step ? "bg-brand-red text-white" : i < step ? "bg-brand-cyan text-white" : "bg-brand-ice text-brand-slate"
@@ -106,7 +107,7 @@ export function RegisterWizard() {
             >
               {fa(i + 1)}
             </span>
-            <span className={`hidden sm:inline text-xs font-bold ${i === step ? "text-brand-navy" : "text-brand-slate"}`}>{label}</span>
+            <span className={`inline text-[10px] sm:text-xs font-bold truncate ${i === step ? "text-brand-navy" : "text-brand-slate"}`}>{label}</span>
             {i < STEPS.length - 1 && <span className="mx-1 h-px flex-1 bg-brand-mist" />}
           </li>
         ))}
@@ -124,7 +125,7 @@ export function RegisterWizard() {
             <h2 className="text-xl font-black text-brand-navy">اطلاعات حساب</h2>
             <div>
               <label className="label" htmlFor="email">ایمیل</label>
-              <input id="email" type="email" autoComplete="email" maxLength={120} className="input" dir="ltr" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+              <input id="email" type="email" autoComplete="email" maxLength={120} className="input" dir="ltr" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ایمیل سازمانی‌ات" />
             </div>
             <div>
               <label className="label" htmlFor="password">رمز عبور</label>
@@ -268,7 +269,7 @@ export function RegisterWizard() {
       </div>
       <p className="mt-6 text-center text-sm text-brand-slate">
         قبلاً ثبت‌نام کرده‌ای؟{" "}
-        <Link href="/login" className="font-bold text-brand-cyan-dark">
+        <Link href={nextUrl ? `/login?next=${encodeURIComponent(nextUrl)}` : "/login"} className="font-bold text-brand-cyan-dark">
           وارد شو
         </Link>
       </p>
