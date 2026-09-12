@@ -42,23 +42,41 @@ body {
 /* اعداد فارسی در همه‌جا */
 .fa-num { font-variant-numeric: tabular-nums; }
 
-/* دکمه‌ها به سبک تپسل */
-@utility btn { @apply inline-flex items-center justify-center gap-2 rounded-pill px-6 py-2.5 font-bold transition-all duration-200 select-none disabled:opacity-50 disabled:pointer-events-none; }
-.btn-primary { @apply btn bg-brand-red text-white hover:bg-brand-red-dark hover:shadow-lift active:scale-[0.98]; }
-.btn-cyan { @apply btn bg-brand-cyan text-white hover:bg-brand-cyan-dark hover:shadow-lift active:scale-[0.98]; }
-.btn-ghost { @apply btn bg-transparent text-brand-navy border border-brand-mist hover:bg-brand-ice; }
-.btn-navy { @apply btn bg-brand-navy text-white hover:bg-[#013b5c] hover:shadow-lift; }
+/* دکمه‌ها به سبک تپسل
+   نکته: کلاس‌های سفارشی داخل @layer components هستند تا utilityهای Tailwind
+   (مثل lg:hidden یا !px-3) بتوانند آن‌ها را override کنند. */
+@utility btn { @apply inline-flex items-center justify-center gap-2 rounded-pill px-6 py-2.5 font-bold transition-all duration-200 select-none disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap; }
+@utility chip { @apply inline-flex items-center gap-1 rounded-pill px-3 py-1 text-xs font-bold whitespace-nowrap; }
 
-.card { @apply bg-white rounded-3xl border border-brand-mist shadow-card; }
-@utility chip { @apply inline-flex items-center gap-1 rounded-pill px-3 py-1 text-xs font-bold; }
-.chip-red { @apply chip bg-red-50 text-brand-red; }
-.chip-cyan { @apply chip bg-brand-mist text-brand-cyan-dark; }
-.chip-navy { @apply chip bg-brand-sky text-brand-navy; }
-.chip-gold { @apply chip bg-amber-50 text-amber-700; }
-.chip-ok { @apply chip bg-emerald-50 text-emerald-700; }
+@layer components {
+  .btn-primary { @apply btn bg-brand-red text-white hover:bg-brand-red-dark hover:shadow-lift active:scale-[0.98]; }
+  .btn-cyan { @apply btn bg-brand-cyan text-white hover:bg-brand-cyan-dark hover:shadow-lift active:scale-[0.98]; }
+  .btn-ghost { @apply btn bg-transparent text-brand-navy border border-brand-mist hover:bg-brand-ice; }
+  .btn-navy { @apply btn bg-brand-navy text-white hover:bg-[#013b5c] hover:shadow-lift; }
 
-.input { @apply w-full rounded-2xl border border-brand-mist bg-white px-4 py-3 text-brand-navy placeholder:text-brand-slate/70 focus:outline-none focus:ring-2 focus:ring-brand-cyan/40 focus:border-brand-cyan transition; }
-.label { @apply block text-sm font-bold text-brand-navy mb-1.5; }
+  .card { @apply bg-white rounded-3xl border border-brand-mist shadow-card; }
+  .chip-red { @apply chip bg-red-50 text-brand-red; }
+  .chip-cyan { @apply chip bg-brand-mist text-brand-cyan-dark; }
+  .chip-navy { @apply chip bg-brand-sky text-brand-navy; }
+  .chip-gold { @apply chip bg-amber-50 text-amber-700; }
+  .chip-ok { @apply chip bg-emerald-50 text-emerald-700; }
+
+  .input { @apply w-full rounded-2xl border border-brand-mist bg-white px-4 py-3 text-base text-brand-navy placeholder:text-brand-slate/70 focus:outline-none focus:ring-2 focus:ring-brand-cyan/40 focus:border-brand-cyan transition; }
+  .label { @apply block text-sm font-bold text-brand-navy mb-1.5; }
+
+  /* اسکرول افقی بدون نوار اسکرول (برای منوها و تب‌ها در موبایل) */
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+}
+
+/* حداقل ارتفاع لمسی ۴۴px برای دکمه‌ها در موبایل */
+@media (pointer: coarse) {
+  .btn-primary, .btn-cyan, .btn-ghost, .btn-navy { min-height: 44px; }
+}
+
+/* جلوگیری از اسکرول افقی صفحه در موبایل */
+html, body { overflow-x: hidden; max-width: 100%; }
+img, video { max-width: 100%; height: auto; }
 
 /* انیمیشن‌ها */
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }

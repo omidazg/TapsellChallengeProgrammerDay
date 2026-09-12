@@ -30,7 +30,7 @@ export function TeamPanel({
         <div className="card flex flex-wrap items-center gap-4 p-6 anim-rise">
           <Avatar seed={team.logoSeed || team.slug} size={72} />
           <div className="flex-1 min-w-[200px]">
-            <h2 className="text-xl font-black text-brand-navy">{team.name}</h2>
+            <h2 className="text-xl sm:text-2xl font-black text-brand-navy break-words">{team.name}</h2>
             <div className="mt-1 flex flex-wrap gap-1.5">
               {coverage.map((c) => (
                 <span key={c.role} className={c.present ? "chip-ok" : "chip-red"} title={c.present ? "پوشش دارد" : "خالی است"}>
@@ -51,7 +51,7 @@ export function TeamPanel({
               return (
                 <div key={m.id} className={`card p-4 ${m.id === currentUserId ? "ring-2 ring-brand-cyan" : ""}`}>
                   <Avatar seed={m.avatarSeed || m.id} size={56} />
-                  <div className="mt-2 font-black text-brand-navy">{m.nickname}</div>
+                  <div className="mt-2 font-black text-brand-navy break-words">{m.nickname}</div>
                   <div className="mt-1 flex flex-wrap gap-1 text-xs">
                     <span className="chip-red">{ROLES[role]?.emoji} {ROLES[role]?.label}</span>
                     <span className="chip-cyan">{POWERS[power]?.emoji} {POWERS[power]?.label}</span>
@@ -144,7 +144,7 @@ function InviteForm({ full, pendingInvites }: { full: boolean; pendingInvites: T
       {full ? (
         <Alert kind="info">تیم پر است؛ ظرفیت هر تیم سه نفر است.</Alert>
       ) : (
-        <form onSubmit={submit} className="flex flex-wrap gap-3">
+        <form onSubmit={submit} className="flex flex-col sm:flex-row flex-wrap gap-3">
           {error && (
             <div className="w-full">
               <Alert kind="error">{error}</Alert>
@@ -159,12 +159,12 @@ function InviteForm({ full, pendingInvites }: { full: boolean; pendingInvites: T
             type="email"
             dir="ltr"
             required
-            className="input flex-1 min-w-[220px]"
+            className="input flex-1 min-w-0 sm:min-w-[220px]"
             placeholder="email@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
-          <button type="submit" disabled={pending} className="btn-primary">
+          <button type="submit" disabled={pending} className="btn-primary w-full sm:w-auto">
             {pending ? "در حال ارسال…" : "دعوت کن"}
           </button>
         </form>
@@ -172,9 +172,9 @@ function InviteForm({ full, pendingInvites }: { full: boolean; pendingInvites: T
       {pendingInvites.length > 0 && (
         <div className="mt-4 space-y-1.5">
           {pendingInvites.map((inv) => (
-            <div key={inv.id} className="flex items-center justify-between rounded-xl bg-brand-ice px-3 py-2 text-xs">
-              <span dir="ltr" className="text-brand-navy">{inv.email}</span>
-              <span className="text-brand-slate">{jdatetime(inv.createdAt)}</span>
+            <div key={inv.id} className="flex flex-wrap items-center justify-between gap-1 rounded-xl bg-brand-ice px-3 py-2 text-xs">
+              <span dir="ltr" className="min-w-0 break-all text-brand-navy">{inv.email}</span>
+              <span className="text-brand-slate shrink-0">{jdatetime(inv.createdAt)}</span>
             </div>
           ))}
         </div>

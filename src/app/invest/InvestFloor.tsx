@@ -61,8 +61,8 @@ export function InvestFloor({
                     <Avatar seed={idea.teamLogoSeed || idea.teamId} size={24} />
                     <span className="text-xs font-bold text-brand-slate truncate">{idea.teamName}</span>
                   </div>
-                  <h3 className="font-black text-brand-navy leading-6">{idea.title}</h3>
-                  <p className="text-sm text-brand-slate line-clamp-2 flex-1">{idea.oneLiner}</p>
+                  <h3 className="font-black text-brand-navy leading-6 break-words">{idea.title}</h3>
+                  <p className="text-sm text-brand-slate line-clamp-2 flex-1 break-words">{idea.oneLiner}</p>
 
                   {avg !== null && (
                     <div className="flex items-center gap-2">

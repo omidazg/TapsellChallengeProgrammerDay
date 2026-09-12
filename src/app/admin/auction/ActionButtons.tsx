@@ -16,7 +16,7 @@ function ActionButton({ label, action, tone = "ghost" }: { label: string; action
   const cls = tone === "primary" ? "btn-primary" : tone === "cyan" ? "btn-cyan" : "btn-ghost";
   return (
     <form action={formAction} className="space-y-1">
-      <button type="submit" disabled={pending} className={cls}>
+      <button type="submit" disabled={pending} className={`${cls} w-full sm:w-auto`}>
         {pending ? "در حال اجرا…" : label}
       </button>
       {state.error && <Alert kind="error">{state.error}</Alert>}

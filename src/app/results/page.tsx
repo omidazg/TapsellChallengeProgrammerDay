@@ -100,7 +100,7 @@ export default async function ResultsPage() {
                   <ScoreRow label="فروش" value={myTeam.pts.sales} max={SCORE_WEIGHTS.sales} />
                   <ScoreRow label="کیفیت" value={myTeam.pts.quality} max={SCORE_WEIGHTS.quality} />
                   <ScoreRow label="جذب سرمایه" value={myTeam.pts.capital} max={SCORE_WEIGHTS.capital} />
-                  <ScoreRow label="ROI سرمایه‌گذار" value={myTeam.pts.roi} max={SCORE_WEIGHTS.roi} />
+                  <ScoreRow label="بازده سرمایه‌گذار" value={myTeam.pts.roi} max={SCORE_WEIGHTS.roi} />
                   <ScoreRow label="تیزر" value={myTeam.pts.teaser} max={SCORE_WEIGHTS.teaser} />
                   <ScoreRow label="جامعه (خریداران/قلب)" value={myTeam.pts.community} max={SCORE_WEIGHTS.community} />
                   <tr>

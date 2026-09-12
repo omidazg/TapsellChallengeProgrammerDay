@@ -12,7 +12,7 @@ export type SettingField = { key: string; label: string; value: string; kind: "n
 function SubmitButton() {
   const status = useFormStatus();
   return (
-    <button type="submit" disabled={status.pending} className="btn-primary">
+    <button type="submit" disabled={status.pending} className="btn-primary w-full sm:w-auto">
       {status.pending ? "در حال ذخیره…" : "ذخیرهٔ تنظیمات"}
     </button>
   );
@@ -22,7 +22,7 @@ export function SettingsForm({ fields }: { fields: SettingField[] }) {
   const [state, formAction] = useActionState<AdminActionState, FormData>(updateSettingsAction, {});
 
   return (
-    <form action={formAction} className="card p-6 space-y-4 anim-rise">
+    <form action={formAction} className="card p-4 sm:p-6 space-y-4 anim-rise">
       <h2 className="text-lg font-black text-brand-navy">تنظیمات بازی</h2>
       {state.error && <Alert kind="error">{state.error}</Alert>}
       {state.ok && <Alert kind="ok">تنظیمات ذخیره شد.</Alert>}

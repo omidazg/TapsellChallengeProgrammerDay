@@ -52,17 +52,37 @@ export function InvestPanel({
 
       <div>
         <label className="label" htmlFor="amount">مبلغ سرمایه‌گذاری</label>
-        <input
-          id="amount"
-          name="amount"
-          type="range"
-          min={1}
-          max={maxAllowed}
-          step={1}
-          value={value}
-          onChange={(e) => setAmount(Number(e.target.value))}
-          className="w-full accent-brand-red"
-        />
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            aria-label="کم کردن مبلغ"
+            disabled={value <= 1}
+            onClick={() => setAmount(Math.max(1, value - 1))}
+            className="btn-ghost !rounded-full !px-0 size-11 shrink-0 text-lg"
+          >
+            −
+          </button>
+          <input
+            id="amount"
+            name="amount"
+            type="range"
+            min={1}
+            max={maxAllowed}
+            step={1}
+            value={value}
+            onChange={(e) => setAmount(Number(e.target.value))}
+            className="w-full accent-brand-red"
+          />
+          <button
+            type="button"
+            aria-label="زیاد کردن مبلغ"
+            disabled={value >= maxAllowed}
+            onClick={() => setAmount(Math.min(maxAllowed, value + 1))}
+            className="btn-ghost !rounded-full !px-0 size-11 shrink-0 text-lg"
+          >
+            +
+          </button>
+        </div>
         <div className="flex justify-between text-xs text-brand-slate mt-1">
           <span>کمینه {coins(1)}</span>
           <span className="font-black text-brand-navy fa-num">{coins(value)}</span>

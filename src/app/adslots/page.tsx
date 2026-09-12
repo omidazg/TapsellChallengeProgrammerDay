@@ -1,4 +1,4 @@
-export const metadata = { title: "حراج جایگاه تبلیغاتی · میدان بنیان‌گذاران تپسل" };
+export const metadata = { title: "حراج جایگاه تبلیغاتی" };
 import { requireUser } from "@/lib/auth";
 import { getPhase, phaseAtLeast } from "@/lib/phase";
 import { Container, PageHeader, Locked, Alert } from "@/components/ui";
@@ -39,9 +39,9 @@ export default async function AdSlotsPage() {
         desc="برای هر ساعت از روز بازار، سه جایگاه تبلیغاتی با حراج قیمت‌گذاری پنهانِ نوع دوم واگذار می‌شود."
       />
       <div className="grid gap-6">
-        <div className="card p-5 bg-brand-ice">
+        <div className="card p-4 sm:p-6 bg-brand-ice">
           <h3 className="font-black text-brand-navy mb-2">قاعدهٔ حراج قیمت دوم چیست؟</h3>
-          <p className="text-sm text-brand-slate leading-7">
+          <p className="text-sm text-brand-slate leading-7 break-words">
             هر تیم فقط یک پیشنهاد مهروموم‌شده برای هر جایگاه ثبت می‌کند (تا لحظهٔ بسته‌شدن قابل ویرایش است). تیمی که بالاترین پیشنهاد را داده برندهٔ
             جایگاه می‌شود، اما فقط به‌اندازهٔ دومین بالاترین پیشنهاد پرداخت می‌کند — نه مبلغ پیشنهادی خودش. اگر فقط یک تیم پیشنهاد داده باشد، فقط
             یک سکهٔ نمادین پرداخت می‌کند. مجموع پیشنهادهای باز یک تیم هرگز از خزانهٔ تیم بیشتر نمی‌شود.
@@ -56,7 +56,7 @@ export default async function AdSlotsPage() {
 
         {!readOnly && <HypeClaim power={user.power} powerUsed={user.powerUsed} />}
 
-        <div className="card p-5">
+        <div className="card p-4 sm:p-6">
           <SlotGrid cells={cells} myTeamId={readOnly ? null : user.teamId ?? null} treasury={user.team?.treasury ?? 0} />
         </div>
       </div>

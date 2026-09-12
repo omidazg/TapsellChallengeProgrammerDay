@@ -97,15 +97,15 @@ export default async function IdeaPage() {
         <div className="card p-6 space-y-4 anim-rise">
           <div>
             <div className="text-xs font-bold text-brand-slate mb-1">مسئله</div>
-            <p className="text-brand-navy leading-7">{idea.problem}</p>
+            <p className="text-brand-navy leading-7 break-words">{idea.problem}</p>
           </div>
           <div>
             <div className="text-xs font-bold text-brand-slate mb-1">مخاطب</div>
-            <p className="text-brand-navy leading-7">{idea.audience}</p>
+            <p className="text-brand-navy leading-7 break-words">{idea.audience}</p>
           </div>
           <div>
             <div className="text-xs font-bold text-brand-slate mb-1">برنامهٔ ساخت ۴۸ ساعته</div>
-            <p className="text-brand-navy leading-7">{idea.buildPlan}</p>
+            <p className="text-brand-navy leading-7 break-words">{idea.buildPlan}</p>
           </div>
           <div className="flex flex-wrap gap-3 pt-2">
             <span className="chip-navy">سقف سرمایه: {coins(idea.fundingCap)}</span>

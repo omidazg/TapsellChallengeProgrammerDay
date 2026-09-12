@@ -15,16 +15,19 @@ export default async function Home() {
     return <LoggedOutLanding phase={phase} />;
   }
 
-  const idea = user.teamId ? await prisma.idea.findUnique({ where: { teamId: user.teamId }, select: { submittedAt: true } }) : null;
-  const cta = nextAction(user, phase, !!idea?.submittedAt);
+  const [idea, teamSize] = await Promise.all([
+    user.teamId ? prisma.idea.findUnique({ where: { teamId: user.teamId }, select: { submittedAt: true } }) : null,
+    user.teamId ? prisma.user.count({ where: { teamId: user.teamId } }) : 0,
+  ]);
+  const cta = nextAction({ ...user, teamSize }, phase, !!idea?.submittedAt);
 
   return (
       <Container className="pt-10 space-y-8">
         <div className="flex flex-wrap items-center gap-4 anim-rise">
-          <Avatar seed={user.avatarSeed || user.id} size={56} />
-          <div>
+          <Avatar seed={user.avatarSeed || user.id} size={56} className="shrink-0" />
+          <div className="min-w-0">
             <div className="text-sm text-brand-slate">سلام،</div>
-            <h1 className="text-2xl md:text-3xl font-black text-brand-navy">{user.nickname} 👋</h1>
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-brand-navy break-words">{user.nickname} 👋</h1>
           </div>
         </div>
 
@@ -47,7 +50,7 @@ export default async function Home() {
               <div className="text-xl font-black">{cta.label}</div>
             </div>
             <Link href={cta.href} className="btn-primary mt-4 self-start">
-              برو {cta.label} ←
+              {cta.label} ←
             </Link>
           </div>
         </div>
@@ -59,27 +62,27 @@ export default async function Home() {
         </div>
 
         {user.team ? (
-          <Link href="/team" className="card p-5 flex items-center justify-between hover:shadow-lift transition anim-rise">
-            <div className="flex items-center gap-3">
-              <Avatar seed={user.team.logoSeed || user.team.id} size={40} />
-              <div>
-                <div className="font-black text-brand-navy">{user.team.name}</div>
+          <Link href="/team" className="card p-5 flex items-center justify-between gap-3 hover:shadow-lift transition anim-rise">
+            <div className="flex items-center gap-3 min-w-0">
+              <Avatar seed={user.team.logoSeed || user.team.id} size={40} className="shrink-0" />
+              <div className="min-w-0">
+                <div className="font-black text-brand-navy truncate">{user.team.name}</div>
                 <div className="text-xs text-brand-slate">اتاق تیم را ببین</div>
               </div>
             </div>
-            <span className="text-brand-cyan-dark font-bold">←</span>
+            <span className="text-brand-cyan-dark font-bold shrink-0">←</span>
           </Link>
         ) : (
-          <Link href="/team" className="card p-5 flex items-center justify-between hover:shadow-lift transition anim-rise bg-brand-ice">
+          <Link href="/team" className="card p-5 flex items-center justify-between gap-3 hover:shadow-lift transition anim-rise bg-brand-ice">
             <div className="font-black text-brand-navy">هنوز عضو هیچ تیمی نیستی</div>
-            <span className="text-brand-cyan-dark font-bold">تیم بساز ←</span>
+            <span className="text-brand-cyan-dark font-bold shrink-0 whitespace-nowrap">تیم بساز ←</span>
           </Link>
         )}
       </Container>
   );
 }
 
-type CurrentUser = { teamId: string | null; seedWallet: number; buyWallet: number };
+type CurrentUser = { teamId: string | null; seedWallet: number; buyWallet: number; teamSize?: number };
 
 function nextAction(user: CurrentUser, phase: Phase, hasIdea: boolean): { href: string; label: string } {
   if (phase === "CLOSED") return { href: "/results", label: "نتایج را ببین" };
@@ -87,7 +90,9 @@ function nextAction(user: CurrentUser, phase: Phase, hasIdea: boolean): { href: 
 
   switch (phase) {
     case "REGISTRATION":
-      return { href: "/profile", label: "شخصیتت را کامل کن" };
+      return (user.teamSize ?? 3) < 3
+        ? { href: "/team", label: "هم‌تیمی دعوت کن؛ تیمت هنوز کامل نیست" }
+        : { href: "/profile", label: "شخصیتت را کامل کن" };
     case "IDEATION":
       return hasIdea
         ? { href: "/idea", label: "ایده‌ات را بازبینی کن" }
@@ -97,7 +102,7 @@ function nextAction(user: CurrentUser, phase: Phase, hasIdea: boolean): { href: 
         ? { href: "/invest", label: "روی یک ایده سرمایه‌گذاری کن" }
         : { href: "/leaderboard", label: "کیف بذرت تمام شد؛ جدول را ببین" };
     case "BUILD":
-      return { href: "/build", label: "برو به مرکز ساخت" };
+      return { href: "/build", label: "محصولت را در مرکز ساخت کامل کن" };
     case "MARKET":
       return user.buyWallet > 0
         ? { href: "/market", label: "از بازار خرید کن" }

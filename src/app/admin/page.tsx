@@ -34,7 +34,7 @@ export default async function AdminPage() {
     <>
       <PageHeader eyebrow="پنل برگزارکننده" title="داشبورد برگزارکننده" desc="کنترل فاز بازی، تنظیمات و نظارت بر میدان." />
       <Container className="space-y-8">
-        <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4 stagger">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 stagger">
           <Stat label="کاربران" value={fa(counts.users)} tone="navy" />
           <Stat label="تیم‌ها" value={fa(counts.teams)} tone="navy" />
           <Stat label="ایده‌های ثبت‌شده" value={fa(counts.ideasSubmitted)} tone="cyan" />
@@ -42,7 +42,7 @@ export default async function AdminPage() {
           <Stat label="حجم خرید بازار" value={coins(counts.purchasesVolume)} hint={`${fa(counts.purchasesCount)} تراکنش`} tone="red" />
         </div>
 
-        <div className="grid md:grid-cols-2 gap-4 stagger">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 stagger">
           {SUBPAGES.map((s) => (
             <Link key={s.href} href={s.href} className="card p-5 flex items-center gap-3 hover:shadow-lift transition">
               <span className="text-2xl">{s.emoji}</span>

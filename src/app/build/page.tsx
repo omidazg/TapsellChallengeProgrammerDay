@@ -58,14 +58,17 @@ export default async function BuildPage() {
         desc={editable ? "محصولت را کامل کن و پیش از پایان فاز ساخت، ثبت نهایی کن." : "مرکز ساخت قفل شده است؛ فقط می‌توانی پیش‌نمایش را ببینی."}
       />
       <Container className="grid lg:grid-cols-[320px_1fr] gap-6 items-start">
-        <ChecklistCard
-          checklist={checklist}
-          submitted={!!product?.submittedAt}
-          slug={user.team.slug}
-          editable={editable}
-          aiQuality={product?.aiQuality ?? null}
-          aiNotes={product?.aiNotes ?? null}
-        />
+        <div className="order-2 lg:order-1">
+          <ChecklistCard
+            checklist={checklist}
+            submitted={!!product?.submittedAt}
+            slug={user.team.slug}
+            editable={editable}
+            aiQuality={product?.aiQuality ?? null}
+            aiNotes={product?.aiNotes ?? null}
+          />
+        </div>
+        <div className="order-1 lg:order-2">
         <BuildForm
           editable={editable}
           submitted={!!product?.submittedAt}
@@ -86,6 +89,7 @@ export default async function BuildPage() {
               : null
           }
         />
+        </div>
       </Container>
     </>
   );

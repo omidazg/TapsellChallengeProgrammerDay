@@ -25,25 +25,25 @@ export function TeamRow({ team }: { team: TeamRowData }) {
   const [deleteState, deleteAction] = useActionState<TeamsActionState, FormData>(deleteTeamAction, {});
 
   return (
-    <div className="card p-5 space-y-3 anim-rise">
+    <div className="card p-4 sm:p-6 space-y-3 anim-rise">
       <div className="flex flex-wrap items-center gap-3 justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 min-w-0">
           <Avatar seed={team.logoSeed || team.id} size={36} />
           {renaming ? (
-            <form action={renameAction} className="flex items-center gap-2">
+            <form action={renameAction} className="flex flex-wrap items-center gap-2">
               <input type="hidden" name="teamId" value={team.id} />
-              <input name="name" defaultValue={team.name} className="input !py-1.5 !px-3 w-48" />
+              <input name="name" defaultValue={team.name} className="input !py-1.5 !px-3 w-full sm:w-48" />
               <button type="submit" className="btn-primary !py-1.5 !px-3">ذخیره</button>
               <button type="button" className="btn-ghost !py-1.5 !px-3" onClick={() => setRenaming(false)}>انصراف</button>
             </form>
           ) : (
-            <div>
-              <div className="font-black text-brand-navy">{team.name}</div>
+            <div className="min-w-0">
+              <div className="font-black text-brand-navy break-words">{team.name}</div>
               <div className="text-xs text-brand-slate">خزانه: {coins(team.treasury)}</div>
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className={`chip ${team.ideaSubmitted ? "chip-ok" : "chip-navy"}`}>{team.ideaSubmitted ? "ایده ثبت شد" : "بدون ایده"}</span>
           <span className={`chip ${team.productSubmitted ? "chip-ok" : "chip-navy"}`}>{team.productSubmitted ? "محصول ثبت شد" : "بدون محصول"}</span>
           {!renaming && (

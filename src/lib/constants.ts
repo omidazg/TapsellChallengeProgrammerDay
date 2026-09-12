@@ -8,7 +8,7 @@ export const ROLES = {
 export type RoleKey = keyof typeof ROLES;
 
 export const POWERS = {
-  HYPE: { label: "هیاهو", desc: "نیم ساعت جایگاه «محصول ویژه» رایگان در روز بازار.", emoji: "📣" },
+  HYPE: { label: "هیاهو", desc: "یک ساعت جایگاه «محصول ویژه» رایگان در روز بازار.", emoji: "📣" },
   BARGAIN: { label: "چانه‌زنی", desc: "ده درصد تخفیف روی یک خرید.", emoji: "🏷️" },
   ANGEL: { label: "فرشته", desc: "۲۰ سکهٔ بذر اضافه، به شرط سرمایه‌گذاری روی کم‌سرمایه‌ترین ایده.", emoji: "👼" },
   SECOND_WIND: { label: "نفس دوم", desc: "دو دقیقه تمدید یک حراج زنده.", emoji: "⏱️" },

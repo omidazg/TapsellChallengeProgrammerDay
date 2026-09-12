@@ -22,14 +22,14 @@ export function UserRow({ user, isMe }: { user: UserRowData; isMe: boolean }) {
   const [adjustState, adjustAction] = useActionState<UsersActionState, FormData>(adjustWalletAction, {});
 
   return (
-    <div className="card p-4 flex flex-wrap items-center gap-4 anim-rise">
+    <div className="card p-4 sm:p-6 flex flex-wrap items-center gap-4 anim-rise">
       <Avatar seed={user.avatarSeed || user.id} size={36} />
-      <div className="min-w-[160px]">
-        <div className="font-bold text-brand-navy">{user.nickname}</div>
-        <div className="text-xs text-brand-slate">{user.email}</div>
-        <div className="text-xs text-brand-slate">{user.teamName ?? "بدون تیم"}</div>
+      <div className="min-w-[160px] max-w-full break-words">
+        <div className="font-bold text-brand-navy break-words">{user.nickname}</div>
+        <div className="text-xs text-brand-slate break-words">{user.email}</div>
+        <div className="text-xs text-brand-slate break-words">{user.teamName ?? "بدون تیم"}</div>
       </div>
-      <div className="text-xs text-brand-navy flex gap-3">
+      <div className="text-xs text-brand-navy flex flex-wrap gap-3">
         <span>🌱 {coins(user.seedWallet)}</span>
         <span>🛒 {coins(user.buyWallet)}</span>
       </div>
@@ -41,7 +41,7 @@ export function UserRow({ user, isMe }: { user: UserRowData; isMe: boolean }) {
         </button>
       </form>
 
-      <form action={adjustAction} className="flex items-center gap-1.5">
+      <form action={adjustAction} className="flex flex-wrap items-center gap-1.5">
         <input type="hidden" name="userId" value={user.id} />
         <select name="wallet" className="input !py-1 !px-2 w-auto text-xs">
           <option value="SEED">بذر</option>

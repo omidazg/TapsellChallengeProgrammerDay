@@ -12,6 +12,12 @@ import { InvestPanel, AngelButton } from "./InvestPanel";
 import { InvestorList } from "./InvestorList";
 import { DueDiligenceChat } from "./DueDiligenceChat";
 
+export async function generateMetadata({ params }: { params: Promise<{ ideaId: string }> }) {
+  const { ideaId } = await params;
+  const idea = await getIdeaDetail(ideaId, null);
+  return { title: idea?.title ? `${idea.title} · سرمایه‌گذاری` : "سرمایه‌گذاری" };
+}
+
 export default async function IdeaDetailPage({ params }: { params: Promise<{ ideaId: string }> }) {
   const { ideaId } = await params;
   const user = await requireUser();
@@ -59,20 +65,20 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
           <div className="card p-6 space-y-4 anim-rise">
             <div className="flex items-center gap-2">
               <Avatar seed={idea.teamLogoSeed || idea.teamId} size={28} />
-              <span className="font-bold text-brand-navy">{idea.teamName}</span>
+              <span className="font-bold text-brand-navy break-words">{idea.teamName}</span>
               {idea.isOwnTeam && <span className="chip-red">تیم خودت</span>}
             </div>
             <div>
               <div className="text-xs font-bold text-brand-slate mb-1">مسئله</div>
-              <p className="text-brand-navy leading-7">{idea.problem}</p>
+              <p className="text-brand-navy leading-7 break-words">{idea.problem}</p>
             </div>
             <div>
               <div className="text-xs font-bold text-brand-slate mb-1">مخاطب</div>
-              <p className="text-brand-navy leading-7">{idea.audience}</p>
+              <p className="text-brand-navy leading-7 break-words">{idea.audience}</p>
             </div>
             <div>
               <div className="text-xs font-bold text-brand-slate mb-1">برنامهٔ ساخت ۴۸ ساعته</div>
-              <p className="text-brand-navy leading-7">{idea.buildPlan}</p>
+              <p className="text-brand-navy leading-7 break-words">{idea.buildPlan}</p>
             </div>
             <div className="flex flex-wrap gap-3 pt-2">
               <span className="chip-gold">سود سرمایه‌گذار {fa(idea.revenueShare)}٪</span>

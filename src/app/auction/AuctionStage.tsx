@@ -178,15 +178,15 @@ export function AuctionStage({
           <div className="absolute inset-0 bg-gradient-to-t from-brand-navy/80 via-brand-navy/10 to-transparent" />
           <div className="absolute bottom-4 right-4 left-4 text-white">
             <span className="chip-cyan !bg-white/20 !text-white">{state.product.teamName}</span>
-            <h2 className="mt-2 text-2xl sm:text-3xl font-black">{state.product.specialName}</h2>
+            <h2 className="mt-2 text-2xl sm:text-3xl font-black break-words">{state.product.specialName}</h2>
           </div>
         </div>
         <div className="p-5 space-y-4">
           <p className="text-brand-slate text-sm">{state.product.specialDesc}</p>
 
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div
-              className={`fa-num text-4xl sm:text-5xl font-black tabular-nums rounded-2xl px-5 py-3 ${
+              className={`fa-num text-3xl sm:text-5xl font-black tabular-nums rounded-2xl px-4 sm:px-5 py-3 ${
                 urgent ? "text-white bg-brand-red pulse-ring" : "text-brand-navy bg-brand-ice"
               }`}
             >
@@ -233,40 +233,40 @@ export function AuctionStage({
 
           {isLive && !isMyTeam && (
             <div className="space-y-3">
-              <div className="flex flex-wrap gap-2">
+              <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2">
                 {quickAmounts.map((v, i) => (
                   <button
                     key={v}
                     disabled={pending || v > currentUser.buyWallet}
                     onClick={() => submitBid(v)}
-                    className="btn-cyan !px-4 !py-2 disabled:opacity-40"
+                    className="btn-cyan !px-2 sm:!px-4 !py-3 sm:!py-2 text-sm sm:text-base disabled:opacity-40"
                   >
                     {i === 0 ? "حداقل" : `+${fa(QUICK_STEPS[i])}`} ({fa(v)})
                   </button>
                 ))}
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    className="input !w-32"
-                    placeholder={fa(state.nextMin)}
-                    value={amount}
-                    min={state.nextMin}
-                    step={1}
-                    onChange={(e) => setAmount(e.target.value === "" ? "" : Number(e.target.value))}
-                  />
-                  <button
-                    disabled={pending || typed === null || typed < state.nextMin || typed > currentUser.buyWallet}
-                    onClick={() => typed !== null && submitBid(typed)}
-                    className="btn-primary !px-5 !py-2 disabled:opacity-40"
-                  >
-                    ثبت پیشنهاد
-                  </button>
-                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  className="input flex-1 min-w-0 sm:!w-32 sm:flex-none"
+                  placeholder={fa(state.nextMin)}
+                  value={amount}
+                  min={state.nextMin}
+                  step={1}
+                  onChange={(e) => setAmount(e.target.value === "" ? "" : Number(e.target.value))}
+                />
+                <button
+                  disabled={pending || typed === null || typed < state.nextMin || typed > currentUser.buyWallet}
+                  onClick={() => typed !== null && submitBid(typed)}
+                  className="btn-primary !px-5 !py-3 sm:!py-2 shrink-0 disabled:opacity-40"
+                >
+                  ثبت پیشنهاد
+                </button>
               </div>
               <div className="text-xs text-brand-slate">حداقل پیشنهاد بعدی: {coins(state.nextMin)} · موجودی کیف خرید تو: {coins(currentUser.buyWallet)}</div>
 
               {currentUser.power === "SECOND_WIND" && !currentUser.powerUsed && (
-                <button onClick={claimSecondWind} disabled={pending} className="btn-navy !px-4 !py-2">
+                <button onClick={claimSecondWind} disabled={pending} className="btn-navy w-full sm:w-auto !px-4 !py-2">
                   ⏱️ نفس دوم (دو دقیقه تمدید)
                 </button>
               )}

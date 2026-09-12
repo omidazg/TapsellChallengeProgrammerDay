@@ -12,7 +12,7 @@ export type PhaseOption = { value: string; label: string };
 function SubmitButton() {
   const status = useFormStatus();
   return (
-    <button type="submit" disabled={status.pending} className="btn-primary">
+    <button type="submit" disabled={status.pending} className="btn-primary w-full sm:w-auto">
       {status.pending ? "در حال اعمال…" : "اعمال"}
     </button>
   );
@@ -23,7 +23,7 @@ export function PhaseForm({ phase, endsAt, phases }: { phase: string; endsAt: st
   const localEndsAt = endsAt ? toLocalInputValue(new Date(endsAt)) : "";
 
   return (
-    <form action={formAction} className="card p-6 space-y-4 anim-rise">
+    <form action={formAction} className="card p-4 sm:p-6 space-y-4 anim-rise">
       <h2 className="text-lg font-black text-brand-navy">کنترل فاز بازی</h2>
       {state.error && <Alert kind="error">{state.error}</Alert>}
       {state.ok && <Alert kind="ok">فاز به‌روزرسانی شد.</Alert>}

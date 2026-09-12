@@ -42,7 +42,7 @@ export function EditProfileForm({ nickname, stats }: { nickname: string; stats: 
         <NumberField label="خواب" min={0} max={12} value={form.sleep} onChange={(v) => setForm((f) => ({ ...f, sleep: v }))} />
         <NumberField label="اعتمادبه‌نفس" min={0} max={150} value={form.confidence} onChange={(v) => setForm((f) => ({ ...f, confidence: v }))} />
       </div>
-      <button type="submit" disabled={pending} className="btn-primary w-fit">
+      <button type="submit" disabled={pending} className="btn-primary w-full sm:w-auto sm:self-start">
         {pending ? "در حال ذخیره…" : "ذخیرهٔ تغییرات"}
       </button>
     </form>

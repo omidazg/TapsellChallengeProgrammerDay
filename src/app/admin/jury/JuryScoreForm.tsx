@@ -19,13 +19,13 @@ export function JuryScoreForm({ productId, juryQuality, juryTeaser }: { productI
   return (
     <form action={formAction} className="flex flex-wrap items-end gap-3">
       <input type="hidden" name="productId" value={productId} />
-      <div>
+      <div className="w-24">
         <label className="label" htmlFor={`q-${productId}`}>کیفیت (۰..۱۰۰)</label>
-        <input id={`q-${productId}`} name="juryQuality" type="number" min={0} max={100} defaultValue={juryQuality ?? ""} required className="input !py-1.5 !px-3 w-24" />
+        <input id={`q-${productId}`} name="juryQuality" type="number" min={0} max={100} defaultValue={juryQuality ?? ""} required className="input !py-1.5 !px-3 w-full" />
       </div>
-      <div>
+      <div className="w-24">
         <label className="label" htmlFor={`t-${productId}`}>تیزر (۰..۱۰۰)</label>
-        <input id={`t-${productId}`} name="juryTeaser" type="number" min={0} max={100} defaultValue={juryTeaser ?? ""} required className="input !py-1.5 !px-3 w-24" />
+        <input id={`t-${productId}`} name="juryTeaser" type="number" min={0} max={100} defaultValue={juryTeaser ?? ""} required className="input !py-1.5 !px-3 w-full" />
       </div>
       <SubmitButton />
       {state.error && <Alert kind="error">{state.error}</Alert>}

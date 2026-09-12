@@ -1,4 +1,4 @@
-export const metadata = { title: "حراج زنده · میدان بنیان‌گذاران تپسل" };
+export const metadata = { title: "حراج زنده" };
 import { requireUser } from "@/lib/auth";
 import { getPhase, phaseAtLeast } from "@/lib/phase";
 import { Container, PageHeader, Locked, Coin } from "@/components/ui";
@@ -58,15 +58,15 @@ export default async function AuctionPage() {
           />
 
           <div className="grid md:grid-cols-2 gap-6 mt-8">
-            <div className="card p-5">
+            <div className="card p-4 sm:p-6">
               <h3 className="font-black text-brand-navy mb-3">در صف</h3>
               {scheduled.length === 0 ? (
                 <p className="text-sm text-brand-slate">حراجی در صف نیست.</p>
               ) : (
                 <ul className="space-y-2 stagger">
                   {scheduled.map((a) => (
-                    <li key={a.id} className="flex items-center justify-between rounded-xl bg-brand-ice px-3 py-2 text-sm">
-                      <span className="font-bold text-brand-navy">
+                    <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-brand-ice px-3 py-2 text-sm">
+                      <span className="font-bold text-brand-navy break-words">
                         {fa(a.order + 1)}. {a.product.specialName} <span className="text-brand-slate font-medium">· {a.product.teamName}</span>
                       </span>
                       <span className="fa-num font-black">{coins(a.startPrice)}</span>
@@ -76,15 +76,15 @@ export default async function AuctionPage() {
               )}
             </div>
 
-            <div className="card p-5">
+            <div className="card p-4 sm:p-6">
               <h3 className="font-black text-brand-navy mb-3">پایان‌یافته</h3>
               {ended.length === 0 ? (
                 <p className="text-sm text-brand-slate">هنوز حراجی پایان نیافته است.</p>
               ) : (
                 <ul className="space-y-2 stagger">
                   {ended.map((a) => (
-                    <li key={a.id} className="flex items-center justify-between rounded-xl bg-brand-ice px-3 py-2 text-sm">
-                      <span className="font-bold text-brand-navy">
+                    <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-brand-ice px-3 py-2 text-sm">
+                      <span className="font-bold text-brand-navy break-words">
                         {a.product.specialName} <span className="text-brand-slate font-medium">· {a.product.teamName}</span>
                       </span>
                       <span className="text-left">
@@ -111,15 +111,15 @@ export default async function AuctionPage() {
 
 function ResultsOnly({ ended }: { ended: Awaited<ReturnType<typeof listAuctions>> }) {
   return (
-    <div className="card p-5">
+    <div className="card p-4 sm:p-6">
       <h3 className="font-black text-brand-navy mb-3">نتایج حراج زنده</h3>
       {ended.length === 0 ? (
         <p className="text-sm text-brand-slate">حراجی برگزار نشد.</p>
       ) : (
         <ul className="space-y-2 stagger">
           {ended.map((a) => (
-            <li key={a.id} className="flex items-center justify-between rounded-xl bg-brand-ice px-3 py-2 text-sm">
-              <span className="font-bold text-brand-navy">
+            <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-brand-ice px-3 py-2 text-sm">
+              <span className="font-bold text-brand-navy break-words">
                 {a.product.specialName} <span className="text-brand-slate font-medium">· {a.product.teamName}</span>
               </span>
               <span className="text-left">

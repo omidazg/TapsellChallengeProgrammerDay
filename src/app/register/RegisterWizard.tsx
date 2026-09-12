@@ -225,10 +225,10 @@ export function RegisterWizard() {
           <div>
             <h2 className="mb-4 text-xl font-black text-brand-navy">پیش‌نمایش شخصیت</h2>
             <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
-              <Avatar seed={avatarSeed} size={120} />
-              <div className="flex-1">
-                <div className="text-2xl font-black text-brand-navy">{nickname}</div>
-                <div className="mt-1 flex flex-wrap gap-2">
+              <Avatar seed={avatarSeed} size={120} className="shrink-0" />
+              <div className="flex-1 min-w-0 text-center sm:text-right">
+                <div className="text-2xl font-black text-brand-navy break-words">{nickname}</div>
+                <div className="mt-1 flex flex-wrap justify-center sm:justify-start gap-2">
                   <span className="chip-red">{ROLES[role].emoji} {ROLES[role].label}</span>
                   <span className="chip-cyan">{POWERS[power].emoji} {POWERS[power].label}</span>
                   <span className="chip-navy">{department}</span>
@@ -245,22 +245,22 @@ export function RegisterWizard() {
         )}
       </div>
 
-      <div className="mt-6 flex items-center justify-between">
+      <div className="mt-6 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           {step > 0 && (
-            <button type="button" onClick={back} className="btn-ghost">
+            <button type="button" onClick={back} className="btn-ghost w-full sm:w-auto">
               مرحلهٔ قبل
             </button>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-center gap-3">
           {step < STEPS.length - 1 && (
-            <button type="button" onClick={next} className="btn-cyan">
+            <button type="button" onClick={next} className="btn-cyan w-full sm:w-auto">
               مرحلهٔ بعد
             </button>
           )}
           {step === STEPS.length - 1 && (
-            <button type="button" onClick={submit} disabled={pending} className="btn-primary">
+            <button type="button" onClick={submit} disabled={pending} className="btn-primary w-full sm:w-auto">
               {pending ? "در حال ثبت…" : "ثبت‌نام و ورود به میدان"}
             </button>
           )}

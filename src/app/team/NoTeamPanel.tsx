@@ -60,14 +60,14 @@ function InviteCard({ invite, disabled }: { invite: InviteRow; disabled: boolean
 
   return (
     <div className="card p-4 anim-rise">
-      <div className="font-black text-brand-navy">{invite.team.name}</div>
-      <div className="mt-1 text-xs text-brand-slate">دعوت از طرف {invite.inviter.nickname}</div>
+      <div className="font-black text-brand-navy break-words">{invite.team.name}</div>
+      <div className="mt-1 text-xs text-brand-slate break-words">دعوت از طرف {invite.inviter.nickname}</div>
       {error && (
         <div className="mt-2">
           <Alert kind="error">{error}</Alert>
         </div>
       )}
-      <div className="mt-3 flex gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" onClick={accept} disabled={disabled || pending} className="btn-primary !px-4 !py-1.5 text-sm">
           پذیرفتن
         </button>

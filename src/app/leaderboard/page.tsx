@@ -52,54 +52,87 @@ export default async function LeaderboardPage() {
         {ranked.length === 0 ? (
           <Empty title="هنوز تیمی ثبت نشده" />
         ) : (
-          <div className="card overflow-x-auto anim-rise">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-right text-brand-slate border-b border-brand-mist">
-                  {closed && <th className="px-4 py-3 font-bold">رتبه</th>}
-                  <th className="px-4 py-3 font-bold">تیم</th>
-                  <th className="px-4 py-3 font-bold">فروش خالص</th>
-                  <th className="px-4 py-3 font-bold">سرمایهٔ خارجی</th>
-                  <th className="px-4 py-3 font-bold">قلب‌ها</th>
-                  {closed && (
-                    <>
-                      <th className="px-4 py-3 font-bold">ROI</th>
-                      <th className="px-4 py-3 font-bold">کیفیت</th>
-                      <th className="px-4 py-3 font-bold">جریمه</th>
-                      <th className="px-4 py-3 font-bold">امتیاز کل</th>
-                    </>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {ranked.map((t) => {
-                  const team = teamMap.get(t.teamId);
-                  return (
-                    <tr key={t.teamId} className="border-b border-brand-mist last:border-0">
-                      {closed && <td className="px-4 py-3 font-black fa-num text-brand-navy">{fa(t.rank ?? 0)}</td>}
-                      <td className="px-4 py-3">
-                        <Link href={team ? `/market/${team.slug}` : "#"} className="flex items-center gap-2 font-bold text-brand-navy hover:text-brand-cyan-dark">
-                          <Avatar seed={team?.logoSeed || t.teamId} size={28} />
-                          {team?.name ?? "—"}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 fa-num">{fa(t.netSales)}</td>
-                      <td className="px-4 py-3 fa-num">{fa(t.externalCapital)}</td>
-                      <td className="px-4 py-3 fa-num">{fa(t.hearts)}</td>
+          <>
+            {/* نمایش کارتی برای موبایل؛ جدول کامل فقط در md+ */}
+            <div className="md:hidden space-y-3 stagger">
+              {ranked.map((t) => {
+                const team = teamMap.get(t.teamId);
+                return (
+                  <div key={t.teamId} className="card p-4 space-y-2 anim-rise">
+                    <div className="flex items-center justify-between gap-2">
+                      <Link href={team ? `/market/${team.slug}` : "#"} className="flex items-center gap-2 font-bold text-brand-navy hover:text-brand-cyan-dark min-w-0">
+                        <Avatar seed={team?.logoSeed || t.teamId} size={28} />
+                        <span className="truncate">{team?.name ?? "—"}</span>
+                      </Link>
+                      {closed && <span className="chip-navy shrink-0 fa-num">رتبه {fa(t.rank ?? 0)}</span>}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-brand-slate">
+                      <div>فروش خالص: <span className="fa-num font-bold text-brand-navy">{fa(t.netSales)}</span></div>
+                      <div>سرمایهٔ خارجی: <span className="fa-num font-bold text-brand-navy">{fa(t.externalCapital)}</span></div>
+                      <div>قلب‌ها: <span className="fa-num font-bold text-brand-navy">{fa(t.hearts)}</span></div>
                       {closed && (
                         <>
-                          <td className="px-4 py-3 fa-num">{fa(Math.round(t.investorRoi * 100))}٪</td>
-                          <td className="px-4 py-3 fa-num">{fa(Math.round(t.quality))}</td>
-                          <td className="px-4 py-3 fa-num text-brand-red">{fa(Math.round(t.unspentPenalty))}</td>
-                          <td className="px-4 py-3 font-black fa-num text-brand-navy">{fa(Math.round(t.total))}</td>
+                          <div>بازده سرمایه‌گذار: <span className="fa-num font-bold text-brand-navy">{fa(Math.round(t.investorRoi * 100))}٪</span></div>
+                          <div>کیفیت: <span className="fa-num font-bold text-brand-navy">{fa(Math.round(t.quality))}</span></div>
+                          <div>جریمه: <span className="fa-num font-bold text-brand-red">{fa(Math.round(t.unspentPenalty))}</span></div>
+                          <div>امتیاز کل: <span className="fa-num font-black text-brand-navy">{fa(Math.round(t.total))}</span></div>
                         </>
                       )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="hidden md:block card overflow-x-auto anim-rise">
+              <table className="w-full text-sm min-w-[640px]">
+                <thead>
+                  <tr className="text-right text-brand-slate border-b border-brand-mist">
+                    {closed && <th className="px-4 py-3 font-bold">رتبه</th>}
+                    <th className="px-4 py-3 font-bold">تیم</th>
+                    <th className="px-4 py-3 font-bold">فروش خالص</th>
+                    <th className="px-4 py-3 font-bold">سرمایهٔ خارجی</th>
+                    <th className="px-4 py-3 font-bold">قلب‌ها</th>
+                    {closed && (
+                      <>
+                        <th className="px-4 py-3 font-bold">بازده سرمایه‌گذار</th>
+                        <th className="px-4 py-3 font-bold">کیفیت</th>
+                        <th className="px-4 py-3 font-bold">جریمه</th>
+                        <th className="px-4 py-3 font-bold">امتیاز کل</th>
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {ranked.map((t) => {
+                    const team = teamMap.get(t.teamId);
+                    return (
+                      <tr key={t.teamId} className="border-b border-brand-mist last:border-0">
+                        {closed && <td className="px-4 py-3 font-black fa-num text-brand-navy">{fa(t.rank ?? 0)}</td>}
+                        <td className="px-4 py-3">
+                          <Link href={team ? `/market/${team.slug}` : "#"} className="flex items-center gap-2 font-bold text-brand-navy hover:text-brand-cyan-dark">
+                            <Avatar seed={team?.logoSeed || t.teamId} size={28} />
+                            {team?.name ?? "—"}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 fa-num">{fa(t.netSales)}</td>
+                        <td className="px-4 py-3 fa-num">{fa(t.externalCapital)}</td>
+                        <td className="px-4 py-3 fa-num">{fa(t.hearts)}</td>
+                        {closed && (
+                          <>
+                            <td className="px-4 py-3 fa-num">{fa(Math.round(t.investorRoi * 100))}٪</td>
+                            <td className="px-4 py-3 fa-num">{fa(Math.round(t.quality))}</td>
+                            <td className="px-4 py-3 fa-num text-brand-red">{fa(Math.round(t.unspentPenalty))}</td>
+                            <td className="px-4 py-3 font-black fa-num text-brand-navy">{fa(Math.round(t.total))}</td>
+                          </>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         {closed && (
@@ -109,13 +142,13 @@ export default async function LeaderboardPage() {
               <Empty title="سرمایه‌گذاری خارجی ثبت نشد" />
             ) : (
               <div className="card overflow-x-auto anim-rise">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm min-w-[480px]">
                   <thead>
                     <tr className="text-right text-brand-slate border-b border-brand-mist">
                       <th className="px-4 py-3 font-bold">سرمایه‌گذار</th>
                       <th className="px-4 py-3 font-bold">مجموع سرمایه‌گذاری</th>
                       <th className="px-4 py-3 font-bold">مجموع سود</th>
-                      <th className="px-4 py-3 font-bold">ROI</th>
+                      <th className="px-4 py-3 font-bold">بازده سرمایه‌گذار</th>
                     </tr>
                   </thead>
                   <tbody>

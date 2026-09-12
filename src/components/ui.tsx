@@ -3,10 +3,10 @@ import { fa } from "@/lib/persian";
 
 export function PageHeader({ eyebrow, title, desc, action }: { eyebrow?: string; title: string; desc?: string; action?: React.ReactNode }) {
   return (
-    <div className="mx-auto max-w-7xl px-4 pt-10 pb-6 flex flex-wrap items-end gap-4 anim-rise">
-      <div className="flex-1 min-w-[240px]">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-8 sm:pt-10 pb-6 flex flex-wrap items-end gap-4 anim-rise">
+      <div className="flex-1 min-w-0">
         {eyebrow && <div className="text-xs font-bold text-brand-cyan-dark mb-1">{eyebrow}</div>}
-        <h1 className="text-3xl md:text-4xl font-black text-brand-navy">{title}</h1>
+        <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-brand-navy break-words">{title}</h1>
         {desc && <p className="mt-2 text-brand-slate max-w-2xl">{desc}</p>}
       </div>
       {action}
@@ -15,7 +15,7 @@ export function PageHeader({ eyebrow, title, desc, action }: { eyebrow?: string;
 }
 
 export function Container({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`mx-auto max-w-7xl px-4 pb-16 ${className}`}>{children}</div>;
+  return <div className={`mx-auto max-w-7xl px-4 sm:px-6 pb-16 ${className}`}>{children}</div>;
 }
 
 export function Coin({ n, label }: { n: number; label?: string }) {

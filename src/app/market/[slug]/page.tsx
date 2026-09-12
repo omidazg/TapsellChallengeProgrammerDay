@@ -55,7 +55,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         <div className="space-y-6">
           <Gallery images={product.images} seed={product.teamSlug} />
 
-          <div className="card p-5 space-y-4 anim-rise">
+          <div className="card p-4 sm:p-6 space-y-4 anim-rise">
             <div className="flex items-center gap-3">
               <div className="flex -space-x-2 space-x-reverse">
                 {product.members.map((m) => (
@@ -69,7 +69,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             </div>
 
             {product.description && (
-              <p className="text-brand-navy leading-7 whitespace-pre-line">{product.description}</p>
+              <p className="text-brand-navy leading-7 whitespace-pre-line break-words">{product.description}</p>
             )}
 
             {teaser.kind !== "none" && teaser.embedSrc && (
@@ -90,7 +90,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           </div>
 
           {buyers.length > 0 && (
-            <div className="card p-5 space-y-3 anim-rise">
+            <div className="card p-4 sm:p-6 space-y-3 anim-rise">
               <div className="text-sm font-black text-brand-navy">خریداران ({fa(summary.buyersCount)})</div>
               <div className="flex flex-wrap gap-2">
                 {buyers.map((b) => (
@@ -121,10 +121,10 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           />
 
           {product.specialName && (
-            <div className="card p-5 space-y-2 anim-rise bg-brand-ice">
+            <div className="card p-4 sm:p-6 space-y-2 anim-rise bg-brand-ice">
               <div className="text-xs font-bold text-brand-cyan-dark">نسخهٔ ویژه</div>
-              <div className="font-black text-brand-navy">{product.specialName}</div>
-              {product.specialDesc && <p className="text-sm text-brand-slate leading-6">{product.specialDesc}</p>}
+              <div className="font-black text-brand-navy break-words">{product.specialName}</div>
+              {product.specialDesc && <p className="text-sm text-brand-slate leading-6 break-words">{product.specialDesc}</p>}
               <div className="flex items-center justify-between pt-1">
                 <span className="chip-gold">در حراج زنده</span>
                 <span className="text-sm font-bold text-brand-navy">شروع از {coins(product.specialStart)}</span>

@@ -23,7 +23,7 @@ export function InvestorList({
 
   return (
     <div className="card p-6 anim-rise">
-      <div className="flex items-center justify-between gap-3 mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h3 className="font-black text-brand-navy">سرمایه‌گذاران ({fa(investments.length)})</h3>
         {!revealed && canReveal && (
           <form action={formAction}>
@@ -44,7 +44,7 @@ export function InvestorList({
                 <div className="font-bold text-brand-navy truncate">{inv.nickname}</div>
                 <div className="text-xs text-brand-slate">{jdatetime(inv.createdAt)}</div>
               </div>
-              <span className="font-black text-brand-navy fa-num">{revealed ? coins(inv.amount) : "پنهان"}</span>
+              <span className="font-black text-brand-navy fa-num shrink-0">{revealed ? coins(inv.amount) : "پنهان"}</span>
             </li>
           ))}
         </ul>

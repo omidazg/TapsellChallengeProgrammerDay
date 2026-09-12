@@ -163,29 +163,26 @@ export function ShareCard({
 
   return (
     <div className="card p-6 anim-rise">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-lg font-black text-brand-navy">کارت من</h3>
-        <button type="button" onClick={onDownload} disabled={busy} className="btn-primary">
+        <button type="button" onClick={onDownload} disabled={busy} className="btn-primary w-full sm:w-auto">
           {busy ? "در حال ساخت…" : "دانلود کارت"}
         </button>
       </div>
-      <div
-        className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-navy to-brand-red p-8 text-white shadow-lift"
-        style={{ aspectRatio: "600 / 340" }}
-      >
-        <div className="flex h-full items-center gap-6">
-          <Avatar seed={avatarSeed} size={110} className="ring-4 ring-white/70" />
-          <div className="flex-1">
-            <div className="text-2xl font-black">{nickname}</div>
-            <div className="mt-1 flex flex-wrap gap-2 text-xs font-bold text-white/90">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-navy to-brand-red p-5 sm:p-8 text-white shadow-lift sm:aspect-[600/340]">
+        <div className="flex flex-col sm:flex-row sm:h-full items-center sm:items-start gap-4 sm:gap-6 text-center sm:text-right pb-8">
+          <Avatar seed={avatarSeed} size={88} className="ring-4 ring-white/70 sm:size-[110px] shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="text-xl sm:text-2xl font-black break-words">{nickname}</div>
+            <div className="mt-1 flex flex-wrap justify-center sm:justify-start items-center gap-2 text-xs font-bold text-white/90">
               <span>{ROLES[role].emoji} {ROLES[role].label}</span>
-              <span>·</span>
+              <span className="hidden sm:inline">·</span>
               <span>{POWERS[power].emoji} {POWERS[power].label}</span>
             </div>
-            <div className="mt-4 flex gap-3 text-xs">
-              <span className="rounded-xl bg-white/15 px-3 py-2 font-black">قهوه {fa(stats.coffee)}</span>
-              <span className="rounded-xl bg-white/15 px-3 py-2 font-black">باگ {fa(stats.bugs)}</span>
-              <span className="rounded-xl bg-white/15 px-3 py-2 font-black">خواب {fa(stats.sleep)}</span>
+            <div className="mt-4 flex flex-wrap justify-center sm:justify-start gap-2 sm:gap-3 text-xs">
+              <span className="rounded-xl bg-white/15 px-3 py-2 font-black whitespace-nowrap">قهوه {fa(stats.coffee)}</span>
+              <span className="rounded-xl bg-white/15 px-3 py-2 font-black whitespace-nowrap">باگ {fa(stats.bugs)}</span>
+              <span className="rounded-xl bg-white/15 px-3 py-2 font-black whitespace-nowrap">خواب {fa(stats.sleep)}</span>
             </div>
           </div>
         </div>

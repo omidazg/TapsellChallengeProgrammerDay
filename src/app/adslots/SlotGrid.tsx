@@ -20,7 +20,7 @@ export function SlotGrid({ cells, myTeamId, treasury }: { cells: SlotCell[]; myT
   const committedOpen = cells.filter((c) => c.status === "OPEN" && c.myBid !== null).reduce((s, c) => s + (c.myBid ?? 0), 0);
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
       {myTeamId && (
         <div className="mb-3 text-xs text-brand-slate">
           خزانهٔ تیم: <b className="fa-num text-brand-navy">{coins(treasury)}</b> · تعهد باز فعلی:{" "}

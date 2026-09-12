@@ -12,7 +12,7 @@ type ChatRow = { id: string; userId: string; nickname: string; avatarSeed: strin
 function AskButton() {
   const status = useFormStatus();
   return (
-    <button type="submit" disabled={status.pending} className="btn-cyan shrink-0">
+    <button type="submit" disabled={status.pending} className="btn-cyan w-full sm:w-auto shrink-0">
       {status.pending ? "در حال پرسیدن…" : "پرسیدن"}
     </button>
   );
@@ -33,16 +33,10 @@ export function DueDiligenceChat({ ideaId, chats }: { ideaId: string; chats: Cha
       {state.aiUnavailable && <Alert kind="info">تحلیل‌گر هوش مصنوعی در دسترس نیست.</Alert>}
       {state.error && <Alert kind="error">{state.error}</Alert>}
 
-      <form ref={formRef} action={formAction} className="flex gap-2 mb-5">
-        <input type="hidden" name="ideaId" value={ideaId} />
-        <input name="question" required minLength={3} maxLength={300} className="input flex-1" placeholder="سؤالت را از متن ایده بپرس…" />
-        <AskButton />
-      </form>
-
       {chats.length === 0 ? (
-        <p className="text-sm text-brand-slate">هنوز سؤالی پرسیده نشده است.</p>
+        <p className="mb-4 text-sm text-brand-slate">هنوز سؤالی پرسیده نشده است.</p>
       ) : (
-        <ul className="space-y-4">
+        <ul className="mb-4 max-h-80 space-y-4 overflow-y-auto rounded-2xl border border-brand-mist p-3">
           {chats.map((c) => (
             <li key={c.id} className="space-y-2">
               <div className="flex items-center gap-2">
@@ -50,12 +44,18 @@ export function DueDiligenceChat({ ideaId, chats }: { ideaId: string; chats: Cha
                 <span className="text-xs font-bold text-brand-slate">{c.nickname}</span>
                 <span className="text-xs text-brand-slate/70">{jdatetime(c.createdAt)}</span>
               </div>
-              <p className="text-sm font-bold text-brand-navy">{c.question}</p>
-              <p className="text-sm text-brand-slate bg-brand-ice rounded-2xl p-3">{c.answer}</p>
+              <p className="text-sm font-bold text-brand-navy break-words">{c.question}</p>
+              <p className="text-sm text-brand-slate bg-brand-ice rounded-2xl p-3 break-words">{c.answer}</p>
             </li>
           ))}
         </ul>
       )}
+
+      <form ref={formRef} action={formAction} className="flex flex-col sm:flex-row gap-2">
+        <input type="hidden" name="ideaId" value={ideaId} />
+        <input name="question" required minLength={3} maxLength={300} className="input flex-1" placeholder="سؤالت را از متن ایده بپرس…" />
+        <AskButton />
+      </form>
     </div>
   );
 }

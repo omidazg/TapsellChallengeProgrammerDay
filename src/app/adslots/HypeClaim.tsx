@@ -13,12 +13,12 @@ export function HypeClaim({ power, powerUsed }: { power: string; powerUsed: bool
   if (power !== "HYPE" || powerUsed) return null;
 
   return (
-    <div className="card p-4 flex flex-wrap items-center justify-between gap-3 anim-pop">
+    <div className="card p-4 sm:p-6 flex flex-wrap items-center justify-between gap-3 anim-pop">
       <div>
         <div className="font-black text-brand-navy">📣 قدرت «هیاهو»</div>
         <div className="text-sm text-brand-slate">اولین جایگاه «کارت محصول ویژه» باز را رایگان بگیر.</div>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
         {error && <Alert kind="error">{error}</Alert>}
         <button
           disabled={pending}
@@ -30,7 +30,7 @@ export function HypeClaim({ power, powerUsed }: { power: string; powerUsed: bool
               else router.refresh();
             })
           }
-          className="btn-primary !px-4 !py-2"
+          className="btn-primary w-full sm:w-auto !px-4 !py-2"
         >
           استفاده از قدرت
         </button>

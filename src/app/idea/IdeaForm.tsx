@@ -26,11 +26,11 @@ function SubmitButtons() {
   const status = useFormStatus();
   const intent = status.pending ? String(status.data?.get("intent") ?? "") : "";
   return (
-    <div className="flex flex-wrap gap-3 pt-2">
-      <button type="submit" name="intent" value="draft" disabled={status.pending} className="btn-ghost">
+    <div className="flex flex-col sm:flex-row flex-wrap gap-3 pt-2">
+      <button type="submit" name="intent" value="draft" disabled={status.pending} className="btn-ghost w-full sm:w-auto">
         {status.pending && intent === "draft" ? "در حال ذخیره…" : "ذخیرهٔ پیش‌نویس"}
       </button>
-      <button type="submit" name="intent" value="submit" disabled={status.pending} className="btn-primary">
+      <button type="submit" name="intent" value="submit" disabled={status.pending} className="btn-primary w-full sm:w-auto">
         {status.pending && intent === "submit" ? "تحلیل‌گر در حال بررسی…" : "ثبت نهایی ایده"}
       </button>
     </div>
@@ -75,16 +75,16 @@ export function IdeaForm({ initial }: { initial: IdeaInput | null }) {
 
       <div>
         <label className="label" htmlFor="coverUrl">تصویر جلد</label>
-        <div className="flex flex-wrap gap-3 items-start">
+        <div className="flex flex-col sm:flex-row flex-wrap gap-3 items-stretch sm:items-start">
           <input
             id="coverUrl"
             name="coverUrl"
             value={coverUrl}
             onChange={(e) => setCoverUrl(e.target.value)}
-            className="input flex-1 min-w-[220px]"
+            className="input flex-1 min-w-0 sm:min-w-[220px]"
             placeholder="https://picsum.photos/seed/.../800/500"
           />
-          <button type="button" className="btn-cyan shrink-0" onClick={() => setCoverUrl(randomCover())}>
+          <button type="button" className="btn-cyan shrink-0 w-full sm:w-auto" onClick={() => setCoverUrl(randomCover())}>
             تصویر تصادفی
           </button>
         </div>

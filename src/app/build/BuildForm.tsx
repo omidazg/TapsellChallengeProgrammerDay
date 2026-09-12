@@ -26,11 +26,11 @@ function SubmitButtons({ disabled }: { disabled: boolean }) {
   const status = useFormStatus();
   const intent = status.pending ? String(status.data?.get("intent") ?? "") : "";
   return (
-    <div className="flex flex-wrap gap-3 pt-2">
-      <button type="submit" name="intent" value="draft" disabled={disabled || status.pending} className="btn-ghost">
+    <div className="flex flex-col sm:flex-row flex-wrap gap-3 pt-2">
+      <button type="submit" name="intent" value="draft" disabled={disabled || status.pending} className="btn-ghost w-full sm:w-auto">
         {status.pending && intent === "draft" ? "در حال ذخیره…" : "ذخیرهٔ پیش‌نویس"}
       </button>
-      <button type="submit" name="intent" value="submit" disabled={disabled || status.pending} className="btn-primary">
+      <button type="submit" name="intent" value="submit" disabled={disabled || status.pending} className="btn-primary w-full sm:w-auto">
         {status.pending && intent === "submit" ? "داور هوش مصنوعی در حال بررسی…" : "ثبت نهایی محصول"}
       </button>
     </div>
@@ -189,9 +189,9 @@ function ImagesField({ images, setImages, disabled }: { images: string[]; setIma
       </div>
 
       {images.length > 0 && (
-        <div className="mt-4 grid grid-cols-3 sm:grid-cols-4 gap-3 stagger">
+        <div className="mt-4 flex gap-3 overflow-x-auto no-scrollbar sm:grid sm:grid-cols-4 sm:overflow-visible stagger">
           {images.map((url, idx) => (
-            <div key={url + idx} className="relative aspect-square rounded-xl overflow-hidden border border-brand-mist group anim-pop">
+            <div key={url + idx} className="relative aspect-square size-24 shrink-0 rounded-xl overflow-hidden border border-brand-mist group anim-pop sm:size-auto sm:w-full sm:shrink">
               <Image src={url} alt={`تصویر ${idx + 1}`} fill sizes="200px" className="object-cover" unoptimized />
               {!disabled && (
                 <button

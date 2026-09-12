@@ -33,18 +33,18 @@ export function SalesTicker({ buyWallet }: { buyWallet: number }) {
   const loop = items.length > 0 ? [...items, ...items] : [];
 
   return (
-    <div className="card p-0 overflow-hidden anim-rise">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-brand-mist bg-brand-ice text-xs">
+    <div className="card p-0 overflow-hidden anim-rise max-w-full">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-b border-brand-mist bg-brand-ice text-xs">
         <div className="flex items-center gap-3 font-bold text-brand-navy">
           <span className="inline-block size-1.5 rounded-full bg-brand-red pulse-ring" />
           فروش زنده
         </div>
-        <div className="flex items-center gap-4 text-brand-slate">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-brand-slate">
           <span>حجم بازار: {coins(data?.volume ?? 0)}</span>
           <span>کیف خرید تو: {coins(buyWallet)}</span>
         </div>
       </div>
-      <div className="relative h-11 overflow-hidden">
+      <div className="relative h-11 overflow-hidden max-w-full">
         {loop.length === 0 ? (
           <div className="flex items-center h-full px-4 text-xs text-brand-slate">هنوز خریدی ثبت نشده…</div>
         ) : (
