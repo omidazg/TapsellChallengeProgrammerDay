@@ -1,11 +1,18 @@
 import type { Metadata } from "next";
-import { Vazirmatn } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { getCurrentUser } from "@/lib/auth";
 import { getPhase } from "@/lib/phase";
 import { AppShell } from "@/components/AppShell";
 
-const vazir = Vazirmatn({ subsets: ["arabic", "latin"], variable: "--font-vazir", weight: ["400", "500", "700", "800", "900"] });
+// فونت به‌صورت self-hosted (سرور به Google Fonts دسترسی ندارد؛ فونت متغیر همهٔ وزن‌ها را پوشش می‌دهد)
+const vazir = localFont({
+  src: "../fonts/Vazirmatn-Variable.woff2",
+  variable: "--font-vazir",
+  weight: "100 900",
+  display: "swap",
+  fallback: ["Tahoma", "sans-serif"],
+});
 
 export const metadata: Metadata = {
   title: { default: "میدان بنیان‌گذاران تپسل", template: "%s · میدان بنیان‌گذاران تپسل" },
