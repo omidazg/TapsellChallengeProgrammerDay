@@ -2,10 +2,10 @@
 
 import { useActionState } from "react";
 import { Alert } from "@/components/ui";
-import { useShieldAction as activateShield, type WalletActionState } from "./actions";
+import { activateShieldAction, type WalletActionState } from "./actions";
 
 export function ShieldButton() {
-  const [state, formAction, pending] = useActionState<WalletActionState, FormData>(async () => activateShield(), {});
+  const [state, formAction, pending] = useActionState<WalletActionState, FormData>(async () => activateShieldAction(), {});
   return (
     <form action={formAction} className="space-y-2">
       {state.error && <Alert kind="error">{state.error}</Alert>}

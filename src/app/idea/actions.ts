@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { getPhase } from "@/lib/phase";
 import { runAnalyst } from "@/lib/analyst";
+import { isHttpUrl } from "@/lib/idea";
 
 export type IdeaActionState = { error?: string; ok?: boolean };
 
@@ -15,7 +16,13 @@ const ideaSchema = z.object({
   problem: z.string().trim().min(1, "مسئله را توضیح بده"),
   audience: z.string().trim().min(1, "مخاطب را مشخص کن"),
   buildPlan: z.string().trim().min(1, "برنامهٔ ساخت ۴۸ ساعته را بنویس"),
-  coverUrl: z.string().trim().max(500).optional().default(""),
+  coverUrl: z
+    .string()
+    .trim()
+    .max(500, "نشانی تصویر خیلی طولانی است")
+    .optional()
+    .default("")
+    .refine((v) => v === "" || isHttpUrl(v), "نشانی تصویر باید با http:// یا https:// شروع شود"),
   fundingCap: z.coerce.number().int().min(50, "سقف سرمایه حداقل ۵۰ است").max(600, "سقف سرمایه حداکثر ۶۰۰ است"),
   revenueShare: z.coerce.number().int().min(20, "سهم سود حداقل ۲۰٪ است").max(60, "سهم سود حداکثر ۶۰٪ است"),
 });
@@ -81,10 +88,16 @@ export async function saveIdeaAction(prevState: IdeaActionState, formData: FormD
   });
 
   if (intent === "submit") {
-    await runAnalyst(idea.id).catch(() => null);
+    // تحلیل‌گر هرگز نباید ثبت ایده را خراب کند (نبود کلید یا خطای شبکه).
+    try {
+      await runAnalyst(idea.id);
+    } catch (e) {
+      console.error("runAnalyst failed after submit", e);
+    }
   }
 
   revalidatePath("/idea");
+  revalidatePath("/invest");
   return { ok: true };
 }
 
@@ -101,5 +114,6 @@ export async function unsubmitIdeaAction(): Promise<IdeaActionState> {
 
   await prisma.idea.update({ where: { id: idea.id }, data: { submittedAt: null } });
   revalidatePath("/idea");
+  revalidatePath("/invest");
   return { ok: true };
 }

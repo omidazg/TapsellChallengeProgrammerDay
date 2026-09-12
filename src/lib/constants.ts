@@ -21,7 +21,7 @@ export const DEFAULTS = {
   seedWallet: 100,
   buyWallet: 100,
   maxPerTarget: 40, // سقف سرمایه‌گذاری/خرید روی یک هدف
-  penaltyPerCoin: 1.5,
+  penaltyPerCoin: 1,
   minPrice: 5,
   maxPrice: 50,
   minRevenueShare: 20,

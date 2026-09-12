@@ -43,14 +43,14 @@ body {
 .fa-num { font-variant-numeric: tabular-nums; }
 
 /* دکمه‌ها به سبک تپسل */
-.btn { @apply inline-flex items-center justify-center gap-2 rounded-pill px-6 py-2.5 font-bold transition-all duration-200 select-none disabled:opacity-50 disabled:pointer-events-none; }
+@utility btn { @apply inline-flex items-center justify-center gap-2 rounded-pill px-6 py-2.5 font-bold transition-all duration-200 select-none disabled:opacity-50 disabled:pointer-events-none; }
 .btn-primary { @apply btn bg-brand-red text-white hover:bg-brand-red-dark hover:shadow-lift active:scale-[0.98]; }
 .btn-cyan { @apply btn bg-brand-cyan text-white hover:bg-brand-cyan-dark hover:shadow-lift active:scale-[0.98]; }
 .btn-ghost { @apply btn bg-transparent text-brand-navy border border-brand-mist hover:bg-brand-ice; }
 .btn-navy { @apply btn bg-brand-navy text-white hover:bg-[#013b5c] hover:shadow-lift; }
 
 .card { @apply bg-white rounded-3xl border border-brand-mist shadow-card; }
-.chip { @apply inline-flex items-center gap-1 rounded-pill px-3 py-1 text-xs font-bold; }
+@utility chip { @apply inline-flex items-center gap-1 rounded-pill px-3 py-1 text-xs font-bold; }
 .chip-red { @apply chip bg-red-50 text-brand-red; }
 .chip-cyan { @apply chip bg-brand-mist text-brand-cyan-dark; }
 .chip-navy { @apply chip bg-brand-sky text-brand-navy; }

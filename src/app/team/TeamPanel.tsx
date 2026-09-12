@@ -5,22 +5,23 @@ import Link from "next/link";
 import { Avatar } from "@/components/Avatar";
 import { Alert } from "@/components/ui";
 import { ROLES, POWERS, type RoleKey, type PowerKey } from "@/lib/constants";
-import { jdatetime } from "@/lib/persian";
-import { roleCoverage, type TeamWithMembers } from "@/lib/team";
+import { fa, jdatetime } from "@/lib/persian";
+import type { RoleCoverage, TeamWithMembers } from "@/lib/team";
 import { inviteAction, leaveTeamAction } from "./actions";
 
 const TEAM_FULL = 3;
 
 export function TeamPanel({
   team,
+  coverage,
   currentUserId,
   registrationOpen,
 }: {
   team: TeamWithMembers;
+  coverage: RoleCoverage[];
   currentUserId: string;
   registrationOpen: boolean;
 }) {
-  const coverage = roleCoverage(team.members);
   const full = team.members.length >= TEAM_FULL;
 
   return (
@@ -42,7 +43,7 @@ export function TeamPanel({
         </div>
 
         <div>
-          <h3 className="mb-3 text-lg font-black text-brand-navy">اعضای تیم ({team.members.length} از ۳)</h3>
+          <h3 className="mb-3 text-lg font-black text-brand-navy">اعضای تیم ({fa(team.members.length)} از {fa(TEAM_FULL)})</h3>
           <div className="grid gap-3 sm:grid-cols-3 stagger">
             {team.members.map((m) => {
               const role = m.role as RoleKey;

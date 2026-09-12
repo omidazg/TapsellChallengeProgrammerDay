@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { coverUrl } from "@/lib/product";
+import { coverUrl } from "@/lib/product-utils";
 
 export function Gallery({ images, seed }: { images: string[]; seed: string }) {
   const list = images.length > 0 ? images : [coverUrl([], seed)];

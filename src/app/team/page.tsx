@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { getPhase } from "@/lib/phase";
 import { prisma } from "@/lib/db";
-import { getTeamWithMembers } from "@/lib/team";
+import { getTeamWithMembers, roleCoverage } from "@/lib/team";
 import { PageHeader, Container } from "@/components/ui";
 import { NoTeamPanel } from "./NoTeamPanel";
 import { TeamPanel } from "./TeamPanel";
@@ -19,7 +19,14 @@ export default async function TeamPage() {
       <>
         <PageHeader eyebrow="اتاق تیم" title={team?.name ?? "اتاق تیم"} desc="ترکیب تیم، پوشش نقش‌ها و پیشرفت کارها." />
         <Container>
-          {team && <TeamPanel team={team} currentUserId={user.id} registrationOpen={registrationOpen} />}
+          {team && (
+            <TeamPanel
+              team={team}
+              coverage={roleCoverage(team.members)}
+              currentUserId={user.id}
+              registrationOpen={registrationOpen}
+            />
+          )}
         </Container>
       </>
     );

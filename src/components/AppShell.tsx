@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { PHASE_LABEL, type Phase } from "@/lib/phase";
+import { PHASE_LABEL, type Phase } from "@/lib/phases";
 import { fa, duration } from "@/lib/persian";
 import { Avatar } from "./Avatar";
 

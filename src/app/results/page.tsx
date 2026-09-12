@@ -1,8 +1,9 @@
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getPhase, getSettingInt } from "@/lib/phase";
+import { getPhase } from "@/lib/phase";
 import { DEFAULTS, SCORE_WEIGHTS } from "@/lib/constants";
-import { computeScores, computeAwards } from "@/lib/scoring";
+import { computeScores, computeAwards, getSettingFloat } from "@/lib/scoring";
+import { defaultConfig, unspentPenalty } from "@/lib/economy/engine";
 import { PageHeader, Container, Stat, Locked, Empty } from "@/components/ui";
 import { fa, coins } from "@/lib/persian";
 import { Confetti } from "./Confetti";
@@ -28,7 +29,7 @@ export default async function ResultsPage() {
     computeScores(),
     prisma.team.findMany({ select: { id: true, name: true } }),
     prisma.user.findMany({ select: { id: true, nickname: true } }),
-    getSettingInt("penalty_per_coin", DEFAULTS.penaltyPerCoin),
+    getSettingFloat("penalty_per_coin", DEFAULTS.penaltyPerCoin),
     prisma.investment.findMany({ where: { userId: user.id }, include: { idea: { include: { team: true } } } }),
     prisma.purchase.findMany({ where: { userId: user.id }, include: { product: { include: { team: true } } } }),
   ]);
@@ -40,10 +41,34 @@ export default async function ResultsPage() {
   const myTeam = user.teamId ? output.teams.find((t) => t.teamId === user.teamId) : undefined;
   const myDividends = output.dividends.filter((d) => d.userId === user.id);
   const totalDividends = myDividends.reduce((a, d) => a + d.dividend, 0);
+  // چند ردیف سرمایه‌گذاری روی یک تیم = چند خط سود؛ برای نمایش، هر تیم را یک‌جا جمع می‌کنیم
+  const dividendByTeam = new Map<string, number>();
+  for (const d of myDividends) dividendByTeam.set(d.teamId, (dividendByTeam.get(d.teamId) ?? 0) + d.dividend);
+  const investedByIdea = new Map<string, { ideaId: string; title: string; teamId: string; teamName: string; amount: number }>();
+  for (const inv of investments) {
+    const cur = investedByIdea.get(inv.ideaId);
+    if (cur) cur.amount += inv.amount;
+    else
+      investedByIdea.set(inv.ideaId, {
+        ideaId: inv.ideaId,
+        title: inv.idea.title,
+        teamId: inv.idea.teamId,
+        teamName: inv.idea.team.name,
+        amount: inv.amount,
+      });
+  }
+  const myInvestments = [...investedByIdea.values()];
 
-  const leftover = user.seedWallet + user.buyWallet;
-  const shielded = user.power === "SHIELD" && user.powerUsed ? Math.min(10, leftover) : 0;
-  const myPenalty = penaltyPerCoin * Math.max(0, leftover - shielded);
+  // جریمهٔ شخصی با همان تابع موتور اقتصاد تا با امتیاز تیم هم‌خوان باشد
+  const myPenalty = unspentPenalty({ ...defaultConfig(), penaltyPerCoin }, [
+    {
+      userId: user.id,
+      teamId: user.teamId,
+      seedLeft: user.seedWallet,
+      buyLeft: user.buyWallet,
+      shieldUsed: user.power === "SHIELD" && user.powerUsed,
+    },
+  ]);
 
   const showConfetti = !!myTeam && (myTeam.rank ?? 99) <= 3;
 
@@ -100,7 +125,7 @@ export default async function ResultsPage() {
 
         <section>
           <h2 className="text-lg font-black text-brand-navy mb-3">سرمایه‌گذاری‌های من</h2>
-          {investments.length === 0 ? (
+          {myInvestments.length === 0 ? (
             <Empty title="سرمایه‌گذاری نکردی" />
           ) : (
             <div className="card overflow-x-auto anim-rise">
@@ -113,11 +138,11 @@ export default async function ResultsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {investments.map((inv) => {
-                    const div = myDividends.find((d) => d.teamId === inv.idea.teamId)?.dividend ?? 0;
+                  {myInvestments.map((inv) => {
+                    const div = dividendByTeam.get(inv.teamId) ?? 0;
                     return (
-                      <tr key={inv.id} className="border-b border-brand-mist last:border-0">
-                        <td className="px-4 py-3">{inv.idea.title} <span className="text-brand-slate text-xs">({inv.idea.team.name})</span></td>
+                      <tr key={inv.ideaId} className="border-b border-brand-mist last:border-0">
+                        <td className="px-4 py-3">{inv.title} <span className="text-brand-slate text-xs">({inv.teamName})</span></td>
                         <td className="px-4 py-3 fa-num">{fa(inv.amount)}</td>
                         <td className="px-4 py-3 fa-num text-emerald-600 font-bold">{fa(div)}</td>
                       </tr>

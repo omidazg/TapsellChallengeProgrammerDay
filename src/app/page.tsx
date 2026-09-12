@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
-import { getPhase } from "@/lib/phase";
-import { PHASE_LABEL, PHASE_DESC, type Phase } from "@/lib/phase";
+import { getPhase, PHASE_LABEL, PHASE_DESC, type Phase } from "@/lib/phase";
 import { ROLES, POWERS, SCORE_WEIGHTS, DEFAULTS } from "@/lib/constants";
 import { fa, coins } from "@/lib/persian";
 import { Container, Stat } from "@/components/ui";
@@ -10,8 +9,7 @@ import { prisma } from "@/lib/db";
 import { PhaseCountdown } from "./PhaseCountdown";
 
 export default async function Home() {
-  const user = await getCurrentUser();
-  const { phase, endsAt } = await getPhase();
+  const [user, { phase, endsAt }] = await Promise.all([getCurrentUser(), getPhase()]);
 
   if (!user) {
     return <LoggedOutLanding phase={phase} />;
@@ -21,7 +19,6 @@ export default async function Home() {
   const cta = nextAction(user, phase, !!idea?.submittedAt);
 
   return (
-    <>
       <Container className="pt-10 space-y-8">
         <div className="flex flex-wrap items-center gap-4 anim-rise">
           <Avatar seed={user.avatarSeed || user.id} size={56} />
@@ -79,21 +76,37 @@ export default async function Home() {
           </Link>
         )}
       </Container>
-    </>
   );
 }
 
 type CurrentUser = { teamId: string | null; seedWallet: number; buyWallet: number };
 
 function nextAction(user: CurrentUser, phase: Phase, hasIdea: boolean): { href: string; label: string } {
-  if (!user.teamId) return { href: "/team", label: "تیم بساز یا به یکی بپیوند" };
-  if (phase === "IDEATION" && !hasIdea) return { href: "/idea", label: "ایده‌ات را ثبت کن" };
-  if (phase === "SEED_ROUND" && user.seedWallet > 0) return { href: "/invest", label: "روی یک ایده سرمایه‌گذاری کن" };
-  if (phase === "BUILD") return { href: "/build", label: "برو به مرکز ساخت" };
-  if (phase === "MARKET" && user.buyWallet > 0) return { href: "/market", label: "از بازار خرید کن" };
-  if (phase === "AUCTION") return { href: "/auction", label: "به حراج زنده بپیوند" };
   if (phase === "CLOSED") return { href: "/results", label: "نتایج را ببین" };
-  return { href: "/team", label: "به اتاق تیم سر بزن" };
+  if (!user.teamId) return { href: "/team", label: "تیم بساز یا به یکی بپیوند" };
+
+  switch (phase) {
+    case "REGISTRATION":
+      return { href: "/profile", label: "شخصیتت را کامل کن" };
+    case "IDEATION":
+      return hasIdea
+        ? { href: "/idea", label: "ایده‌ات را بازبینی کن" }
+        : { href: "/idea", label: "ایده‌ات را ثبت کن" };
+    case "SEED_ROUND":
+      return user.seedWallet > 0
+        ? { href: "/invest", label: "روی یک ایده سرمایه‌گذاری کن" }
+        : { href: "/leaderboard", label: "کیف بذرت تمام شد؛ جدول را ببین" };
+    case "BUILD":
+      return { href: "/build", label: "برو به مرکز ساخت" };
+    case "MARKET":
+      return user.buyWallet > 0
+        ? { href: "/market", label: "از بازار خرید کن" }
+        : { href: "/adslots", label: "کیف خریدت تمام شد؛ جایگاه تبلیغاتی بگیر" };
+    case "AUCTION":
+      return { href: "/auction", label: "به حراج زنده بپیوند" };
+    default:
+      return { href: "/team", label: "به اتاق تیم سر بزن" };
+  }
 }
 
 const TIMELINE = [

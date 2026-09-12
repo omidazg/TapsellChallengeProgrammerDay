@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
-import { getPhase } from "@/lib/phase";
-import { getAdminCounts, getSettingsMap } from "@/lib/admin";
+import { getPhase, PHASES, PHASE_LABEL } from "@/lib/phase";
+import { getAdminCounts, getSettingsMap, SETTING_KEYS, SETTING_LABELS } from "@/lib/admin";
 import { PageHeader, Container, Stat } from "@/components/ui";
 import { fa, coins } from "@/lib/persian";
 import { PhaseForm } from "./PhaseForm";
-import { SettingsForm } from "./SettingsForm";
+import { SettingsForm, type SettingField } from "./SettingsForm";
 
 export const metadata = { title: "پنل برگزارکننده" };
 
@@ -21,6 +21,14 @@ const SUBPAGES = [
 export default async function AdminPage() {
   await requireAdmin();
   const [{ phase, endsAt }, counts, settings] = await Promise.all([getPhase(), getAdminCounts(), getSettingsMap()]);
+
+  const phaseOptions = PHASES.map((p) => ({ value: p, label: PHASE_LABEL[p] }));
+  const settingFields: SettingField[] = SETTING_KEYS.map((key) => ({
+    key,
+    label: SETTING_LABELS[key],
+    value: key === "market_starts_at" ? toLocalInputValue(settings[key]) : settings[key],
+    kind: key === "market_starts_at" ? "datetime" : "number",
+  }));
 
   return (
     <>
@@ -43,9 +51,18 @@ export default async function AdminPage() {
           ))}
         </div>
 
-        <PhaseForm phase={phase} endsAt={endsAt ? endsAt.toISOString() : null} />
-        <SettingsForm settings={settings} />
+        <PhaseForm phase={phase} endsAt={endsAt ? endsAt.toISOString() : null} phases={phaseOptions} />
+        <SettingsForm fields={settingFields} />
       </Container>
     </>
   );
+}
+
+/** ورودی datetime-local فقط «YYYY-MM-DDTHH:mm» می‌پذیرد. */
+function toLocalInputValue(raw: string): string {
+  if (!raw) return "";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

@@ -8,8 +8,18 @@ import { insiderRevealAction, type InvestActionState } from "../actions";
 
 type InvestorRow = { id: string; userId: string; nickname: string; avatarSeed: string; amount: number; createdAt: Date };
 
-export function InvestorList({ investments, revealed, canReveal }: { investments: InvestorRow[]; revealed: boolean; canReveal: boolean }) {
-  const [state, formAction] = useActionState<InvestActionState, FormData>(async () => insiderRevealAction(), {});
+export function InvestorList({
+  ideaId,
+  investments,
+  revealed,
+  canReveal,
+}: {
+  ideaId: string;
+  investments: InvestorRow[];
+  revealed: boolean;
+  canReveal: boolean;
+}) {
+  const [state, formAction] = useActionState<InvestActionState, FormData>(insiderRevealAction, {});
 
   return (
     <div className="card p-6 anim-rise">
@@ -17,6 +27,7 @@ export function InvestorList({ investments, revealed, canReveal }: { investments
         <h3 className="font-black text-brand-navy">سرمایه‌گذاران ({fa(investments.length)})</h3>
         {!revealed && canReveal && (
           <form action={formAction}>
+            <input type="hidden" name="ideaId" value={ideaId} />
             <button type="submit" className="chip-cyan hover:bg-brand-mist">🕵️ استفاده از قدرت خبرچین</button>
           </form>
         )}

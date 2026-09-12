@@ -44,7 +44,7 @@ interface RunOutcome {
 
 function buildTeams(rand: Rand): { teamIds: string[]; hoarderIdx: number; concentratedIdx: number } {
   const teamIds = Array.from({ length: NUM_TEAMS }, (_, i) => `team${i}`);
-  let hoarderIdx = randInt(rand, 0, NUM_TEAMS - 1);
+  const hoarderIdx = randInt(rand, 0, NUM_TEAMS - 1);
   let concentratedIdx = randInt(rand, 0, NUM_TEAMS - 1);
   while (concentratedIdx === hoarderIdx) concentratedIdx = randInt(rand, 0, NUM_TEAMS - 1);
   return { teamIds, hoarderIdx, concentratedIdx };
@@ -58,7 +58,7 @@ function runOnce(seed: number): RunOutcome {
     i === hoarderIdx ? "hoarder" : i === concentratedIdx ? "concentrated" : "normal"
   );
 
-  const memberIdsByTeam: string[][] = teamIds.map((teamId, i) =>
+  const memberIdsByTeam: string[][] = teamIds.map((teamId) =>
     Array.from({ length: MEMBERS_PER_TEAM }, (_, m) => `${teamId}_u${m}`)
   );
 

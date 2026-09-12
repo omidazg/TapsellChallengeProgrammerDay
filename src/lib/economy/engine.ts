@@ -39,11 +39,18 @@ export function computeDividends(team: TeamInput): DividendLine[] {
 
   const pool = grossSales * (team.revenueShare / 100);
 
-  return externalInvestments.map((inv) => ({
-    userId: inv.userId,
+  // چند سرمایه‌گذاری یک نفر روی یک تیم، یک سهم‌دار واحد است؛ اول جمع می‌شود
+  // بعد گرد به پایین می‌شود تا هر سرمایه‌گذار دقیقاً یک سطر سود بگیرد.
+  const byUser = new Map<string, number>();
+  for (const inv of externalInvestments) {
+    byUser.set(inv.userId, (byUser.get(inv.userId) ?? 0) + inv.amount);
+  }
+
+  return [...byUser.entries()].map(([userId, invested]) => ({
+    userId,
     teamId: team.teamId,
-    invested: inv.amount,
-    dividend: Math.floor((pool * inv.amount) / externalCapital),
+    invested,
+    dividend: Math.floor((pool * invested) / externalCapital),
   }));
 }
 
@@ -115,14 +122,15 @@ function faDigits(n: number): string {
 
 /** کمترین مبلغ مجاز برای پیشنهاد بعدی حراج. */
 export function nextMinBid(currentHighest: number | null, startPrice: number, increment: number): number {
-  if (currentHighest === null) return startPrice;
-  return currentHighest + increment;
+  // نخستین پیشنهاد می‌تواند دقیقاً برابر قیمت پایه باشد
+  const base = currentHighest ?? startPrice - increment;
+  return base + increment;
 }
 
 /** آیا با توجه به پنجرهٔ ضد-اسنایپ باید حراج تمدید شود؟ */
 export function shouldExtendAuction(nowMs: number, endsAtMs: number, windowSec: number): boolean {
   const remainingMs = endsAtMs - nowMs;
-  return remainingMs <= windowSec * 1000 && remainingMs >= 0;
+  return remainingMs <= windowSec * 1000 && remainingMs > 0;
 }
 
 /** موتور اصلی امتیازدهی: همهٔ تیم‌ها را می‌گیرد و نتیجهٔ کامل رتبه‌بندی‌شده برمی‌گرداند. */

@@ -1,54 +1,48 @@
-"use client";
-
-import { useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { Avatar } from "@/components/Avatar";
 import { fa, coins } from "@/lib/persian";
-import type { IdeaCardData } from "@/lib/idea";
-import { analystAvg } from "@/lib/idea";
+import { analystAvg, type FloorFilter, type IdeaCardData } from "@/lib/idea";
+import { Cover } from "@/app/idea/Cover";
 
-type Filter = "all" | "lowest" | "topAnalyst";
-
-const FILTERS: { key: Filter; label: string }[] = [
+const FILTERS: { key: FloorFilter; label: string }[] = [
   { key: "all", label: "همه" },
   { key: "lowest", label: "کمتر دیده‌شده" },
   { key: "topAnalyst", label: "بالاترین رتبهٔ تحلیل‌گر" },
 ];
 
-export function InvestFloor({ ideas, ownTeamId, interactive }: { ideas: IdeaCardData[]; ownTeamId: string | null; interactive: boolean }) {
-  const [filter, setFilter] = useState<Filter>("all");
-
-  const sorted = useMemo(() => {
-    const list = [...ideas];
-    if (filter === "lowest") list.sort((a, b) => a.raised - b.raised);
-    else if (filter === "topAnalyst") list.sort((a, b) => (analystAvg(b) ?? -1) - (analystAvg(a) ?? -1));
-    else list.sort((a, b) => b.raised - a.raised);
-    return list;
-  }, [ideas, filter]);
-
+export function InvestFloor({
+  ideas,
+  ownTeamId,
+  interactive,
+  filter,
+}: {
+  ideas: IdeaCardData[];
+  ownTeamId: string | null;
+  interactive: boolean;
+  filter: FloorFilter;
+}) {
   return (
     <div>
       <div className="flex flex-wrap gap-2 mb-6">
         {FILTERS.map((f) => (
-          <button
+          <Link
             key={f.key}
-            onClick={() => setFilter(f.key)}
+            href={f.key === "all" ? "/invest" : `/invest?filter=${f.key}`}
             className={`chip transition ${filter === f.key ? "bg-brand-navy text-white" : "chip-navy hover:bg-brand-mist"}`}
           >
             {f.label}
-          </button>
+          </Link>
         ))}
       </div>
 
-      {sorted.length === 0 ? (
+      {ideas.length === 0 ? (
         <div className="card p-10 text-center">
           <div className="text-5xl mb-3">💡</div>
           <h3 className="text-xl font-black">هنوز ایده‌ای ثبت نشده</h3>
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 stagger">
-          {sorted.map((idea) => {
+          {ideas.map((idea) => {
             const isOwn = ownTeamId !== null && idea.teamId === ownTeamId;
             const avg = analystAvg(idea);
             const pct = idea.fundingCap > 0 ? Math.min(100, Math.round((idea.raised / idea.fundingCap) * 100)) : 0;
@@ -59,7 +53,7 @@ export function InvestFloor({ ideas, ownTeamId, interactive }: { ideas: IdeaCard
                 className="card overflow-hidden hover:-translate-y-0.5 hover:shadow-lift transition flex flex-col"
               >
                 <div className="relative w-full aspect-[8/5] bg-brand-sky">
-                  {idea.coverUrl && <Image src={idea.coverUrl} alt={idea.title} fill sizes="360px" className="object-cover" unoptimized />}
+                  <Cover src={idea.coverUrl} alt={idea.title} sizes="360px" />
                   {isOwn && <span className="absolute top-3 right-3 chip bg-white/90 text-brand-red">تیم خودت</span>}
                 </div>
                 <div className="p-4 flex flex-col gap-3 flex-1">

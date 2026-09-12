@@ -7,6 +7,7 @@ import {
   startNextAuctionAction,
   closeDueSlotsAction,
   ensureAdSlotsAction,
+  settleCurrentAuctionAction,
   type AuctionAdminState,
 } from "./actions";
 
@@ -29,6 +30,7 @@ export function AuctionActionButtons() {
     <div className="flex flex-wrap gap-4">
       <ActionButton label="ساخت صف حراج" action={ensureAuctionsAction} tone="ghost" />
       <ActionButton label="شروع حراج بعدی" action={startNextAuctionAction} tone="primary" />
+      <ActionButton label="پایان دستی حراج جاری" action={settleCurrentAuctionAction} tone="cyan" />
     </div>
   );
 }

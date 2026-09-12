@@ -1,4 +1,3 @@
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getPhase, getSettingInt, phaseIndex } from "@/lib/phase";
@@ -8,6 +7,7 @@ import { PageHeader, Container, Locked, Alert } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { fa, coins } from "@/lib/persian";
 import { AnalystCard } from "@/app/idea/AnalystCard";
+import { Cover } from "@/app/idea/Cover";
 import { InvestPanel, AngelButton } from "./InvestPanel";
 import { InvestorList } from "./InvestorList";
 import { DueDiligenceChat } from "./DueDiligenceChat";
@@ -30,9 +30,11 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
 
   const interactive = phase === "SEED_ROUND";
   const maxPerTarget = await getSettingInt("max_per_target", DEFAULTS.maxPerTarget);
-  const maxAllowed = Math.max(0, Math.min(maxPerTarget - idea.viewerInvested, user.seedWallet));
+  const capLeft = Math.max(0, idea.fundingCap - idea.raised);
+  const maxAllowed = Math.max(0, Math.min(maxPerTarget - idea.viewerInvested, user.seedWallet, capLeft));
 
-  const revealed = !interactive || (user.power === "INSIDER" && user.powerUsed);
+  // در دور بذر مبالغ پنهان‌اند، مگر برای «خبرچین» فعال‌شده یا اعضای خود تیم.
+  const revealed = !interactive || idea.isOwnTeam || (user.power === "INSIDER" && user.powerUsed);
   const canReveal = interactive && user.power === "INSIDER" && !user.powerUsed;
 
   let canAngel = false;
@@ -50,7 +52,7 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
         <div className="lg:col-span-2 space-y-6">
           {idea.coverUrl && (
             <div className="relative w-full aspect-[8/5] rounded-3xl overflow-hidden border border-brand-mist anim-rise">
-              <Image src={idea.coverUrl} alt={idea.title} fill sizes="800px" className="object-cover" unoptimized />
+              <Cover src={idea.coverUrl} alt={idea.title} sizes="800px" />
             </div>
           )}
 
@@ -96,7 +98,13 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
           <div className="card p-6 space-y-4 anim-rise">
             <h3 className="font-black text-brand-navy">سرمایه‌گذاری</h3>
             {interactive ? (
-              <InvestPanel ideaId={idea.id} seedWallet={user.seedWallet} maxAllowed={maxAllowed} isOwnTeam={idea.isOwnTeam} />
+              <InvestPanel
+                ideaId={idea.id}
+                seedWallet={user.seedWallet}
+                maxAllowed={maxAllowed}
+                isOwnTeam={idea.isOwnTeam}
+                capFull={capLeft <= 0}
+              />
             ) : (
               <Alert kind="info">دور سرمایه‌گذاری تمام شده است.</Alert>
             )}
@@ -104,7 +112,7 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
 
           {canAngel && <AngelButton ideaId={idea.id} />}
 
-          <InvestorList investments={idea.investments} revealed={revealed} canReveal={canReveal} />
+          <InvestorList ideaId={idea.id} investments={idea.investments} revealed={revealed} canReveal={canReveal} />
         </div>
       </Container>
     </>

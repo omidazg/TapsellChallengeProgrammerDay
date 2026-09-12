@@ -46,7 +46,12 @@ export function SlotGrid({ cells, myTeamId, treasury }: { cells: SlotCell[]; myT
                 const cell = byKey.get(`${k}|${h}`);
                 return (
                   <td key={k} className="align-top">
-                    {cell ? <Cell cell={cell} myTeamId={myTeamId} onDone={() => router.refresh()} /> : <span className="text-brand-slate text-xs">—</span>}
+                    {cell ? (
+                      // کلید شامل وضعیت و پیشنهاد من است تا پس از refresh مقدار ورودی کهنه نماند.
+                      <Cell key={`${cell.id}|${cell.status}|${cell.myBid ?? ""}`} cell={cell} myTeamId={myTeamId} onDone={() => router.refresh()} />
+                    ) : (
+                      <span className="text-brand-slate text-xs">—</span>
+                    )}
                   </td>
                 );
               })}
@@ -59,7 +64,7 @@ export function SlotGrid({ cells, myTeamId, treasury }: { cells: SlotCell[]; myT
 }
 
 function Cell({ cell, myTeamId, onDone }: { cell: SlotCell; myTeamId: string | null; onDone: () => void }) {
-  const [value, setValue] = useState(cell.myBid ?? 0);
+  const [value, setValue] = useState(cell.myBid ?? 1);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 

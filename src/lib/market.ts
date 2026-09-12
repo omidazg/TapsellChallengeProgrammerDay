@@ -1,16 +1,6 @@
 import { prisma } from "./db";
 import { coverUrl, parseImages } from "./product";
-// موتور اقتصاد به‌صورت هم‌زمان توسط ایجنت دیگری نوشته می‌شود؛ در زمان نوشتن این فایل
-// engine.validatePurchase با همین امضا موجود بود. اگر در آینده حذف/تغییر شد این خط
-// خطای تایپ می‌دهد — در آن صورت از fallback زیر (کامنت‌شده) استفاده کنید:
-// TODO: replace with engine.validatePurchase fallback if the export is missing:
-// function validatePurchase(args: {amount:number; alreadyOnTarget:number; walletLeft:number; maxPerTarget:number; isOwnTeam:boolean}) {
-//   if (args.isOwnTeam) return { ok: false as const, error: "نمی‌توانی از تیم خودت بخری" };
-//   if (args.amount <= 0) return { ok: false as const, error: "مبلغ خرید باید مثبت باشد" };
-//   if (args.amount > args.walletLeft) return { ok: false as const, error: "موجودی کیف خرید کافی نیست" };
-//   if (args.alreadyOnTarget + args.amount > args.maxPerTarget) return { ok: false as const, error: `سقف خرید از هر محصول ${args.maxPerTarget} سکه است` };
-//   return { ok: true as const };
-// }
+// اعتبارسنجی خرید مستقیماً از موتور اقتصاد می‌آید تا یک منبع حقیقت واحد بماند.
 export { validatePurchase } from "./economy/engine";
 
 export type MarketSort = "all" | "top" | "popular" | "cheap";

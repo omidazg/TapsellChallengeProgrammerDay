@@ -1,17 +1,12 @@
 import { prisma } from "./db";
-import { getSettingInt } from "./phase";
+import { getPhase, getSettingInt } from "./phase";
 import { DEFAULTS } from "./constants";
+import { fa } from "./persian";
 // اقتصاد خالص: nextMinBid و shouldExtendAuction از موتور اقتصاد می‌آیند.
-// TODO: replace with engine — اگر این export ها هنگام tsc موجود نبودند، از fallback زیر استفاده کنید.
-import * as engineImpl from "./economy/engine";
-const nextMinBid: (currentHighest: number | null, startPrice: number, increment: number) => number =
-  engineImpl.nextMinBid ?? ((currentHighest, startPrice, increment) => (currentHighest === null ? startPrice : currentHighest + increment));
-const shouldExtendAuction: (nowMs: number, endsAtMs: number, windowSec: number) => boolean =
-  engineImpl.shouldExtendAuction ??
-  ((nowMs, endsAtMs, windowSec) => {
-    const remaining = endsAtMs - nowMs;
-    return remaining <= windowSec * 1000 && remaining >= 0;
-  });
+import { nextMinBid, shouldExtendAuction } from "./economy/engine";
+
+/** تمدید قدرت «نفس دوم» بر حسب ثانیه. */
+const SECOND_WIND_EXTEND_SEC = 120;
 
 /** یک حراج به ازای هر محصول ثبت‌شده می‌سازد (idempotent)، به ترتیب زمان ثبت. */
 export async function ensureAuctions() {
@@ -20,59 +15,94 @@ export async function ensureAuctions() {
     orderBy: { submittedAt: "asc" },
   });
   if (products.length === 0) return;
-  const existingCount = await prisma.auction.count();
+  const last = await prisma.auction.findFirst({ orderBy: { order: "desc" }, select: { order: true } });
+  const base = last ? last.order + 1 : 0;
   await prisma.$transaction(
     products.map((p, i) =>
       prisma.auction.create({
-        data: { productId: p.id, order: existingCount + i, startPrice: p.specialStart },
+        data: { productId: p.id, order: base + i, startPrice: p.specialStart },
       })
     )
   );
 }
 
-/** حراج بعدیِ در صف را زنده می‌کند. */
+/**
+ * حراج بعدیِ در صف را زنده می‌کند.
+ * اگر همین حالا حراجی زنده باشد هیچ کاری نمی‌کند (هم‌زمان فقط یک حراج زنده است).
+ */
 export async function startNextAuction(durationSec?: number) {
   const dur = durationSec ?? (await getSettingInt("auction_duration_sec", DEFAULTS.auctionDurationSec));
-  const next = await prisma.auction.findFirst({
-    where: { status: "SCHEDULED" },
-    orderBy: { order: "asc" },
-  });
-  if (!next) return null;
-  const now = new Date();
-  const endsAt = new Date(now.getTime() + dur * 1000);
-  return prisma.auction.update({
-    where: { id: next.id },
-    data: { status: "LIVE", startsAt: now, endsAt },
+  return prisma.$transaction(async (tx) => {
+    const live = await tx.auction.findFirst({ where: { status: "LIVE" } });
+    if (live) return null;
+
+    const next = await tx.auction.findFirst({
+      where: { status: "SCHEDULED" },
+      orderBy: { order: "asc" },
+    });
+    if (!next) return null;
+
+    const now = new Date();
+    const endsAt = new Date(now.getTime() + dur * 1000);
+    // نگهبان مسابقه: فقط اگر هنوز SCHEDULED است آن را زنده کن.
+    const claimed = await tx.auction.updateMany({
+      where: { id: next.id, status: "SCHEDULED" },
+      data: { status: "LIVE", startsAt: now, endsAt },
+    });
+    if (claimed.count === 0) return null;
+    return tx.auction.findUnique({ where: { id: next.id } });
   });
 }
 
+/**
+ * هستهٔ تسویه. idempotent است: با `updateMany` روی وضعیت LIVE قفل می‌گیرد،
+ * پس دو فراخوانی هم‌زمان فقط یک‌بار برنده را بدهکار می‌کنند.
+ */
 async function settleCore(id: string) {
   const settled = await prisma.$transaction(async (tx) => {
+    // قفل منطقی: تنها فراخوانی‌ای که count=1 بگیرد حق تسویه دارد.
+    const claimed = await tx.auction.updateMany({
+      where: { id, status: "LIVE" },
+      data: { status: "ENDED" },
+    });
+    if (claimed.count === 0) return false;
+
     const auction = await tx.auction.findUnique({ where: { id } });
-    if (!auction || auction.status !== "LIVE") return false;
-    const highest = await tx.bid.findFirst({ where: { auctionId: id }, orderBy: { amount: "desc" } });
-    if (highest) {
-      const winner = await tx.user.findUnique({ where: { id: highest.userId } });
-      if (winner) {
-        await tx.user.update({ where: { id: winner.id }, data: { buyWallet: { decrement: highest.amount } } });
-        await tx.purchase.create({
-          data: { productId: auction.productId, userId: winner.id, amount: highest.amount, discount: 0 },
-        });
-        await tx.ledgerEntry.create({
-          data: { userId: winner.id, wallet: "BUY", delta: -highest.amount, reason: "PURCHASE", refId: auction.id },
-        });
-      }
+    if (!auction) return false;
+
+    // بالاترین پیشنهاد؛ در تساوی، پیشنهاد زودتر برنده است.
+    const highest = await tx.bid.findFirst({
+      where: { auctionId: id },
+      orderBy: [{ amount: "desc" }, { createdAt: "asc" }],
+    });
+    if (!highest) return true; // بدون پیشنهاد: پایان بدون برنده
+
+    const winner = await tx.user.findUnique({ where: { id: highest.userId } });
+    if (!winner) return true;
+
+    // سکه‌ها در زمان پیشنهاد بلوکه نمی‌شوند؛ پس در لحظهٔ تسویه ممکن است
+    // موجودی کمتر از مبلغ برنده باشد (مثلاً خرید هم‌زمان در بازار).
+    // در این حالت قیمت نهایی به موجودی موجود محدود می‌شود تا کیف منفی نشود.
+    const finalPrice = Math.max(0, Math.min(winner.buyWallet, highest.amount));
+
+    if (finalPrice > 0) {
+      await tx.user.update({ where: { id: winner.id }, data: { buyWallet: { decrement: finalPrice } } });
     }
+    await tx.purchase.create({
+      data: { productId: auction.productId, userId: winner.id, amount: finalPrice, discount: 0 },
+    });
+    await tx.ledgerEntry.create({
+      data: { userId: winner.id, wallet: "BUY", delta: -finalPrice, reason: "AUCTION_WIN", refId: auction.id },
+    });
     await tx.auction.update({
       where: { id },
-      data: { status: "ENDED", winnerId: highest?.userId ?? null, finalPrice: highest?.amount ?? null },
+      data: { winnerId: winner.id, finalPrice },
     });
     return true;
   });
 
   if (settled) {
-    const { getPhase } = await import("./phase");
-    const { phase } = await getPhase().catch(() => ({ phase: null }));
+    const { phase } = await getPhase().catch(() => ({ phase: null as string | null }));
     if (phase === "AUCTION") {
       await startNextAuction();
     }
@@ -95,54 +125,73 @@ export async function settleIfEnded(id: string) {
 
 /** ثبت پیشنهاد روی یک حراج زندهٔ در جریان. */
 export async function placeBid(auctionId: string, userId: string, amount: number) {
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error("مبلغ پیشنهاد نامعتبر است");
+
+  const increment = await getSettingInt("bid_increment", DEFAULTS.bidIncrement);
+  const antiSnipeWindow = await getSettingInt("anti_snipe_window_sec", DEFAULTS.antiSnipeWindowSec);
+  const antiSnipeExtend = await getSettingInt("anti_snipe_extend_sec", DEFAULTS.antiSnipeExtendSec);
+
   return prisma.$transaction(async (tx) => {
     const auction = await tx.auction.findUnique({ where: { id: auctionId }, include: { product: true } });
     if (!auction) throw new Error("حراج پیدا نشد");
     if (auction.status !== "LIVE" || !auction.endsAt) throw new Error("این حراج در حال حاضر زنده نیست");
-    if (Date.now() > auction.endsAt.getTime()) throw new Error("زمان این حراج تمام شده است");
+
+    const now = Date.now();
+    if (now >= auction.endsAt.getTime()) throw new Error("حراج تمام شده است");
 
     const user = await tx.user.findUnique({ where: { id: userId } });
     if (!user) throw new Error("کاربر پیدا نشد");
-    if (user.teamId === auction.product.teamId) {
+    if (user.teamId && user.teamId === auction.product.teamId) {
       throw new Error("نمی‌توانی روی نسخهٔ ویژهٔ تیم خودت پیشنهاد بدهی");
     }
-    if (user.buyWallet < amount) throw new Error("موجودی کیف خرید کافی نیست");
 
-    const increment = await getSettingInt("bid_increment", DEFAULTS.bidIncrement);
-    const highest = await tx.bid.findFirst({ where: { auctionId }, orderBy: { amount: "desc" } });
+    const highest = await tx.bid.findFirst({
+      where: { auctionId },
+      orderBy: [{ amount: "desc" }, { createdAt: "asc" }],
+    });
+
+    // جلوگیری از ثبت دوبارهٔ همان پیشنهاد (مثلاً دوبار کلیک)؛ بالا بردن پیشنهاد خود مجاز است.
+    if (highest && highest.userId === userId && highest.amount === amount) {
+      throw new Error("همین حالا بالاترین پیشنهاد با همین مبلغ از توست");
+    }
+
     const min = nextMinBid(highest?.amount ?? null, auction.startPrice, increment);
-    if (amount < min) throw new Error(`پیشنهاد باید حداقل ${min} سکه باشد`);
+    if (amount < min) throw new Error(`پیشنهاد باید حداقل ${fa(min)} سکه باشد`);
+
+    // سکه بلوکه نمی‌شود؛ فقط کفایت موجودی در لحظهٔ پیشنهاد بررسی می‌شود.
+    if (user.buyWallet < amount) throw new Error("موجودی کیف خرید کافی نیست");
 
     await tx.bid.create({ data: { auctionId, userId, amount } });
 
-    const antiSnipeWindow = await getSettingInt("anti_snipe_window_sec", DEFAULTS.antiSnipeWindowSec);
-    const antiSnipeExtend = await getSettingInt("anti_snipe_extend_sec", DEFAULTS.antiSnipeExtendSec);
-    const now = Date.now();
     let endsAt = auction.endsAt;
     if (shouldExtendAuction(now, auction.endsAt.getTime(), antiSnipeWindow)) {
       endsAt = new Date(auction.endsAt.getTime() + antiSnipeExtend * 1000);
       await tx.auction.update({ where: { id: auctionId }, data: { endsAt, extensions: { increment: 1 } } });
     }
 
-    return { ok: true, endsAt };
+    return { ok: true as const, amount, endsAt };
   });
 }
 
 /** قدرت «نفس دوم»: دو دقیقه تمدید یک حراج زنده، یک‌بار در کل بازی برای هر کاربر. */
 export async function activateSecondWind(auctionId: string, userId: string) {
   return prisma.$transaction(async (tx) => {
+    const auction = await tx.auction.findUnique({ where: { id: auctionId } });
+    if (!auction || auction.status !== "LIVE" || !auction.endsAt) throw new Error("این حراج زنده نیست");
+    if (Date.now() >= auction.endsAt.getTime()) throw new Error("حراج تمام شده است");
+
     const user = await tx.user.findUnique({ where: { id: userId } });
     if (!user) throw new Error("کاربر پیدا نشد");
     if (user.power !== "SECOND_WIND") throw new Error("این قدرت را نداری");
     if (user.powerUsed) throw new Error("قدرتت قبلاً استفاده شده است");
 
-    const auction = await tx.auction.findUnique({ where: { id: auctionId } });
-    if (!auction || auction.status !== "LIVE" || !auction.endsAt) throw new Error("این حراج زنده نیست");
+    // نگهبان مسابقه: قدرت فقط یک‌بار مصرف می‌شود.
+    const used = await tx.user.updateMany({ where: { id: userId, powerUsed: false }, data: { powerUsed: true } });
+    if (used.count === 0) throw new Error("قدرتت قبلاً استفاده شده است");
 
-    const endsAt = new Date(auction.endsAt.getTime() + 120 * 1000);
+    const endsAt = new Date(auction.endsAt.getTime() + SECOND_WIND_EXTEND_SEC * 1000);
     await tx.auction.update({ where: { id: auctionId }, data: { endsAt, extensions: { increment: 1 } } });
-    await tx.user.update({ where: { id: userId }, data: { powerUsed: true } });
-    return { ok: true, endsAt };
+    return { ok: true as const, endsAt };
   });
 }
 
@@ -152,10 +201,11 @@ export type AuctionState = {
   status: "SCHEDULED" | "LIVE" | "ENDED";
   startsAt: string | null;
   endsAt: string | null;
-  highest: { amount: number; nickname: string; avatarSeed: string } | null;
+  highest: { userId: string; amount: number; nickname: string; avatarSeed: string } | null;
   bids: AuctionStateBid[];
   nextMin: number;
   extensions: number;
+  winnerId: string | null;
   winnerNickname: string | null;
   finalPrice: number | null;
   product: {
@@ -165,6 +215,7 @@ export type AuctionState = {
     specialDesc: string;
     cover: string;
     teamName: string;
+    teamId: string;
   };
 };
 
@@ -174,7 +225,7 @@ export async function getAuctionState(id: string): Promise<AuctionState | null> 
     where: { id },
     include: {
       product: { include: { team: true } },
-      bids: { orderBy: { amount: "desc" }, take: 10, include: { user: true } },
+      bids: { orderBy: [{ amount: "desc" }, { createdAt: "asc" }], take: 10, include: { user: true } },
     },
   });
   if (!auction) return null;
@@ -191,10 +242,23 @@ export async function getAuctionState(id: string): Promise<AuctionState | null> 
     status: auction.status as AuctionState["status"],
     startsAt: auction.startsAt?.toISOString() ?? null,
     endsAt: auction.endsAt?.toISOString() ?? null,
-    highest: highestBid ? { amount: highestBid.amount, nickname: highestBid.user.nickname, avatarSeed: highestBid.user.avatarSeed || highestBid.user.id } : null,
-    bids: auction.bids.map((b) => ({ amount: b.amount, nickname: b.user.nickname, avatarSeed: b.user.avatarSeed || b.user.id, createdAt: b.createdAt.toISOString() })),
+    highest: highestBid
+      ? {
+          userId: highestBid.userId,
+          amount: highestBid.amount,
+          nickname: highestBid.user.nickname,
+          avatarSeed: highestBid.user.avatarSeed || highestBid.user.id,
+        }
+      : null,
+    bids: auction.bids.map((b) => ({
+      amount: b.amount,
+      nickname: b.user.nickname,
+      avatarSeed: b.user.avatarSeed || b.user.id,
+      createdAt: b.createdAt.toISOString(),
+    })),
     nextMin: nextMinBid(highestBid?.amount ?? null, auction.startPrice, increment),
     extensions: auction.extensions,
+    winnerId: auction.winnerId,
     winnerNickname: winnerUser?.nickname ?? null,
     finalPrice: auction.finalPrice,
     product: {
@@ -204,6 +268,7 @@ export async function getAuctionState(id: string): Promise<AuctionState | null> 
       specialDesc: auction.product.specialDesc,
       cover: images[0] ?? `https://picsum.photos/seed/${auction.product.id}/800/500`,
       teamName: auction.product.team.name,
+      teamId: auction.product.teamId,
     },
   };
 }

@@ -2,7 +2,6 @@
 
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
-import Image from "next/image";
 import { fa } from "@/lib/persian";
 import { Alert } from "@/components/ui";
 import { saveIdeaAction, unsubmitIdeaAction, type IdeaActionState } from "./actions";
@@ -89,9 +88,11 @@ export function IdeaForm({ initial }: { initial: IdeaInput | null }) {
             تصویر تصادفی
           </button>
         </div>
+        {/* پیش‌نمایش زندهٔ نشانی دلخواه کاربر: تگ ساده، چون میزبان آن مجاز نیست */}
         {coverUrl && (
-          <div className="mt-3 relative w-full max-w-md aspect-[8/5] rounded-2xl overflow-hidden border border-brand-mist anim-pop">
-            <Image src={coverUrl} alt="پیش‌نمایش جلد" fill sizes="400px" className="object-cover" unoptimized />
+          <div className="mt-3 relative w-full max-w-md aspect-[8/5] rounded-2xl overflow-hidden border border-brand-mist anim-pop bg-brand-sky">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={coverUrl} alt="پیش‌نمایش جلد" className="absolute inset-0 size-full object-cover" />
           </div>
         )}
       </div>
@@ -135,7 +136,7 @@ export function IdeaForm({ initial }: { initial: IdeaInput | null }) {
 }
 
 export function UnsubmitButton() {
-  const [state, formAction] = useActionState<IdeaActionState, FormData>(async () => unsubmitIdeaAction(), {});
+  const [state, formAction] = useActionState<IdeaActionState, FormData>(unsubmitIdeaAction, {});
   return (
     <form action={formAction}>
       {state.error && <Alert kind="error">{state.error}</Alert>}

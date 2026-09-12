@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef } from "react";
+import { useActionState, useEffect, useRef } from "react";
 import { useFormStatus } from "react-dom";
 import { Avatar } from "@/components/Avatar";
 import { jdatetime } from "@/lib/persian";
@@ -20,12 +20,11 @@ function AskButton() {
 
 export function DueDiligenceChat({ ideaId, chats }: { ideaId: string; chats: ChatRow[] }) {
   const formRef = useRef<HTMLFormElement>(null);
-  const [state, formAction] = useActionState<ChatActionState, FormData>(async (_prev, formData) => {
-    const question = String(formData.get("question") ?? "");
-    const res = await dueDiligenceAction(ideaId, question);
-    if (res.ok) formRef.current?.reset();
-    return res;
-  }, {});
+  const [state, formAction] = useActionState<ChatActionState, FormData>(dueDiligenceAction, {});
+
+  useEffect(() => {
+    if (state.ok) formRef.current?.reset();
+  }, [state]);
 
   return (
     <div className="card p-6 anim-rise">
@@ -35,7 +34,8 @@ export function DueDiligenceChat({ ideaId, chats }: { ideaId: string; chats: Cha
       {state.error && <Alert kind="error">{state.error}</Alert>}
 
       <form ref={formRef} action={formAction} className="flex gap-2 mb-5">
-        <input name="question" required maxLength={300} className="input flex-1" placeholder="سؤالت را از متن ایده بپرس…" />
+        <input type="hidden" name="ideaId" value={ideaId} />
+        <input name="question" required minLength={3} maxLength={300} className="input flex-1" placeholder="سؤالت را از متن ایده بپرس…" />
         <AskButton />
       </form>
 

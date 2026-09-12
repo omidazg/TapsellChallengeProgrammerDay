@@ -69,6 +69,24 @@ describe("computeDividends", () => {
     expect(computeDividends(team)).toEqual([]);
   });
 
+  it("aggregates multiple investments by the same investor before flooring", () => {
+    const team = baseTeam({
+      revenueShare: 20,
+      investments: [
+        { userId: "a", amount: 15, selfFunded: false },
+        { userId: "a", amount: 15, selfFunded: false },
+        { userId: "b", amount: 70, selfFunded: false },
+      ],
+      sales: [{ userId: "x", amount: 33 }],
+    });
+    // یک سطر برای هر سرمایه‌گذار: a با ۳۰ سکه، b با ۷۰ سکه
+    const lines = computeDividends(team);
+    expect(lines).toEqual([
+      { userId: "a", teamId: "t1", invested: 30, dividend: 1 },
+      { userId: "b", teamId: "t1", invested: 70, dividend: 4 },
+    ]);
+  });
+
   it("returns no dividends when there are no investments at all", () => {
     const team = baseTeam({ sales: [{ userId: "x", amount: 100 }] });
     expect(computeDividends(team)).toEqual([]);
@@ -301,6 +319,22 @@ describe("auction helpers", () => {
     const now = 1_000_000;
     const endsAt = now + 45_000; // 45s left
     expect(shouldExtendAuction(now, endsAt, 30)).toBe(false);
+  });
+
+  it("nextMinBid allows the first bid to equal the start price", () => {
+    expect(nextMinBid(null, 20, 5)).toBe(20);
+    expect(nextMinBid(20, 20, 5)).toBe(25);
+  });
+
+  it("shouldExtendAuction is true exactly at the window boundary", () => {
+    const now = 1_000_000;
+    expect(shouldExtendAuction(now, now + 30_000, 30)).toBe(true);
+    expect(shouldExtendAuction(now, now + 30_001, 30)).toBe(false);
+  });
+
+  it("shouldExtendAuction is false at exactly zero remaining time", () => {
+    const now = 1_000_000;
+    expect(shouldExtendAuction(now, now, 30)).toBe(false);
   });
 
   it("shouldExtendAuction is false after the auction already ended", () => {

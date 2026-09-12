@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { getSettingInt } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
-import { ensureAuctions, startNextAuction } from "@/lib/auction";
+import { ensureAuctions, startNextAuction, settleAuction } from "@/lib/auction";
+import { prisma } from "@/lib/db";
 import { closeDueSlots, ensureAdSlots, marketStartFromSettings } from "@/lib/adslots";
 
 export type AuctionAdminState = { error?: string; ok?: boolean };
@@ -37,5 +38,17 @@ export async function ensureAdSlotsAction(): Promise<AuctionAdminState> {
   const marketStart = await marketStartFromSettings();
   await ensureAdSlots(marketStart, 6);
   revalidatePath("/admin/auction");
+  return { ok: true };
+}
+
+/** پایان دستی حراج زندهٔ جاری، صرف‌نظر از زمان باقی‌مانده. */
+export async function settleCurrentAuctionAction(): Promise<AuctionAdminState> {
+  await requireAdmin();
+  const live = await prisma.auction.findFirst({ where: { status: "LIVE" }, orderBy: { order: "asc" } });
+  if (!live) return { error: "حراج زنده‌ای در جریان نیست" };
+  const settled = await settleAuction(live.id);
+  revalidatePath("/admin/auction");
+  revalidatePath("/auction");
+  if (!settled) return { error: "بستن حراج ممکن نشد" };
   return { ok: true };
 }

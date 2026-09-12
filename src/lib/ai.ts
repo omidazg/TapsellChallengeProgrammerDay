@@ -39,13 +39,14 @@ export async function askJson<T>(system: string, user: string, schema: Record<st
   const client = aiClient();
   if (!client) return null;
   try {
-    const res = await client.messages.create({
+    const params = {
       model: AI_MODEL,
       max_tokens: maxTokens,
       system: `${FA_SYSTEM}\n\n${system}`,
       messages: [{ role: "user", content: user }],
       output_config: { format: { type: "json_schema", schema } },
-    } as Parameters<typeof client.messages.create>[0]);
+    } as unknown as Anthropic.MessageCreateParamsNonStreaming;
+    const res: Anthropic.Message = await client.messages.create(params);
     if (res.stop_reason === "refusal") return null;
     const text = res.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("");
     return JSON.parse(text) as T;

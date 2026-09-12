@@ -46,7 +46,14 @@ export default async function AuctionPage() {
         <>
           <AuctionStage
             initialId={liveId}
-            currentUser={{ id: user.id, nickname: user.nickname, buyWallet: user.buyWallet, power: user.power, powerUsed: user.powerUsed }}
+            currentUser={{
+              id: user.id,
+              nickname: user.nickname,
+              teamId: user.teamId,
+              buyWallet: user.buyWallet,
+              power: user.power,
+              powerUsed: user.powerUsed,
+            }}
           />
 
           <div className="grid md:grid-cols-2 gap-6 mt-8">

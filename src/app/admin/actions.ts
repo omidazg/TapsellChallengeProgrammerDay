@@ -39,14 +39,26 @@ const settingsSchema = z.object({
   penalty_per_coin: z.coerce.number().min(0),
   bid_increment: z.coerce.number().int().min(1),
   auction_duration_sec: z.coerce.number().int().min(10),
-  market_starts_at: z.string().optional().default(""),
+  market_starts_at: z
+    .string()
+    .optional()
+    .default("")
+    .refine((v) => v === "" || !Number.isNaN(new Date(v).getTime()), "زمان شروع روز بازار نامعتبر است"),
 });
 
 /** ذخیرهٔ تنظیمات قابل‌تغییر بازی */
 export async function updateSettingsAction(prevState: AdminActionState, formData: FormData): Promise<AdminActionState> {
   await requireAdmin();
 
-  const raw = Object.fromEntries(SETTING_KEYS.map((k) => [k, formData.get(k)]));
+  const raw: Record<string, string> = {};
+  for (const key of SETTING_KEYS) {
+    const value = formData.get(key);
+    // فیلد خالی/غایب نباید بی‌سروصدا صفر شود
+    if (typeof value !== "string" || (value.trim() === "" && key !== "market_starts_at")) {
+      return { error: "همهٔ مقادیر عددی را پر کن" };
+    }
+    raw[key] = value.trim();
+  }
   const parsed = settingsSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "ورودی نامعتبر است" };
 

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import type { Team, TeamInvite, User } from "@prisma/client";
-import { Alert, Empty, Locked } from "@/components/ui";
+import { Alert, Locked } from "@/components/ui";
 import { createTeamAction, joinMatchmakingAction, acceptInviteAction, declineInviteAction } from "./actions";
 
 type InviteRow = TeamInvite & { team: Team; inviter: User };
@@ -30,9 +30,6 @@ export function NoTeamPanel({ invites, registrationOpen }: { invites: InviteRow[
         <Locked title="تشکیل تیم بسته است" desc="فاز ثبت‌نام و تیم به پایان رسیده؛ دیگر نمی‌توانی تیم بسازی یا بپیوندی." />
       )}
 
-      {invites.length === 0 && registrationOpen === false && (
-        <Empty title="عضو هیچ تیمی نیستی" desc="فاز ثبت‌نام تمام شده و دعوت‌نامه‌ای هم در انتظار نداری." />
-      )}
     </div>
   );
 }
@@ -109,10 +106,11 @@ function CreateTeamCard() {
       <input
         className="input mt-4"
         placeholder="اسم تیم"
+        maxLength={40}
         value={name}
         onChange={(e) => setName(e.target.value)}
       />
-      <button type="submit" disabled={pending} className="btn-primary mt-3 w-full">
+      <button type="submit" disabled={pending || name.trim().length < 2} className="btn-primary mt-3 w-full">
         {pending ? "در حال ساخت…" : "ساخت تیم"}
       </button>
     </form>

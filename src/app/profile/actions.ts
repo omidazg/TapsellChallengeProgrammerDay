@@ -46,5 +46,6 @@ export async function updateProfileAction(input: z.infer<typeof updateSchema>): 
   });
 
   revalidatePath("/profile");
+  revalidatePath("/team");
   return { ok: true };
 }

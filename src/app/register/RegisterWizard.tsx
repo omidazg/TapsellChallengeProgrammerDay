@@ -6,9 +6,12 @@ import { Avatar } from "@/components/Avatar";
 import { Alert, Stat } from "@/components/ui";
 import { ROLES, POWERS, type RoleKey, type PowerKey } from "@/lib/constants";
 import { fa } from "@/lib/persian";
-import { registerAction, DEPARTMENTS } from "./actions";
+import { registerAction } from "./actions";
+import { DEPARTMENTS, type Department } from "./departments";
 
 const STEPS = ["حساب کاربری", "نقش", "قدرت", "کد بزن", "پیش‌نمایش"] as const;
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type Stats = { coffee: number; bugs: number; sleep: number; confidence: number };
 
@@ -36,6 +39,10 @@ export function RegisterWizard() {
     if (step === 0) {
       if (!email.trim() || !password || password.length < 6 || nickname.trim().length < 2 || !department) {
         setError("همهٔ فیلدها را کامل کن؛ رمز عبور حداقل ۶ نویسه باشد.");
+        return;
+      }
+      if (!EMAIL_RE.test(email.trim())) {
+        setError("ایمیل نامعتبر است.");
         return;
       }
     }
@@ -71,7 +78,7 @@ export function RegisterWizard() {
         email,
         password,
         nickname,
-        department: department as (typeof DEPARTMENTS)[number],
+        department: department as Department,
         role,
         power,
         coffee: stats.coffee,
@@ -79,7 +86,11 @@ export function RegisterWizard() {
         sleep: stats.sleep,
         confidence: stats.confidence,
       });
-      if (res?.error) setError(res.error);
+      if (res?.error) {
+        setError(res.error);
+        // خطاهای مربوط به حساب در مرحلهٔ ۱ قابل اصلاح‌اند
+        if (/ایمیل|رمز|نام مستعار|دپارتمان/.test(res.error)) setStep(0);
+      }
     });
   }
 
@@ -113,15 +124,15 @@ export function RegisterWizard() {
             <h2 className="text-xl font-black text-brand-navy">اطلاعات حساب</h2>
             <div>
               <label className="label" htmlFor="email">ایمیل</label>
-              <input id="email" type="email" className="input" dir="ltr" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+              <input id="email" type="email" autoComplete="email" maxLength={120} className="input" dir="ltr" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
             </div>
             <div>
               <label className="label" htmlFor="password">رمز عبور</label>
-              <input id="password" type="password" className="input" dir="ltr" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="حداقل ۶ نویسه" />
+              <input id="password" type="password" autoComplete="new-password" minLength={6} maxLength={72} className="input" dir="ltr" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="حداقل ۶ نویسه" />
             </div>
             <div>
               <label className="label" htmlFor="nickname">نام مستعار</label>
-              <input id="nickname" type="text" className="input" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="مثلاً کد-نویس" />
+              <input id="nickname" type="text" autoComplete="nickname" maxLength={30} className="input" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="مثلاً کد-نویس" />
             </div>
             <div>
               <label className="label" htmlFor="department">دپارتمان</label>
@@ -147,7 +158,8 @@ export function RegisterWizard() {
                     key={k}
                     type="button"
                     onClick={() => setRole(k)}
-                    className={`rounded-2xl border-2 p-5 text-right transition anim-rise ${active ? "border-brand-red bg-red-50 shadow-lift" : "border-brand-mist bg-white hover:border-brand-cyan"}`}
+                    aria-pressed={active}
+                    className={`rounded-2xl border-2 p-5 text-right transition anim-rise focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan ${active ? "border-brand-red bg-red-50 shadow-lift" : "border-brand-mist bg-white hover:border-brand-cyan"}`}
                   >
                     <div className="text-3xl">{r.emoji}</div>
                     <div className="mt-2 font-black text-brand-navy">{r.label}</div>
@@ -171,7 +183,8 @@ export function RegisterWizard() {
                     key={k}
                     type="button"
                     onClick={() => setPower(k)}
-                    className={`rounded-2xl border-2 p-5 text-right transition anim-rise ${active ? "border-brand-cyan-dark bg-brand-ice shadow-lift" : "border-brand-mist bg-white hover:border-brand-cyan"}`}
+                    aria-pressed={active}
+                    className={`rounded-2xl border-2 p-5 text-right transition anim-rise focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan ${active ? "border-brand-cyan-dark bg-brand-ice shadow-lift" : "border-brand-mist bg-white hover:border-brand-cyan"}`}
                   >
                     <div className="text-3xl">{p.emoji}</div>
                     <div className="mt-2 font-black text-brand-navy">{p.label}</div>
@@ -200,7 +213,7 @@ export function RegisterWizard() {
                 {running ? "در حال اجرا…" : "اجرا ▶"}
               </button>
               {ran && !running && (
-                <div dir="ltr" className="anim-pop flex-1 overflow-x-auto rounded-2xl bg-brand-ice px-4 py-3 font-mono text-xs text-brand-navy">
+                <div dir="ltr" className="anim-pop flex-1 overflow-x-auto whitespace-pre-wrap rounded-2xl bg-brand-ice px-4 py-3 font-mono text-xs text-brand-navy">
                   {`>>> print(developer)\n{'coffee': ${stats.coffee}, 'bugs': ${stats.bugs}, 'sleep': ${stats.sleep}, 'confidence': ${stats.confidence}}`}
                 </div>
               )}

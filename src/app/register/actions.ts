@@ -3,23 +3,11 @@
 import { z } from "zod";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { hashPassword, isEmailAllowed, createSession } from "@/lib/auth";
+import { hashPassword, isEmailAllowed, createSession, getSessionUserId } from "@/lib/auth";
 import { getPhase, getSettingInt } from "@/lib/phase";
 import { DEFAULTS, ROLES, POWERS } from "@/lib/constants";
+import { DEPARTMENTS } from "./departments";
 
-export const DEPARTMENTS = [
-  "بک‌اند",
-  "فرانت‌اند",
-  "موبایل",
-  "دیتا",
-  "محصول",
-  "طراحی",
-  "فروش",
-  "مارکتینگ",
-  "منابع انسانی",
-  "مالی",
-  "سایر",
-] as const;
 
 const FIELD_ERRORS: Record<string, string> = {
   email: "ایمیل نامعتبر است.",
@@ -35,8 +23,8 @@ const FIELD_ERRORS: Record<string, string> = {
 };
 
 const registerSchema = z.object({
-  email: z.string().trim().toLowerCase().email(),
-  password: z.string().min(6),
+  email: z.string().trim().toLowerCase().max(120).email(),
+  password: z.string().min(6).max(72),
   nickname: z.string().trim().min(2).max(30),
   department: z.enum(DEPARTMENTS),
   role: z.enum(Object.keys(ROLES) as [keyof typeof ROLES, ...(keyof typeof ROLES)[]]),
@@ -50,6 +38,11 @@ const registerSchema = z.object({
 export type RegisterInput = z.infer<typeof registerSchema>;
 
 export async function registerAction(input: RegisterInput): Promise<{ error: string } | never> {
+  // کاربر واردشده نباید بتواند حساب دوم بسازد و نشستش را جابه‌جا کند
+  if (await getSessionUserId()) {
+    return { error: "شما از قبل وارد شده‌اید." };
+  }
+
   const { phase } = await getPhase();
   if (phase !== "REGISTRATION") {
     return { error: "ثبت‌نام بسته شده است." };
@@ -100,8 +93,12 @@ export async function registerAction(input: RegisterInput): Promise<{ error: str
       },
     });
     userId = user.id;
-  } catch {
-    return { error: "این ایمیل قبلاً ثبت‌نام کرده است." };
+  } catch (e) {
+    // فقط نقض کلید یکتای ایمیل را به پیام «تکراری» ترجمه کن؛ بقیه خطای سرور است
+    if (typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002") {
+      return { error: "این ایمیل قبلاً ثبت‌نام کرده است." };
+    }
+    return { error: "ثبت‌نام انجام نشد؛ دوباره تلاش کن." };
   }
 
   await createSession(userId);

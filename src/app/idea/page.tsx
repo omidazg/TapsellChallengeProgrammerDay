@@ -1,4 +1,3 @@
-import Image from "next/image";
 import { requireUser } from "@/lib/auth";
 import { getPhase, phaseIndex } from "@/lib/phase";
 import { prisma } from "@/lib/db";
@@ -6,6 +5,7 @@ import { PageHeader, Container, Empty, Locked, Alert } from "@/components/ui";
 import { fa, coins } from "@/lib/persian";
 import { IdeaForm, UnsubmitButton } from "./IdeaForm";
 import { AnalystCard } from "./AnalystCard";
+import { Cover } from "./Cover";
 
 export const metadata = { title: "اتاق ایده" };
 
@@ -90,7 +90,7 @@ export default async function IdeaPage() {
 
         {idea.coverUrl && (
           <div className="relative w-full aspect-[8/5] rounded-3xl overflow-hidden border border-brand-mist anim-rise">
-            <Image src={idea.coverUrl} alt={idea.title} fill sizes="800px" className="object-cover" unoptimized />
+            <Cover src={idea.coverUrl} alt={idea.title} sizes="800px" />
           </div>
         )}
 

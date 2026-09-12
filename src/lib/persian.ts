@@ -1,4 +1,4 @@
-import jalaali from "jalaali-js";
+import * as jalaali from "jalaali-js";
 
 const FA_DIGITS = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"];
 

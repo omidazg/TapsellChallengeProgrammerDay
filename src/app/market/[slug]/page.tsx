@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { getPhase, getSettingInt } from "@/lib/phase";
+import { getPhase, getSettingInt, phaseIndex } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
-import { Container, PageHeader } from "@/components/ui";
+import { Container, PageHeader, Locked } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { fa, coins } from "@/lib/persian";
 import { getProductBySlug, parseTeaser } from "@/lib/product";
@@ -24,6 +24,17 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   if (!product) notFound();
 
   const { phase } = await getPhase();
+  if (phaseIndex(phase) < phaseIndex("BUILD")) {
+    return (
+      <>
+        <PageHeader eyebrow="فاز فعلی" title="بازار" />
+        <Container>
+          <Locked title="بازار هنوز باز نشده" desc="صفحهٔ محصول از فاز «ساخت محصول» قابل مشاهده می‌شود." />
+        </Container>
+      </>
+    );
+  }
+
   const [summary, buyers, alreadyHearted, alreadySpent, maxPerTarget] = await Promise.all([
     salesSummary(product.id),
     getBuyers(product.id),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useState } from "react";
 import NextImage from "next/image";
 import { Avatar, avatarParts } from "@/components/Avatar";
 import { ROLES, POWERS, type RoleKey, type PowerKey } from "@/lib/constants";
@@ -23,7 +23,7 @@ export function ShareCard({
   avatarSeed: string;
   stats: Stats;
 }) {
-  const cardRef = useRef<HTMLDivElement>(null);
+  const [busy, setBusy] = useState(false);
 
   async function download() {
     const W = 1200;
@@ -119,7 +119,20 @@ export function ShareCard({
       const logo = await loadImage("/brand/tapsell-logo.png");
       const lw = 180;
       const lh = (logo.height / logo.width) * lw;
-      ctx.drawImage(logo, W - 70 - lw, H - 60 - lh, lw, lh);
+      // لوگوی تیره روی پس‌زمینهٔ تیره دیده نمی‌شود؛ سفیدش می‌کنیم (مثل کارت درون صفحه)
+      const off = document.createElement("canvas");
+      off.width = Math.ceil(lw);
+      off.height = Math.ceil(lh);
+      const octx = off.getContext("2d");
+      if (octx) {
+        octx.drawImage(logo, 0, 0, lw, lh);
+        octx.globalCompositeOperation = "source-in";
+        octx.fillStyle = "#ffffff";
+        octx.fillRect(0, 0, off.width, off.height);
+        ctx.drawImage(off, W - 70 - lw, H - 60 - lh, lw, lh);
+      } else {
+        ctx.drawImage(logo, W - 70 - lw, H - 60 - lh, lw, lh);
+      }
     } catch {
       // لوگو در دسترس نبود؛ کارت بدون لوگو صادر می‌شود
     }
@@ -133,20 +146,30 @@ export function ShareCard({
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      // باطل‌کردن فوری URL در بعضی مرورگرها دانلود را لغو می‌کند
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     }, "image/png");
+  }
+
+  async function onDownload() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await download();
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <div className="card p-6 anim-rise">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-lg font-black text-brand-navy">کارت من</h3>
-        <button type="button" onClick={download} className="btn-primary">
-          دانلود کارت
+        <button type="button" onClick={onDownload} disabled={busy} className="btn-primary">
+          {busy ? "در حال ساخت…" : "دانلود کارت"}
         </button>
       </div>
       <div
-        ref={cardRef}
         className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-navy to-brand-red p-8 text-white shadow-lift"
         style={{ aspectRatio: "600 / 340" }}
       >
@@ -188,12 +211,13 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
+/** لوگو هم‌منشأ است (public/brand) پس بوم را tainted نمی‌کند و toBlob کار می‌کند */
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = "anonymous";
+    img.decoding = "sync";
     img.onload = () => resolve(img);
-    img.onerror = reject;
+    img.onerror = () => reject(new Error(`image failed: ${src}`));
     img.src = src;
   });
 }

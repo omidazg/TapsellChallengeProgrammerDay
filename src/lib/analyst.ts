@@ -27,8 +27,28 @@ const SCHEMA = {
   additionalProperties: false,
 };
 
-/** ایده را با هوش مصنوعی تحلیل و نتیجه را روی رکورد Idea ذخیره می‌کند */
+/** عدد معتبر ۰..۱۰۰ از خروجی مدل (که ممکن است رشته یا بی‌معنا باشد) */
+function clampScore(v: unknown): number | null {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+/**
+ * ایده را با هوش مصنوعی تحلیل و نتیجه را روی رکورد Idea ذخیره می‌کند.
+ * هرگز خطا پرتاب نمی‌کند: در نبود کلید، خطای شبکه یا خروجی نامعتبر `null` برمی‌گرداند
+ * تا ثبت نهایی ایده به هوش مصنوعی گره نخورد.
+ */
 export async function runAnalyst(ideaId: string): Promise<AnalystResult | null> {
+  try {
+    return await runAnalystUnsafe(ideaId);
+  } catch (e) {
+    console.error("runAnalyst error", e);
+    return null;
+  }
+}
+
+async function runAnalystUnsafe(ideaId: string): Promise<AnalystResult | null> {
   const idea = await prisma.idea.findUnique({ where: { id: ideaId } });
   if (!idea) return null;
 
@@ -42,20 +62,26 @@ export async function runAnalyst(ideaId: string): Promise<AnalystResult | null> 
     `سهم سود سرمایه‌گذار: ${idea.revenueShare}٪`,
   ].join("\n");
 
-  const result = await askJson<AnalystResult>(SYSTEM, user, SCHEMA);
-  if (!result) return null;
+  const raw = await askJson<Partial<AnalystResult>>(SYSTEM, user, SCHEMA);
+  if (!raw || typeof raw !== "object") return null;
 
-  const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+  const clarity = clampScore(raw.clarity);
+  const feasibility = clampScore(raw.feasibility);
+  const novelty = clampScore(raw.novelty);
+  const summary = typeof raw.summary === "string" ? raw.summary.trim().slice(0, 1000) : "";
+
+  // اگر هیچ نمرهٔ معتبری برنگشت، چیزی ذخیره نمی‌کنیم.
+  if (clarity === null && feasibility === null && novelty === null && !summary) return null;
 
   await prisma.idea.update({
     where: { id: ideaId },
     data: {
-      analystClarity: clamp(result.clarity),
-      analystFeasibility: clamp(result.feasibility),
-      analystNovelty: clamp(result.novelty),
-      analystSummary: result.summary,
+      analystClarity: clarity,
+      analystFeasibility: feasibility,
+      analystNovelty: novelty,
+      analystSummary: summary || null,
     },
   });
 
-  return result;
+  return { clarity: clarity ?? 0, feasibility: feasibility ?? 0, novelty: novelty ?? 0, summary };
 }

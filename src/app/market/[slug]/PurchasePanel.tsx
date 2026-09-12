@@ -35,6 +35,7 @@ export function PurchasePanel({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [useBargain, setUseBargain] = useState(false);
+  const [bargainAvailable, setBargainAvailable] = useState(canUsePower);
   const [spent, setSpent] = useState(alreadySpent);
   const [purchased, setPurchased] = useState(hasPurchasedAny);
   const [justBought, setJustBought] = useState(false);
@@ -43,7 +44,7 @@ export function PurchasePanel({
   const [sold, setSold] = useState(soldCount);
 
   const remaining = Math.max(0, maxPerTarget - spent);
-  const discount = useBargain && canUsePower ? Math.floor(price * 0.1) : 0;
+  const discount = useBargain && bargainAvailable ? Math.floor(price * 0.1) : 0;
   const amount = price - discount;
   const disabled = pending || isOwnTeam || !phaseIsMarket || amount > remaining;
 
@@ -59,6 +60,7 @@ export function PurchasePanel({
       setSpent((s) => s + paid);
       setSold((s) => s + paid);
       setPurchased(true);
+      if (useBargain && bargainAvailable) setBargainAvailable(false);
       setUseBargain(false);
       setJustBought(true);
       setTimeout(() => setJustBought(false), 1200);
@@ -99,7 +101,7 @@ export function PurchasePanel({
             تا سقف {coins(remaining)} دیگر می‌توانی روی این محصول خرج کنی.
           </p>
 
-          {canUsePower && (
+          {bargainAvailable && (
             <label className="flex items-center gap-2 text-sm font-medium text-brand-navy cursor-pointer">
               <input type="checkbox" checked={useBargain} onChange={(e) => setUseBargain(e.target.checked)} className="accent-brand-red size-4" />
               استفاده از قدرت چانه‌زنی (۱۰٪ تخفیف)

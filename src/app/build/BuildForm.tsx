@@ -6,7 +6,7 @@ import Image from "next/image";
 import { fa, coins } from "@/lib/persian";
 import { Alert } from "@/components/ui";
 import { DEFAULTS } from "@/lib/constants";
-import { parseTeaser, randomPicsumUrl, MAX_IMAGES } from "@/lib/product";
+import { parseTeaser, randomPicsumUrl, MAX_IMAGES } from "@/lib/product-utils";
 import { saveProductAction, type ProductActionState } from "./actions";
 
 type ProductInput = {

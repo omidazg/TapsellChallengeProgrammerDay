@@ -20,8 +20,11 @@ export default async function LeaderboardPage() {
   const userMap = new Map(users.map((u) => [u.id, u]));
   const closed = phase === "CLOSED";
 
-  const ranked = [...output.teams].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
-  const podium = ranked.slice(0, 3);
+  // پیش از پایان بازی حتی ترتیب رتبه هم نباید لو برود؛ فهرست بر اساس فروش خالص مرتب می‌شود.
+  const ranked = closed
+    ? [...output.teams].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
+    : [...output.teams].sort((a, b) => b.netSales - a.netSales || b.hearts - a.hearts);
+  const podium = closed ? ranked.slice(0, 3) : [];
   const investors = closed ? topInvestors(output).filter((i) => i.invested > 0).slice(0, 10) : [];
 
   return (

@@ -3,8 +3,11 @@
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import { Alert } from "@/components/ui";
-import { PHASES, PHASE_LABEL, type Phase } from "@/lib/phase";
 import { setPhaseAction, type AdminActionState } from "./actions";
+
+// هیچ چیزی از `@/lib/phase` وارد نمی‌شود: آن ماژول به prisma وابسته است
+// و نباید در باندل کلاینت بیاید. گزینه‌ها از صفحهٔ سرور می‌رسند.
+export type PhaseOption = { value: string; label: string };
 
 function SubmitButton() {
   const status = useFormStatus();
@@ -15,7 +18,7 @@ function SubmitButton() {
   );
 }
 
-export function PhaseForm({ phase, endsAt }: { phase: Phase; endsAt: string | null }) {
+export function PhaseForm({ phase, endsAt, phases }: { phase: string; endsAt: string | null; phases: PhaseOption[] }) {
   const [state, formAction] = useActionState<AdminActionState, FormData>(setPhaseAction, {});
   const localEndsAt = endsAt ? toLocalInputValue(new Date(endsAt)) : "";
 
@@ -28,9 +31,9 @@ export function PhaseForm({ phase, endsAt }: { phase: Phase; endsAt: string | nu
         <div>
           <label className="label" htmlFor="phase">فاز</label>
           <select id="phase" name="phase" defaultValue={phase} className="input">
-            {PHASES.map((p) => (
-              <option key={p} value={p}>
-                {PHASE_LABEL[p]}
+            {phases.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
               </option>
             ))}
           </select>

@@ -1,5 +1,34 @@
 import { prisma } from "./db";
 
+/**
+ * میزبان‌هایی که در `next.config.ts` برای `next/image` مجاز شده‌اند.
+ * هر نشانی خارج از این فهرست باید با تگ سادهٔ <img> نمایش داده شود،
+ * وگرنه `next/image` هنگام رندر خطا می‌دهد.
+ */
+const NEXT_IMAGE_HOSTS = ["picsum.photos", "images.unsplash.com", "tapsell.com"];
+
+/** آیا این نشانی را می‌توان به `next/image` سپرد؟ */
+export function isNextImageHost(url: string): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:") return false;
+    return NEXT_IMAGE_HOSTS.includes(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** آیا نشانی جلد یک نشانی معتبر http(s) است؟ */
+export function isHttpUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /** جمع سرمایهٔ جذب‌شدهٔ یک ایده */
 export async function raisedFor(ideaId: string): Promise<number> {
   const agg = await prisma.investment.aggregate({
@@ -33,8 +62,16 @@ function analystAvg(i: { analystClarity: number | null; analystFeasibility: numb
   return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
 }
 
+/** چیدمان‌های طبقهٔ سرمایه‌گذاری (از طریق searchParams) */
+export const FLOOR_FILTERS = ["all", "lowest", "topAnalyst"] as const;
+export type FloorFilter = (typeof FLOOR_FILTERS)[number];
+
+export function parseFloorFilter(value: string | undefined): FloorFilter {
+  return (FLOOR_FILTERS as readonly string[]).includes(value ?? "") ? (value as FloorFilter) : "all";
+}
+
 /** فهرست همهٔ ایده‌های ثبت‌نهایی‌شده برای طبقهٔ سرمایه‌گذاری */
-export async function getIdeasForFloor(): Promise<IdeaCardData[]> {
+export async function getIdeasForFloor(filter: FloorFilter = "all"): Promise<IdeaCardData[]> {
   const ideas = await prisma.idea.findMany({
     where: { submittedAt: { not: null } },
     include: {
@@ -60,7 +97,11 @@ export async function getIdeasForFloor(): Promise<IdeaCardData[]> {
       analystNovelty: i.analystNovelty,
       submittedAt: i.submittedAt,
     }))
-    .sort((a, b) => b.raised - a.raised);
+    .sort((a, b) => {
+      if (filter === "lowest") return a.raised - b.raised;
+      if (filter === "topAnalyst") return (analystAvg(b) ?? -1) - (analystAvg(a) ?? -1);
+      return b.raised - a.raised;
+    });
 }
 
 export { analystAvg };

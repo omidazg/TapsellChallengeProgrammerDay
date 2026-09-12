@@ -1,6 +1,21 @@
 import { prisma } from "./db";
 import { defaultConfig, scoreGame } from "./economy/engine";
-import type { MemberWallet, ScoreOutput, TeamInput, TeamResult } from "./economy/types";
+import type { EconomyConfig, MemberWallet, ScoreOutput, TeamInput, TeamResult } from "./economy/types";
+import { DEFAULTS } from "./constants";
+import { getSetting, getSettingInt } from "./phase";
+
+/** پیش‌فرض درصد سود سرمایه‌گذار وقتی تیم ایده‌ای ثبت نکرده است. */
+const DEFAULT_REVENUE_SHARE = 30;
+
+/**
+ * خواندن یک تنظیم اعشاری (مثل `penalty_per_coin` = ۱٫۵).
+ * `getSettingInt` عدد را با parseInt می‌برد و ۱٫۵ را ۱ می‌کند؛ برای جریمه باید اعشاری بماند.
+ */
+export async function getSettingFloat(key: string, fallback: number): Promise<number> {
+  const raw = await getSetting(key, String(fallback));
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
 
 /** برچسب فارسی دلیل تراکنش‌های دفتر کل */
 export const LEDGER_REASON_LABEL: Record<string, string> = {
@@ -20,18 +35,30 @@ export const WALLET_LABEL: Record<string, string> = {
   TREASURY: "خزانهٔ تیم",
 };
 
+/** پیکربندی اقتصاد با اعمال مقادیر جدول Setting روی پیش‌فرض‌ها. */
+export async function configFromSettings(): Promise<EconomyConfig> {
+  const base = defaultConfig();
+  const [seedWallet, buyWallet, maxPerTarget, penaltyPerCoin] = await Promise.all([
+    getSettingInt("seed_wallet", DEFAULTS.seedWallet),
+    getSettingInt("buy_wallet", DEFAULTS.buyWallet),
+    getSettingInt("max_per_target", DEFAULTS.maxPerTarget),
+    getSettingFloat("penalty_per_coin", DEFAULTS.penaltyPerCoin),
+  ]);
+  return { ...base, seedWallet, buyWallet, maxPerTarget, penaltyPerCoin };
+}
+
 /**
  * همهٔ داده‌های لازم برای امتیازدهی را از پایگاه‌داده جمع می‌کند
  * و به موتور خالص اقتصاد (scoreGame) می‌سپارد.
  */
 export async function computeScores(): Promise<ScoreOutput> {
-  const config = defaultConfig();
+  const config = await configFromSettings();
 
   const teams = await prisma.team.findMany({
     include: {
       members: { select: { id: true } },
       idea: { include: { investments: true } },
-      product: { include: { purchases: true, hearts: true, auction: true } },
+      product: { include: { purchases: true, hearts: true } },
     },
   });
 
@@ -42,19 +69,16 @@ export async function computeScores(): Promise<ScoreOutput> {
       selfFunded: i.selfFunded,
     }));
 
-    const purchaseSales = (t.product?.purchases ?? []).map((p) => ({ userId: p.userId, amount: p.amount }));
-    const auction = t.product?.auction;
-    const auctionSales =
-      auction && auction.status === "ENDED" && auction.winnerId && auction.finalPrice
-        ? [{ userId: auction.winnerId, amount: auction.finalPrice }]
-        : [];
+    // فروش = همهٔ ردیف‌های Purchase محصول تیم.
+    // برندهٔ حراج زنده هم در settleAuction یک Purchase می‌سازد، پس اینجا دوباره اضافه نمی‌شود.
+    const sales = (t.product?.purchases ?? []).map((p) => ({ userId: p.userId, amount: p.amount }));
 
     return {
       teamId: t.id,
       memberIds: t.members.map((m) => m.id),
-      revenueShare: t.idea?.revenueShare ?? config.minRevenueShare,
+      revenueShare: t.idea?.revenueShare ?? DEFAULT_REVENUE_SHARE,
       investments,
-      sales: [...purchaseSales, ...auctionSales],
+      sales,
       hearts: t.product?.hearts.length ?? 0,
       juryQuality: t.product?.juryQuality ?? null,
       juryTeaser: t.product?.juryTeaser ?? null,
@@ -63,6 +87,7 @@ export async function computeScores(): Promise<ScoreOutput> {
   });
 
   const users = await prisma.user.findMany({
+    where: { teamId: { not: null } },
     select: { id: true, teamId: true, seedWallet: true, buyWallet: true, power: true, powerUsed: true },
   });
   const wallets: MemberWallet[] = users.map((u) => ({
@@ -105,6 +130,8 @@ export function computeAwards(output: ScoreOutput, extra: AwardExtra): Award[] {
   function pickTeam(key: AwardKey, label: string, emoji: string, metric: (t: TeamResult) => number) {
     const sorted = [...output.teams].sort((a, b) => metric(b) - metric(a));
     for (const t of sorted) {
+      // جایزه به معیار صفر تعلق نمی‌گیرد (مثلاً «بهترین تیزر» وقتی هیچ تیزری نمره نگرفته)
+      if (metric(t) <= 0) return;
       const count = teamAwardCount.get(t.teamId) ?? 0;
       if (count >= MAX_AWARDS_PER_TEAM) continue;
       awards.push({ key, label, emoji, teamId: t.teamId, teamName: extra.teamNames.get(t.teamId) ?? "", value: metric(t) });

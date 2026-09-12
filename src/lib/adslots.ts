@@ -24,6 +24,9 @@ export async function ensureAdSlots(marketStart: Date, hours = 6) {
     const hourStart = new Date(marketStart.getTime() + h * 60 * 60 * 1000);
     for (const kind of KINDS) wanted.push({ kind, hourStart });
   }
+  if (wanted.length === 0) return;
+  // AdSlot روی (kind, hourStart) یکتاست، اما SQLite در Prisma 7 از skipDuplicates
+  // پشتیبانی نمی‌کند؛ پس موجودها را می‌خوانیم و فقط کمبودها را می‌سازیم (idempotent).
   const existing = await prisma.adSlot.findMany({
     where: { hourStart: { in: wanted.map((w) => w.hourStart) } },
     select: { kind: true, hourStart: true },
@@ -31,12 +34,14 @@ export async function ensureAdSlots(marketStart: Date, hours = 6) {
   const existingKey = new Set(existing.map((e) => `${e.kind}|${e.hourStart.toISOString()}`));
   const toCreate = wanted.filter((w) => !existingKey.has(`${w.kind}|${w.hourStart.toISOString()}`));
   if (toCreate.length === 0) return;
-  await prisma.$transaction(toCreate.map((w) => prisma.adSlot.create({ data: { kind: w.kind, hourStart: w.hourStart } })));
+  await prisma.$transaction(
+    toCreate.map((w) => prisma.adSlot.create({ data: { kind: w.kind, hourStart: w.hourStart } }))
+  );
 }
 
 /** ثبت/به‌روزرسانی پیشنهاد یک تیم روی یک جایگاه؛ سقف = خزانه منهای سایر تعهدهای باز تیم. */
 export async function upsertBid(slotId: string, teamId: string, amount: number) {
-  if (amount <= 0) throw new Error("مبلغ پیشنهاد باید مثبت باشد");
+  if (!Number.isInteger(amount) || amount < 1) throw new Error("مبلغ پیشنهاد باید عدد صحیح و دست‌کم یک سکه باشد");
   return prisma.$transaction(async (tx) => {
     const slot = await tx.adSlot.findUnique({ where: { id: slotId } });
     if (!slot) throw new Error("جایگاه پیدا نشد");
@@ -64,23 +69,30 @@ export async function upsertBid(slotId: string, teamId: string, amount: number) 
 /** قیمت دوم برای یک جایگاه: بستن با قاعدهٔ حراج قیمت-دوم مهروموم. */
 export async function closeSlot(slotId: string) {
   return prisma.$transaction(async (tx) => {
-    const slot = await tx.adSlot.findUnique({ where: { id: slotId }, include: { bids: true } });
-    if (!slot || slot.status !== "OPEN") return null;
+    // نگهبان مسابقه/idempotency: فقط فراخوانی‌ای که واقعاً جایگاه را ببندد ادامه می‌دهد.
+    const claimed = await tx.adSlot.updateMany({ where: { id: slotId, status: "OPEN" }, data: { status: "CLOSED" } });
+    if (claimed.count === 0) return null;
 
-    const sorted = [...slot.bids].sort((a, b) => b.amount - a.amount);
+    const bids = await tx.adSlotBid.findMany({ where: { slotId } });
+    // بالاترین پیشنهاد؛ در تساوی، پیشنهادِ زودتر برنده است.
+    const sorted = [...bids].sort((a, b) => b.amount - a.amount || a.createdAt.getTime() - b.createdAt.getTime());
     if (sorted.length === 0) {
-      return tx.adSlot.update({ where: { id: slotId }, data: { status: "CLOSED" } });
+      return tx.adSlot.findUnique({ where: { id: slotId } });
     }
     const winner = sorted[0];
     const second = sorted.length >= 2 ? sorted[1].amount : 0;
-    const pricePaid = Math.max(second, 1);
+    // قاعدهٔ قیمت دوم؛ تک‌پیشنهادی یک سکهٔ نمادین می‌دهد. هرگز بیش از پیشنهاد خودش یا خزانه.
+    const team = await tx.team.findUnique({ where: { id: winner.teamId } });
+    const pricePaid = Math.min(Math.max(second, 1), winner.amount, Math.max(0, team?.treasury ?? 0));
 
-    await tx.team.update({ where: { id: winner.teamId }, data: { treasury: { decrement: pricePaid } } });
-    await tx.ledgerEntry.create({ data: { teamId: winner.teamId, wallet: "TREASURY", delta: -pricePaid, reason: "ADSLOT", refId: slotId } });
+    if (pricePaid > 0) {
+      await tx.team.update({ where: { id: winner.teamId }, data: { treasury: { decrement: pricePaid } } });
+      await tx.ledgerEntry.create({ data: { teamId: winner.teamId, wallet: "TREASURY", delta: -pricePaid, reason: "ADSLOT", refId: slotId } });
+    }
 
     return tx.adSlot.update({
       where: { id: slotId },
-      data: { status: "CLOSED", winnerTeamId: winner.teamId, pricePaid },
+      data: { winnerTeamId: winner.teamId, pricePaid },
     });
   });
 }
@@ -103,11 +115,21 @@ export async function claimHypeSlot(userId: string) {
     if (user.powerUsed) throw new Error("قدرتت قبلاً استفاده شده است");
     if (!user.teamId) throw new Error("عضو هیچ تیمی نیستی");
 
-    const slot = await tx.adSlot.findFirst({ where: { kind: "FEATURED", status: "OPEN" }, orderBy: { hourStart: "asc" } });
+    // فقط جایگاه‌های ویژه‌ای که هنوز شروع نشده‌اند.
+    const slot = await tx.adSlot.findFirst({
+      where: { kind: "FEATURED", status: "OPEN", hourStart: { gt: new Date() } },
+      orderBy: { hourStart: "asc" },
+    });
     if (!slot) throw new Error("جایگاه ویژهٔ آزادی باقی نمانده است");
 
-    await tx.adSlot.update({ where: { id: slot.id }, data: { status: "CLOSED", winnerTeamId: user.teamId, pricePaid: 0 } });
-    await tx.user.update({ where: { id: userId }, data: { powerUsed: true } });
+    // نگهبان مسابقه: قدرت فقط یک‌بار و جایگاه فقط یک‌بار بسته می‌شود.
+    const used = await tx.user.updateMany({ where: { id: userId, powerUsed: false }, data: { powerUsed: true } });
+    if (used.count === 0) throw new Error("قدرتت قبلاً استفاده شده است");
+    const claimed = await tx.adSlot.updateMany({
+      where: { id: slot.id, status: "OPEN" },
+      data: { status: "CLOSED", winnerTeamId: user.teamId, pricePaid: 0 },
+    });
+    if (claimed.count === 0) throw new Error("جایگاه ویژهٔ آزادی باقی نمانده است");
     return slot;
   });
 }

@@ -1,17 +1,19 @@
 import { requireUser } from "@/lib/auth";
-import { getPhase, getSettingInt, phaseIndex } from "@/lib/phase";
+import { getPhase, getSetting, phaseIndex } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
-import { getIdeasForFloor } from "@/lib/idea";
+import { getIdeasForFloor, parseFloorFilter } from "@/lib/idea";
 import { totalInvestedByUser } from "@/lib/invest";
 import { PageHeader, Container, Locked, Stat, Alert } from "@/components/ui";
-import { coins } from "@/lib/persian";
+import { fa, coins } from "@/lib/persian";
 import { InvestFloor } from "./InvestFloor";
 
 export const metadata = { title: "طبقهٔ سرمایه‌گذاری" };
 
-export default async function InvestPage() {
+export default async function InvestPage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
   const user = await requireUser();
   const { phase } = await getPhase();
+  const sp = await searchParams;
+  const filter = parseFloorFilter(sp.filter);
 
   if (phaseIndex(phase) < phaseIndex("SEED_ROUND")) {
     return (
@@ -24,11 +26,14 @@ export default async function InvestPage() {
     );
   }
 
-  const [ideas, invested, penaltyPerCoin] = await Promise.all([
-    getIdeasForFloor(),
+  const [ideas, invested, penaltyRaw] = await Promise.all([
+    getIdeasForFloor(filter),
     totalInvestedByUser(user.id),
-    getSettingInt("penalty_per_coin", DEFAULTS.penaltyPerCoin),
+    // جریمه اعشاری است (پیش‌فرض ۱٫۵) پس نباید با getSettingInt خوانده شود.
+    getSetting("penalty_per_coin", String(DEFAULTS.penaltyPerCoin)),
   ]);
+  const parsedPenalty = Number.parseFloat(penaltyRaw);
+  const penaltyPerCoin = Number.isFinite(parsedPenalty) ? parsedPenalty : DEFAULTS.penaltyPerCoin;
 
   const interactive = phase === "SEED_ROUND";
 
@@ -54,11 +59,11 @@ export default async function InvestPage() {
         {interactive && (
           <div className="mb-6">
             <Alert kind="error">
-              سکه‌های بذر خرج‌نشده در پایان بازی جریمه می‌شوند (هر سکه {coins(penaltyPerCoin)} کسر امتیاز) — بذرت را کامل به کار بگیر.
+              سکه‌های بذر خرج‌نشده در پایان بازی جریمه می‌شوند (به ازای هر سکه {fa(penaltyPerCoin)} امتیاز کسر) — بذرت را کامل به کار بگیر.
             </Alert>
           </div>
         )}
-        <InvestFloor ideas={ideas} ownTeamId={user.teamId} interactive={interactive} />
+        <InvestFloor ideas={ideas} ownTeamId={user.teamId} interactive={interactive} filter={filter} />
       </Container>
     </>
   );

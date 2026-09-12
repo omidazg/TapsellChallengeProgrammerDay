@@ -1,0 +1,53 @@
+services:
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: tools
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: file:/app/data/dev.db
+    volumes:
+      - /srv/arena/data:/app/data
+    restart: "no"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: file:/app/data/dev.db
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      NODE_ENV: production
+    volumes:
+      - /srv/arena/data:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  caddy_data:
+  caddy_config:

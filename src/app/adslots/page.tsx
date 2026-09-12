@@ -20,9 +20,13 @@ export default async function AdSlotsPage() {
     );
   }
 
-  const marketStart = await marketStartFromSettings();
-  await ensureAdSlots(marketStart, 6);
-  await closeDueSlots().catch(() => null);
+  // پس از پایان بازی فقط خواندنی است: جایگاه تازه ساخته/بسته نمی‌شود.
+  const readOnly = phase === "CLOSED";
+  if (!readOnly) {
+    const marketStart = await marketStartFromSettings();
+    await ensureAdSlots(marketStart, 6);
+    await closeDueSlots().catch(() => null);
+  }
 
   const cells = await slotsGrid(user.teamId ?? null);
 
@@ -43,14 +47,16 @@ export default async function AdSlotsPage() {
           </p>
         </div>
 
-        {user.teamId && !user.team?.treasury && (
+        {readOnly && <Alert kind="info">بازی تمام شده است؛ این صفحه فقط برای دیدن نتیجهٔ جایگاه‌هاست.</Alert>}
+
+        {!readOnly && user.teamId && !user.team?.treasury && (
           <Alert kind="info">خزانهٔ تیم شما صفر است؛ ابتدا از سرمایه‌گذاری یا فروش محصول خزانه را پر کنید.</Alert>
         )}
 
-        <HypeClaim power={user.power} powerUsed={user.powerUsed} />
+        {!readOnly && <HypeClaim power={user.power} powerUsed={user.powerUsed} />}
 
         <div className="card p-5">
-          <SlotGrid cells={cells} myTeamId={user.teamId ?? null} treasury={user.team?.treasury ?? 0} />
+          <SlotGrid cells={cells} myTeamId={readOnly ? null : user.teamId ?? null} treasury={user.team?.treasury ?? 0} />
         </div>
       </div>
     </Container>

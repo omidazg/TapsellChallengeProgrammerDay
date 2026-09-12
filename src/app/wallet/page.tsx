@@ -1,8 +1,8 @@
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getSettingInt } from "@/lib/phase";
 import { DEFAULTS, POWERS } from "@/lib/constants";
-import { LEDGER_REASON_LABEL, WALLET_LABEL } from "@/lib/scoring";
+import { LEDGER_REASON_LABEL, WALLET_LABEL, getSettingFloat } from "@/lib/scoring";
+import { defaultConfig, unspentPenalty } from "@/lib/economy/engine";
 import { PageHeader, Container, Stat, Alert, Empty } from "@/components/ui";
 import { fa, coins, jdatetime } from "@/lib/persian";
 import { ShieldButton } from "./ShieldButton";
@@ -11,7 +11,7 @@ export const metadata = { title: "کیف پول" };
 
 export default async function WalletPage() {
   const user = await requireUser();
-  const penaltyPerCoin = await getSettingInt("penalty_per_coin", DEFAULTS.penaltyPerCoin);
+  const penaltyPerCoin = await getSettingFloat("penalty_per_coin", DEFAULTS.penaltyPerCoin);
 
   const [userLedger, treasuryLedger, team] = await Promise.all([
     prisma.ledgerEntry.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
@@ -23,8 +23,12 @@ export default async function WalletPage() {
 
   const leftover = user.seedWallet + user.buyWallet;
   const hasShield = user.power === "SHIELD";
-  const shielded = hasShield && user.powerUsed ? Math.min(10, leftover) : 0;
-  const penaltyPreview = penaltyPerCoin * Math.max(0, leftover - shielded);
+  const shieldUsed = hasShield && user.powerUsed;
+  const shielded = shieldUsed ? Math.min(10, leftover) : 0;
+  // همان محاسبهٔ موتور اقتصاد تا پیش‌نمایش با امتیاز نهایی یکی باشد
+  const penaltyPreview = unspentPenalty({ ...defaultConfig(), penaltyPerCoin }, [
+    { userId: user.id, teamId: user.teamId, seedLeft: user.seedWallet, buyLeft: user.buyWallet, shieldUsed },
+  ]);
 
   return (
     <>
@@ -39,7 +43,7 @@ export default async function WalletPage() {
         <div className="card p-6 anim-rise">
           <h2 className="text-lg font-black text-brand-navy mb-1">پیش‌نمایش جریمه</h2>
           <p className="text-sm text-brand-slate mb-4">
-            هر سکهٔ خرج‌نشده در پایان بازی {coins(penaltyPerCoin)} از امتیاز تیم کم می‌کند.
+            هر سکهٔ خرج‌نشده در پایان بازی {fa(penaltyPerCoin)} امتیاز از امتیاز تیم کم می‌کند.
           </p>
           <div className="flex flex-wrap items-center gap-4">
             <div className="text-3xl font-black text-brand-red fa-num">{fa(Math.round(penaltyPreview * 10) / 10)} امتیاز</div>

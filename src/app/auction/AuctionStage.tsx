@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/Avatar";
 import { Alert, Coin } from "@/components/ui";
 import { fa, coins } from "@/lib/persian";
 import { placeBidAction, secondWindAction } from "./actions";
 import type { AuctionState } from "@/lib/auction";
+
+const QUICK_STEPS = [0, 2, 5] as const;
 
 function mmss(ms: number) {
   if (ms <= 0) return "۰۰:۰۰";
@@ -23,7 +26,7 @@ export function AuctionStage({
   currentUser,
 }: {
   initialId: string | null;
-  currentUser: { id: string; nickname: string; buyWallet: number; power: string; powerUsed: boolean };
+  currentUser: { id: string; nickname: string; teamId: string | null; buyWallet: number; power: string; powerUsed: boolean };
 }) {
   const [auctionId, setAuctionId] = useState(initialId);
   const [state, setState] = useState<AuctionState | null>(null);
@@ -32,7 +35,47 @@ export function AuctionStage({
   const [outbid, setOutbid] = useState(false);
   const [amount, setAmount] = useState<number | "">("");
   const wasHighest = useRef(false);
+  const lastStatus = useRef<string | null>(null);
+  const lastFetchedId = useRef<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
+
+  /** یک بار وضعیت حراج جاری را می‌گیرد؛ برای polling و برای تازه‌سازی بلافاصله پس از پیشنهاد. */
+  const fetchState = useCallback(
+    async (id: string) => {
+      try {
+        const res = await fetch(`/api/auction/${id}/state`, { cache: "no-store" });
+        if (!res.ok) return null;
+        const data: AuctionState = await res.json();
+
+        // اولین واکشیِ یک حراج تازه: هشدارها و ورودی مبلغ پاک شوند.
+        if (lastFetchedId.current !== id) {
+          lastFetchedId.current = id;
+          setOutbid(false);
+          setAmount("");
+          setError(null);
+        }
+
+        // «پیشنهادت شکسته شد» فقط وقتی که پیش‌تر بالاترین بودم و حالا نیستم.
+        const iAmHighestNow = data.highest?.userId === currentUser.id;
+        if (wasHighest.current && !iAmHighestNow && data.highest) setOutbid(true);
+        if (iAmHighestNow) setOutbid(false);
+        wasHighest.current = iAmHighestNow;
+
+        // با پایان یافتن حراج، کیف خرید سرور تغییر کرده است؛ صفحه را تازه کن.
+        if (lastStatus.current === "LIVE" && data.status === "ENDED") router.refresh();
+        lastStatus.current = data.status;
+
+        setState(data);
+        setNow(Date.now());
+        return data;
+      } catch {
+        /* نادیده گرفتن خطای شبکه */
+        return null;
+      }
+    },
+    [currentUser.id, router]
+  );
 
   // پیدا کردن حراج زندهٔ فعلی
   useEffect(() => {
@@ -40,8 +83,9 @@ export function AuctionStage({
     async function pollLive() {
       try {
         const res = await fetch("/api/auction/live", { cache: "no-store" });
-        const data = await res.json();
-        if (!stop && data.id !== auctionId) setAuctionId(data.id);
+        const data: { id: string | null } = await res.json();
+        if (stop) return;
+        setAuctionId((prev) => (prev === data.id ? prev : data.id));
       } catch {
         /* نادیده گرفتن خطای شبکه */
       }
@@ -52,42 +96,63 @@ export function AuctionStage({
       stop = true;
       clearInterval(t);
     };
-  }, [auctionId]);
+  }, []);
 
   // وضعیت حراج فعلی
   useEffect(() => {
     if (!auctionId) return;
+    // با عوض شدن حراج، حافظهٔ «بالاترین بودم» باید پاک شود (فقط ref — بدون setState در افکت).
+    wasHighest.current = false;
+    lastStatus.current = null;
+
     let stop = false;
-    async function pollState() {
-      try {
-        const res = await fetch(`/api/auction/${auctionId}/state`, { cache: "no-store" });
-        if (!res.ok) return;
-        const data: AuctionState = await res.json();
-        if (stop) return;
-        const iWasHighest = wasHighest.current;
-        const iAmHighestNow = data.highest?.nickname === currentUser.nickname;
-        if (iWasHighest && !iAmHighestNow && data.highest) setOutbid(true);
-        wasHighest.current = iAmHighestNow;
-        setState(data);
-        setNow(Date.now());
-      } catch {
-        /* نادیده گرفتن خطای شبکه */
-      }
-    }
-    pollState();
-    const t = setInterval(pollState, 2000);
+    const run = () => {
+      if (!stop) void fetchState(auctionId);
+    };
+    run();
+    const t = setInterval(run, 2000);
     return () => {
       stop = true;
       clearInterval(t);
     };
-  }, [auctionId, currentUser.nickname]);
+  }, [auctionId, fetchState]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  if (!auctionId || !state) {
+  const submitBid = useCallback(
+    (value: number) => {
+      if (!auctionId) return;
+      setError(null);
+      startTransition(async () => {
+        const res = await placeBidAction(auctionId, value);
+        if ("error" in res && res.error) setError(res.error);
+        else {
+          setOutbid(false);
+          setAmount("");
+        }
+        // چه موفق چه ناموفق: بلافاصله وضعیت تازه را بگیر.
+        await fetchState(auctionId);
+      });
+    },
+    [auctionId, fetchState]
+  );
+
+  const claimSecondWind = useCallback(() => {
+    if (!auctionId) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await secondWindAction(auctionId);
+      if ("error" in res && res.error) setError(res.error);
+      else router.refresh();
+      await fetchState(auctionId);
+    });
+  }, [auctionId, fetchState, router]);
+
+  // وضعیتِ مانده از حراج قبلی نباید نمایش داده شود.
+  if (!auctionId || !state || state.id !== auctionId) {
     return (
       <div className="card p-10 text-center anim-pop">
         <div className="text-5xl mb-3">⏳</div>
@@ -101,31 +166,9 @@ export function AuctionStage({
   const remaining = endsAtMs ? endsAtMs - now : 0;
   const isLive = state.status === "LIVE";
   const urgent = isLive && remaining <= 30_000;
-
-  function quickAmounts() {
-    const base = state!.nextMin;
-    return [base + 2, base + 5, base + 10];
-  }
-
-  async function submitBid(value: number) {
-    setError(null);
-    startTransition(async () => {
-      const res = await placeBidAction(auctionId!, value);
-      if (res?.error) setError(res.error);
-      else {
-        setOutbid(false);
-        setAmount("");
-      }
-    });
-  }
-
-  async function claimSecondWind() {
-    setError(null);
-    startTransition(async () => {
-      const res = await secondWindAction(auctionId!);
-      if (res?.error) setError(res.error);
-    });
-  }
+  const isMyTeam = !!currentUser.teamId && state.product.teamId === currentUser.teamId;
+  const quickAmounts = QUICK_STEPS.map((step) => state.nextMin + step);
+  const typed = amount === "" ? null : Number(amount);
 
   return (
     <div className="grid lg:grid-cols-[1.4fr_1fr] gap-6">
@@ -149,7 +192,7 @@ export function AuctionStage({
             >
               {isLive ? mmss(remaining) : state.status === "SCHEDULED" ? "در صف" : "پایان‌یافته"}
             </div>
-            {isLive && (
+            {isLive ? (
               <div className="text-left">
                 <div className="text-xs font-bold text-brand-slate">بالاترین پیشنهاد</div>
                 {state.highest ? (
@@ -164,7 +207,19 @@ export function AuctionStage({
                   <div className="mt-1 font-bold text-brand-slate">هنوز پیشنهادی ثبت نشده — شروع از {coins(state.nextMin)}</div>
                 )}
               </div>
-            )}
+            ) : state.status === "ENDED" ? (
+              <div className="text-left">
+                <div className="text-xs font-bold text-brand-slate">برنده</div>
+                {state.winnerNickname ? (
+                  <div className="mt-1">
+                    <div className="font-black text-brand-navy">{state.winnerNickname}</div>
+                    <Coin n={state.finalPrice ?? 0} />
+                  </div>
+                ) : (
+                  <div className="mt-1 font-bold text-brand-slate">بدون برنده</div>
+                )}
+              </div>
+            ) : null}
           </div>
 
           {outbid && (
@@ -174,12 +229,19 @@ export function AuctionStage({
           )}
           {error && <Alert kind="error">{error}</Alert>}
 
-          {isLive && (
+          {isLive && isMyTeam && <Alert kind="info">این نسخهٔ ویژهٔ تیم خودت است؛ نمی‌توانی روی آن پیشنهاد بدهی.</Alert>}
+
+          {isLive && !isMyTeam && (
             <div className="space-y-3">
               <div className="flex flex-wrap gap-2">
-                {quickAmounts().map((v, i) => (
-                  <button key={v} disabled={pending || v > currentUser.buyWallet} onClick={() => submitBid(v)} className="btn-cyan !px-4 !py-2 disabled:opacity-40">
-                    +{fa([2, 5, 10][i])} ({fa(v)})
+                {quickAmounts.map((v, i) => (
+                  <button
+                    key={v}
+                    disabled={pending || v > currentUser.buyWallet}
+                    onClick={() => submitBid(v)}
+                    className="btn-cyan !px-4 !py-2 disabled:opacity-40"
+                  >
+                    {i === 0 ? "حداقل" : `+${fa(QUICK_STEPS[i])}`} ({fa(v)})
                   </button>
                 ))}
                 <div className="flex items-center gap-2">
@@ -189,11 +251,12 @@ export function AuctionStage({
                     placeholder={fa(state.nextMin)}
                     value={amount}
                     min={state.nextMin}
+                    step={1}
                     onChange={(e) => setAmount(e.target.value === "" ? "" : Number(e.target.value))}
                   />
                   <button
-                    disabled={pending || amount === "" || Number(amount) < state.nextMin || Number(amount) > currentUser.buyWallet}
-                    onClick={() => submitBid(Number(amount))}
+                    disabled={pending || typed === null || typed < state.nextMin || typed > currentUser.buyWallet}
+                    onClick={() => typed !== null && submitBid(typed)}
                     className="btn-primary !px-5 !py-2 disabled:opacity-40"
                   >
                     ثبت پیشنهاد
