@@ -44,6 +44,7 @@ COPY prisma ./prisma
 COPY prisma.config.ts ./prisma.config.ts
 COPY tsconfig.json ./tsconfig.json
 COPY src ./src
+RUN npx prisma generate
 COPY docker/entrypoint.sh /app/docker/entrypoint.sh
 RUN chmod +x /app/docker/entrypoint.sh
 ENV NODE_ENV=production

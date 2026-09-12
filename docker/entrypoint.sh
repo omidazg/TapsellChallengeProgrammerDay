@@ -13,7 +13,7 @@ if [ -d "/app/prisma/migrations" ] && [ -n "$(ls -A /app/prisma/migrations 2>/de
   npx prisma migrate deploy
 else
   echo "[migrate] no migrations directory, running: prisma db push"
-  npx prisma db push --skip-generate
+  npx prisma db push
 fi
 
 echo "[migrate] seeding (idempotent)..."
