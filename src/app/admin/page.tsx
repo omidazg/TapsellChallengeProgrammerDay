@@ -28,6 +28,9 @@ const SUBPAGES = [
   { href: "/admin/export", label: "خروجی گزارش‌ها", emoji: "📤" },
   { href: "/admin/settlement", label: "تسویهٔ نهایی", emoji: "🧾" },
   { href: "/admin/announcements", label: "اطلاعیه‌ها", emoji: "📢" },
+  { href: "/admin/analytics", label: "داشبورد تحلیلی", emoji: "📊" },
+  { href: "/admin/audit", label: "گزارش کارهای ادمین", emoji: "🗂️" },
+  { href: "/hall", label: "نمای سالن (پروژکتور)", emoji: "📽️" },
 ];
 
 export default async function AdminPage() {

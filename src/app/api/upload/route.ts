@@ -1,28 +1,11 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { saveImage, UploadError } from "@/lib/uploads";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
-const RATE_LIMIT = 20;
-const RATE_WINDOW_MS = 10 * 60 * 1000;
-
-// نمونهٔ سرور تک‌پردازه‌ای است؛ محدودیت نرخ در حافظه کافی است (شبیه ttl-cache.ts).
-type RateGlobal = typeof globalThis & { __arenaUploadHits?: Map<string, number[]> };
-const g = globalThis as RateGlobal;
-const hits: Map<string, number[]> = (g.__arenaUploadHits ??= new Map());
-
-function isRateLimited(userId: string): boolean {
-  const now = Date.now();
-  const recent = (hits.get(userId) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
-  if (recent.length >= RATE_LIMIT) {
-    hits.set(userId, recent);
-    return true;
-  }
-  recent.push(now);
-  hits.set(userId, recent);
-  return false;
-}
+const UPLOAD_RATE = { limit: 20, windowMs: 10 * 60 * 1000 };
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -30,7 +13,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "وارد نشده‌ای" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
 
-  if (isRateLimited(user.id)) {
+  if (!rateLimit("upload", user.id, UPLOAD_RATE).ok) {
     return NextResponse.json(
       { error: "تعداد آپلودهای اخیر زیاد است؛ کمی صبر کن و دوباره تلاش کن" },
       { status: 429, headers: { "Cache-Control": "no-store" } }

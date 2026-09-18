@@ -28,6 +28,10 @@ model User {
   department   String   @default("")
   createdAt    DateTime @default(now())
 
+  // با هر بازنشانی رمز یا مسدودسازی یک واحد بالا می‌رود تا نشست‌های قدیمی باطل شوند
+  sessionVersion Int       @default(0)
+  blockedAt      DateTime?
+
   teamId String?
   team   Team?   @relation(fields: [teamId], references: [id])
 
@@ -43,6 +47,8 @@ model User {
   chats             DueDiligenceMessage[]
   notifications     Notification[]
   pushSubscriptions PushSubscription[]
+  auditLogs         AuditLog[]
+  surveyResponse    SurveyResponse?
 }
 
 model Team {
@@ -273,6 +279,10 @@ model TeamScore {
   ptsTeaser       Float    @default(0)
   ptsCommunity    Float    @default(0)
   total           Float    @default(0)
+  rank            Int      @default(0)
+  selfCapital     Int      @default(0)
+  quality         Float    @default(0)
+  teaser          Float    @default(0)
   computedAt      DateTime @default(now())
 }
 
@@ -335,3 +345,29 @@ model Setting {
 // phase: REGISTRATION | IDEATION | SEED_ROUND | BUILD | MARKET | AUCTION | CLOSED
 // phase_ends_at: ISO
 // seed_wallet, buy_wallet, max_per_target, penalty_per_coin ...
+
+// ─── گزارش کارهای ادمین ───
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action    String // مثل phase.set، settlement.run، user.reset_password
+  target    String   @default("")
+  detail    String   @default("") // JSON
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action])
+}
+
+// ─── نظرسنجی پایان بازی ───
+model SurveyResponse {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating    Int // ۱ تا ۵
+  fun       Int // ۱ تا ۵
+  learned   Int // ۱ تا ۵
+  comment   String   @default("")
+  createdAt DateTime @default(now())
+}
