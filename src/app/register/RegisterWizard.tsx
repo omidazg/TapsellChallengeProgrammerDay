@@ -114,7 +114,7 @@ export function RegisterWizard({ nextUrl }: { nextUrl?: string | null }) {
       </ol>
 
       {error && (
-        <div className="mb-6 anim-pop">
+        <div id="register-error" className="mb-6 anim-pop">
           <Alert kind="error">{error}</Alert>
         </div>
       )}
@@ -125,15 +125,54 @@ export function RegisterWizard({ nextUrl }: { nextUrl?: string | null }) {
             <h2 className="text-xl font-black text-brand-navy">اطلاعات حساب</h2>
             <div>
               <label className="label" htmlFor="email">ایمیل</label>
-              <input id="email" type="email" autoComplete="email" maxLength={120} className="input" dir="ltr" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ایمیل سازمانی‌ات" />
+              <input
+                id="email"
+                type="email"
+                autoComplete="email"
+                maxLength={120}
+                className="input"
+                dir="ltr"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="ایمیل سازمانی‌ات"
+                required
+                aria-invalid={!!error}
+                aria-describedby={error ? "register-error" : undefined}
+              />
             </div>
             <div>
               <label className="label" htmlFor="password">رمز عبور</label>
-              <input id="password" type="password" autoComplete="new-password" minLength={6} maxLength={72} className="input" dir="ltr" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="حداقل ۶ نویسه" />
+              <input
+                id="password"
+                type="password"
+                autoComplete="new-password"
+                minLength={6}
+                maxLength={72}
+                className="input"
+                dir="ltr"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="حداقل ۶ نویسه"
+                required
+                aria-invalid={!!error}
+                aria-describedby={error ? "register-error" : undefined}
+              />
             </div>
             <div>
               <label className="label" htmlFor="nickname">نام مستعار</label>
-              <input id="nickname" type="text" autoComplete="nickname" maxLength={30} className="input" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="مثلاً کد-نویس" />
+              <input
+                id="nickname"
+                type="text"
+                autoComplete="nickname"
+                maxLength={30}
+                className="input"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                placeholder="مثلاً کد-نویس"
+                required
+                aria-invalid={!!error}
+                aria-describedby={error ? "register-error" : undefined}
+              />
             </div>
             <div>
               <label className="label" htmlFor="department">دپارتمان</label>
@@ -302,6 +341,7 @@ function CodeRow({
         min={min}
         max={max}
         value={value}
+        aria-label={label}
         onChange={(e) => {
           const n = Math.max(min, Math.min(max, Number(e.target.value) || 0));
           onChange(n);

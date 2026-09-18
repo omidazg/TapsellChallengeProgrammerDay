@@ -2,8 +2,10 @@
 
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
+import Image from "next/image";
 import { fa } from "@/lib/persian";
 import { Alert } from "@/components/ui";
+import { uploadImageFile, isLocalUploadUrl } from "@/lib/product-utils";
 import { saveIdeaAction, unsubmitIdeaAction, type IdeaActionState } from "./actions";
 
 type IdeaInput = {
@@ -20,6 +22,59 @@ type IdeaInput = {
 function randomCover() {
   const seed = Math.random().toString(36).slice(2, 10);
   return `https://picsum.photos/seed/${seed}/800/500`;
+}
+
+function CoverUploader({ onUploaded }: { onUploaded: (url: string) => void }) {
+  const [status, setStatus] = useState<"idle" | "uploading" | "error">("idle");
+  const [message, setMessage] = useState("");
+
+  async function handleFiles(files: FileList | null) {
+    const file = files?.[0];
+    if (!file) return;
+    setStatus("uploading");
+    setMessage("در حال آپلود تصویر…");
+    try {
+      const { url } = await uploadImageFile(file);
+      onUploaded(url);
+      setStatus("idle");
+      setMessage("تصویر آپلود شد.");
+    } catch (e) {
+      setStatus("error");
+      setMessage(e instanceof Error ? e.message : "آپلود با خطا مواجه شد");
+    }
+  }
+
+  return (
+    <div>
+      <div
+        className="rounded-2xl border-2 border-dashed border-brand-mist p-3 text-center transition hover:border-brand-cyan"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          handleFiles(e.dataTransfer.files);
+        }}
+      >
+        <label htmlFor="coverFile" className="btn-cyan inline-block cursor-pointer">
+          {status === "uploading" ? "در حال آپلود…" : "آپلود تصویر از رایانه"}
+        </label>
+        <input
+          id="coverFile"
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="sr-only"
+          disabled={status === "uploading"}
+          onChange={(e) => {
+            handleFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        <p className="mt-1 text-xs text-brand-slate">یا فایل را همین‌جا رها کن</p>
+      </div>
+      <p role="status" aria-live="polite" className={`mt-1 text-xs ${status === "error" ? "text-brand-red" : "text-brand-slate"}`}>
+        {message}
+      </p>
+    </div>
+  );
 }
 
 function SubmitButtons() {
@@ -75,24 +130,31 @@ export function IdeaForm({ initial }: { initial: IdeaInput | null }) {
 
       <div>
         <label className="label" htmlFor="coverUrl">تصویر جلد</label>
-        <div className="flex flex-col sm:flex-row flex-wrap gap-3 items-stretch sm:items-start">
-          <input
-            id="coverUrl"
-            name="coverUrl"
-            value={coverUrl}
-            onChange={(e) => setCoverUrl(e.target.value)}
-            className="input flex-1 min-w-0 sm:min-w-[220px]"
-            placeholder="https://picsum.photos/seed/.../800/500"
-          />
-          <button type="button" className="btn-cyan shrink-0 w-full sm:w-auto" onClick={() => setCoverUrl(randomCover())}>
-            تصویر تصادفی
-          </button>
+        <div className="space-y-3">
+          <CoverUploader onUploaded={(url) => setCoverUrl(url)} />
+          <div className="flex flex-col sm:flex-row flex-wrap gap-3 items-stretch sm:items-start">
+            <input
+              id="coverUrl"
+              name="coverUrl"
+              value={coverUrl}
+              onChange={(e) => setCoverUrl(e.target.value)}
+              className="input flex-1 min-w-0 sm:min-w-[220px]"
+              placeholder="https://picsum.photos/seed/.../800/500 یا از دکمهٔ بالا آپلود کن"
+            />
+            <button type="button" className="btn-ghost shrink-0 w-full sm:w-auto" onClick={() => setCoverUrl(randomCover())}>
+              تصویر تصادفی
+            </button>
+          </div>
         </div>
-        {/* پیش‌نمایش زندهٔ نشانی دلخواه کاربر: تگ ساده، چون میزبان آن مجاز نیست */}
+        {/* پیش‌نمایش: تصاویر آپلودی محلی با next/image بهینه می‌شوند؛ نشانی‌های دلخواه کاربر با تگ ساده (چون میزبانشان ممکن است مجاز next/image نباشد) */}
         {coverUrl && (
           <div className="mt-3 relative w-full max-w-md aspect-[8/5] rounded-2xl overflow-hidden border border-brand-mist anim-pop bg-brand-sky">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={coverUrl} alt="پیش‌نمایش جلد" className="absolute inset-0 size-full object-cover" />
+            {isLocalUploadUrl(coverUrl) ? (
+              <Image src={coverUrl} alt="پیش‌نمایش جلد" fill sizes="800px" className="object-cover" />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={coverUrl} alt="پیش‌نمایش جلد" className="absolute inset-0 size-full object-cover" />
+            )}
           </div>
         )}
       </div>

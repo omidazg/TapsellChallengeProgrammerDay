@@ -1,5 +1,6 @@
 import { prisma } from "./db";
 import { PHASES, type Phase } from "./phases";
+import { invalidate } from "./ttl-cache";
 
 export * from "./phases";
 
@@ -19,6 +20,8 @@ export async function setPhase(phase: Phase, endsAt: Date | null) {
     update: { value: endsAt ? endsAt.toISOString() : "" },
     create: { key: "phase_ends_at", value: endsAt ? endsAt.toISOString() : "" },
   });
+  // پاسخ کش‌شدهٔ /api/phase باید فوراً فاز تازه را نشان دهد.
+  invalidate("api:phase");
 }
 
 export async function getSetting(key: string, fallback: string) {

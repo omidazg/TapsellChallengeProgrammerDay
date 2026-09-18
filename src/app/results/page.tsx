@@ -1,13 +1,16 @@
+import dynamic from "next/dynamic";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getPhase } from "@/lib/phase";
 import { DEFAULTS, SCORE_WEIGHTS } from "@/lib/constants";
-import { computeScores, computeAwards, getSettingFloat } from "@/lib/scoring";
+import { computeScoresCached, computeAwards, getSettingFloat } from "@/lib/scoring";
 import { defaultConfig, unspentPenalty } from "@/lib/economy/engine";
 import { getSettledAt, loadSettledOutput } from "@/lib/settlement";
 import { PageHeader, Container, Stat, Locked, Empty, Alert } from "@/components/ui";
 import { fa, coins, jdatetime } from "@/lib/persian";
-import { Confetti } from "./Confetti";
+
+// کانفتی فقط برای ۳ تیم برتر رندر می‌شود؛ با next/dynamic از باندل اصلی صفحهٔ نتایج جدا می‌ماند.
+const Confetti = dynamic(() => import("./Confetti").then((m) => m.Confetti));
 
 export const metadata = { title: "نتایج" };
 
@@ -30,7 +33,7 @@ export default async function ResultsPage() {
   const settled = !!settledAt;
 
   const [output, teams, users, penaltyPerCoin, investments, purchases, myDividendRows] = await Promise.all([
-    settled ? loadSettledOutput() : computeScores(),
+    settled ? loadSettledOutput() : computeScoresCached(),
     prisma.team.findMany({ select: { id: true, name: true } }),
     prisma.user.findMany({ select: { id: true, nickname: true } }),
     getSettingFloat("penalty_per_coin", DEFAULTS.penaltyPerCoin),
@@ -114,11 +117,12 @@ export default async function ResultsPage() {
             <div className="card p-5 overflow-x-auto anim-rise">
               <h3 className="font-bold text-brand-navy mb-3">ریزامتیاز تیم</h3>
               <table className="w-full text-sm">
+                <caption className="sr-only">امتیاز تیم به تفکیک معیار</caption>
                 <thead>
                   <tr className="text-right text-brand-slate border-b border-brand-mist">
-                    <th className="px-3 py-2 font-bold">معیار</th>
-                    <th className="px-3 py-2 font-bold">امتیاز</th>
-                    <th className="px-3 py-2 font-bold">حداکثر</th>
+                    <th scope="col" className="px-3 py-2 font-bold">معیار</th>
+                    <th scope="col" className="px-3 py-2 font-bold">امتیاز</th>
+                    <th scope="col" className="px-3 py-2 font-bold">حداکثر</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -161,11 +165,12 @@ export default async function ResultsPage() {
           ) : (
             <div className="card overflow-x-auto anim-rise">
               <table className="w-full text-sm">
+                <caption className="sr-only">سرمایه‌گذاری‌های من</caption>
                 <thead>
                   <tr className="text-right text-brand-slate border-b border-brand-mist">
-                    <th className="px-4 py-3 font-bold">ایده</th>
-                    <th className="px-4 py-3 font-bold">مبلغ</th>
-                    <th className="px-4 py-3 font-bold">{settled ? "سود دریافتی" : "سود برآوردی"}</th>
+                    <th scope="col" className="px-4 py-3 font-bold">ایده</th>
+                    <th scope="col" className="px-4 py-3 font-bold">مبلغ</th>
+                    <th scope="col" className="px-4 py-3 font-bold">{settled ? "سود دریافتی" : "سود برآوردی"}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -192,11 +197,12 @@ export default async function ResultsPage() {
           ) : (
             <div className="card overflow-x-auto anim-rise">
               <table className="w-full text-sm">
+                <caption className="sr-only">خریدهای من</caption>
                 <thead>
                   <tr className="text-right text-brand-slate border-b border-brand-mist">
-                    <th className="px-4 py-3 font-bold">محصول</th>
-                    <th className="px-4 py-3 font-bold">تیم</th>
-                    <th className="px-4 py-3 font-bold">مبلغ پرداختی</th>
+                    <th scope="col" className="px-4 py-3 font-bold">محصول</th>
+                    <th scope="col" className="px-4 py-3 font-bold">تیم</th>
+                    <th scope="col" className="px-4 py-3 font-bold">مبلغ پرداختی</th>
                   </tr>
                 </thead>
                 <tbody>

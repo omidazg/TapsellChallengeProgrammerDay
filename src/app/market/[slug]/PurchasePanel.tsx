@@ -2,10 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { fa, coins } from "@/lib/persian";
 import { Alert, Coin } from "@/components/ui";
-import { Celebrate } from "@/components/Celebrate";
 import { purchaseAction, heartAction } from "./actions";
+
+// کانفتی جشن فقط پس از خرید/قلب موفق لازم است؛ با ssr:false و mount شرطی زیر،
+// باندل آن تا اولین رویداد موفق بارگذاری نمی‌شود.
+const Celebrate = dynamic(() => import("@/components/Celebrate").then((m) => m.Celebrate), { ssr: false });
 
 export function PurchasePanel({
   productId,
@@ -90,7 +94,7 @@ export function PurchasePanel({
 
   return (
     <div className="card p-5 space-y-4 anim-rise">
-      <Celebrate message={celebrate ?? ""} show={!!celebrate} onDone={() => setCelebrate(null)} />
+      {celebrate && <Celebrate message={celebrate} show onDone={() => setCelebrate(null)} />}
       {error && <Alert kind="error">{error}</Alert>}
 
       <div className="flex items-center justify-between">

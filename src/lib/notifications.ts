@@ -3,13 +3,26 @@
  */
 import { prisma } from "./db";
 import { PHASE_LABEL, PHASE_DESC, type Phase } from "./phases";
+import { sendPushToUsers } from "./push";
 
 export type NotifyInput = { kind: string; title: string; body?: string; href?: string };
+
+/**
+ * ارسال اعلان فوری بدون مسدودکردن مسیر اصلی (fire-and-forget). هرگز نباید
+ * خطا پرتاب کند یا منتظرش بمانیم؛ sendPushToUsers خودش هم هیچ‌وقت throw نمی‌کند،
+ * اما catch اضافه برای اطمینان کامل است.
+ */
+function firePush(userIds: string[], n: NotifyInput): void {
+  sendPushToUsers(userIds, { title: n.title, body: n.body, href: n.href, tag: n.kind }).catch(() => {
+    /* sendPushToUsers خودش خطاها را می‌بلعد؛ این فقط شبکهٔ ایمنی است */
+  });
+}
 
 export async function notifyUser(userId: string, n: NotifyInput): Promise<void> {
   await prisma.notification.create({
     data: { userId, kind: n.kind, title: n.title, body: n.body ?? "", href: n.href ?? "" },
   });
+  firePush([userId], n);
 }
 
 export async function notifyTeam(teamId: string, n: NotifyInput): Promise<void> {
@@ -18,6 +31,7 @@ export async function notifyTeam(teamId: string, n: NotifyInput): Promise<void> 
   await prisma.notification.createMany({
     data: members.map((m) => ({ userId: m.id, kind: n.kind, title: n.title, body: n.body ?? "", href: n.href ?? "" })),
   });
+  firePush(members.map((m) => m.id), n);
 }
 
 export async function notifyAll(n: NotifyInput): Promise<void> {
@@ -26,6 +40,7 @@ export async function notifyAll(n: NotifyInput): Promise<void> {
   await prisma.notification.createMany({
     data: users.map((u) => ({ userId: u.id, kind: n.kind, title: n.title, body: n.body ?? "", href: n.href ?? "" })),
   });
+  firePush(users.map((u) => u.id), n);
 }
 
 const PHASE_HREF: Record<Phase, string> = {

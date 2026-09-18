@@ -122,7 +122,7 @@ function Section({ id, emoji, title, desc, children }: { id: string; emoji: stri
   return (
     <section id={id} className="card p-4 sm:p-6 md:p-8 anim-rise scroll-mt-20 lg:scroll-mt-32">
       <div className="flex items-start gap-3 mb-4">
-        <div className="text-3xl leading-none">{emoji}</div>
+        <div className="text-3xl leading-none" aria-hidden>{emoji}</div>
         <div>
           <h2 className="text-xl md:text-2xl font-black text-brand-navy">{title}</h2>
           {desc && <p className="mt-1 text-sm text-brand-slate">{desc}</p>}
@@ -245,7 +245,7 @@ function RolesSection() {
       <div className="grid sm:grid-cols-3 gap-4 stagger">
         {(Object.keys(ROLES) as RoleKey[]).map((r) => (
           <div key={r} className="rounded-2xl border border-brand-mist p-4">
-            <div className="text-2xl mb-1.5">{ROLES[r].emoji}</div>
+            <div className="text-2xl mb-1.5" aria-hidden>{ROLES[r].emoji}</div>
             <div className="font-black text-brand-navy">{ROLES[r].label}</div>
             <p className="mt-1 text-xs text-brand-slate">{ROLES[r].desc}</p>
             <p className="mt-2 text-xs text-brand-cyan-dark font-bold">{roleTip[r]}</p>
@@ -262,7 +262,7 @@ function PowersSection() {
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger">
         {(Object.keys(POWERS) as PowerKey[]).map((p) => (
           <div key={p} className="rounded-2xl border border-brand-mist p-4">
-            <div className="text-2xl mb-1.5">{POWERS[p].emoji}</div>
+            <div className="text-2xl mb-1.5" aria-hidden>{POWERS[p].emoji}</div>
             <div className="font-black text-brand-navy">{POWERS[p].label}</div>
             <p className="mt-1 text-xs text-brand-slate">{POWERS[p].desc}</p>
             <p className="mt-2 text-xs text-brand-cyan-dark font-bold">بهترین زمان استفاده: {POWER_TIP[p]}</p>
@@ -281,19 +281,19 @@ function WalletsSection() {
     <Section id="wallets" emoji="👛" title="کیف پول‌ها">
       <div className="grid sm:grid-cols-3 gap-4">
         <div className="rounded-2xl border border-brand-mist p-4">
-          <div className="text-xl mb-1">🌱</div>
+          <div className="text-xl mb-1" aria-hidden>🌱</div>
           <div className="font-black text-brand-navy">کیف بذر</div>
           <div className="mt-1 text-2xl font-black text-brand-cyan-dark fa-num">{coins(DEFAULTS.seedWallet)}</div>
           <p className="mt-1 text-xs text-brand-slate">فقط در دور سرمایه‌گذاری، برای سرمایه‌گذاری روی ایدهٔ تیم‌های دیگر.</p>
         </div>
         <div className="rounded-2xl border border-brand-mist p-4">
-          <div className="text-xl mb-1">🛒</div>
+          <div className="text-xl mb-1" aria-hidden>🛒</div>
           <div className="font-black text-brand-navy">کیف خرید</div>
           <div className="mt-1 text-2xl font-black text-brand-red fa-num">{coins(DEFAULTS.buyWallet)}</div>
           <p className="mt-1 text-xs text-brand-slate">در روز بازار برای خرید محصول و در حراج زنده برای پیشنهاد قیمت.</p>
         </div>
         <div className="rounded-2xl border border-brand-mist p-4">
-          <div className="text-xl mb-1">🏦</div>
+          <div className="text-xl mb-1" aria-hidden>🏦</div>
           <div className="font-black text-brand-navy">خزانهٔ تیم</div>
           <div className="mt-1 text-2xl font-black text-brand-navy">= سرمایهٔ جذب‌شده</div>
           <p className="mt-1 text-xs text-brand-slate">از سرمایه‌گذاری‌های خارجی پر می‌شود؛ فقط برای حراج جایگاه تبلیغاتی خرج می‌شود.</p>
@@ -392,7 +392,7 @@ function AdSlotsSection() {
       <div className="grid sm:grid-cols-3 gap-3">
         {(Object.keys(AD_SLOT_KINDS) as (keyof typeof AD_SLOT_KINDS)[]).map((k) => (
           <div key={k} className="rounded-2xl border border-brand-mist p-3 text-center">
-            <div className="text-xl mb-1">{AD_SLOT_KINDS[k].emoji}</div>
+            <div className="text-xl mb-1" aria-hidden>{AD_SLOT_KINDS[k].emoji}</div>
             <div className="font-bold text-sm text-brand-navy">{AD_SLOT_KINDS[k].label}</div>
           </div>
         ))}
@@ -440,12 +440,13 @@ function ScoringSection() {
     <Section id="scoring" emoji="📊" title="امتیازدهی" desc="امتیاز هر تیم از شش معیار جمع می‌شود؛ هر معیار نسبت به بهترین تیم در همان معیار نرمال می‌شود.">
       <div className="overflow-x-auto -mx-1">
         <table className="w-full text-sm min-w-[560px]">
+          <caption className="sr-only">سهم هر معیار امتیازدهی و راه بالابردن آن</caption>
           <thead>
             <tr className="text-right text-brand-slate border-b border-brand-mist">
-              <th className="px-3 py-2 font-bold">معیار</th>
-              <th className="px-3 py-2 font-bold">سهم از امتیاز</th>
-              <th className="px-3 py-2 font-bold">چه چیزی را می‌سنجد</th>
-              <th className="px-3 py-2 font-bold">چطور بالا ببری</th>
+              <th scope="col" className="px-3 py-2 font-bold">معیار</th>
+              <th scope="col" className="px-3 py-2 font-bold">سهم از امتیاز</th>
+              <th scope="col" className="px-3 py-2 font-bold">چه چیزی را می‌سنجد</th>
+              <th scope="col" className="px-3 py-2 font-bold">چطور بالا ببری</th>
             </tr>
           </thead>
           <tbody>
@@ -491,7 +492,7 @@ function AwardsSection() {
       <div className="grid sm:grid-cols-2 gap-3 stagger">
         {AWARDS.map((a) => (
           <div key={a.label} className="rounded-2xl border border-brand-mist p-4 flex items-start gap-3">
-            <div className="text-2xl">{a.emoji}</div>
+            <div className="text-2xl" aria-hidden>{a.emoji}</div>
             <div>
               <div className="font-black text-brand-navy">{a.label}</div>
               <div className="text-xs text-brand-slate mt-0.5">{a.desc}</div>

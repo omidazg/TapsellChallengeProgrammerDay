@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fa } from "@/lib/persian";
 import { PHASE_LABEL, type Phase } from "@/lib/phases";
+import { usePolling } from "@/hooks/usePolling";
 
 type NotificationItem = {
   id: string;
@@ -41,31 +42,22 @@ export function NotificationBell({ phase, variant = "desktop" }: { phase: Phase;
   const popRef = useRef<HTMLDivElement | null>(null);
   const router = useRouter();
 
-  useEffect(() => {
-    let stop = false;
-    async function poll() {
-      try {
-        const res = await fetch("/api/notifications", { cache: "no-store" });
-        if (!res.ok || stop) return;
-        const data: NotificationsResponse = await res.json();
-        if (stop) return;
-        setUnread(data.unread);
-        setItems(data.items);
-        if (lastPhase.current !== data.phase) {
-          setToast(`فاز بازی تغییر کرد: ${PHASE_LABEL[data.phase]}`);
-        }
-        lastPhase.current = data.phase;
-      } catch {
-        /* نادیده گرفتن خطای شبکه */
+  // در تب پنهان متوقف می‌شود و با برگشتن به تب فوراً تازه می‌شود.
+  usePolling(async () => {
+    try {
+      const res = await fetch("/api/notifications", { cache: "no-store" });
+      if (!res.ok) return;
+      const data: NotificationsResponse = await res.json();
+      setUnread(data.unread);
+      setItems(data.items);
+      if (lastPhase.current !== data.phase) {
+        setToast(`فاز بازی تغییر کرد: ${PHASE_LABEL[data.phase]}`);
       }
+      lastPhase.current = data.phase;
+    } catch {
+      /* نادیده گرفتن خطای شبکه */
     }
-    poll();
-    const t = setInterval(poll, POLL_MS);
-    return () => {
-      stop = true;
-      clearInterval(t);
-    };
-  }, []);
+  }, POLL_MS);
 
   useEffect(() => {
     if (!open) return;

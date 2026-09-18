@@ -47,13 +47,14 @@ export default async function AdminFlagsPage() {
 
             <div className="hidden md:block card overflow-x-auto anim-rise">
               <table className="w-full text-sm min-w-[640px]">
+                <caption className="sr-only">پرچم‌های خرید متقابل مشکوک بین تیم‌ها</caption>
                 <thead>
                   <tr className="text-right text-brand-slate border-b border-brand-mist">
-                    <th className="px-4 py-3 font-bold">تیم اول</th>
-                    <th className="px-4 py-3 font-bold">تیم دوم</th>
-                    <th className="px-4 py-3 font-bold">خرید تیم اول از دوم</th>
-                    <th className="px-4 py-3 font-bold">خرید تیم دوم از اول</th>
-                    <th className="px-4 py-3 font-bold">زمان</th>
+                    <th scope="col" className="px-4 py-3 font-bold">تیم اول</th>
+                    <th scope="col" className="px-4 py-3 font-bold">تیم دوم</th>
+                    <th scope="col" className="px-4 py-3 font-bold">خرید تیم اول از دوم</th>
+                    <th scope="col" className="px-4 py-3 font-bold">خرید تیم دوم از اول</th>
+                    <th scope="col" className="px-4 py-3 font-bold">زمان</th>
                   </tr>
                 </thead>
                 <tbody>

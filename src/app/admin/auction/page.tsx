@@ -46,15 +46,16 @@ export default async function AdminAuctionPage() {
 
               <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-sm min-w-[640px]">
+                  <caption className="sr-only">فهرست حراج نسخه‌های ویژه</caption>
                   <thead>
                     <tr className="text-right text-brand-slate border-b border-brand-mist">
-                      <th className="px-3 py-2 font-bold">ترتیب</th>
-                      <th className="px-3 py-2 font-bold">محصول</th>
-                      <th className="px-3 py-2 font-bold">تیم</th>
-                      <th className="px-3 py-2 font-bold">وضعیت</th>
-                      <th className="px-3 py-2 font-bold">قیمت پایانی</th>
-                      <th className="px-3 py-2 font-bold">برنده</th>
-                      <th className="px-3 py-2 font-bold">پایان</th>
+                      <th scope="col" className="px-3 py-2 font-bold">ترتیب</th>
+                      <th scope="col" className="px-3 py-2 font-bold">محصول</th>
+                      <th scope="col" className="px-3 py-2 font-bold">تیم</th>
+                      <th scope="col" className="px-3 py-2 font-bold">وضعیت</th>
+                      <th scope="col" className="px-3 py-2 font-bold">قیمت پایانی</th>
+                      <th scope="col" className="px-3 py-2 font-bold">برنده</th>
+                      <th scope="col" className="px-3 py-2 font-bold">پایان</th>
                     </tr>
                   </thead>
                   <tbody>

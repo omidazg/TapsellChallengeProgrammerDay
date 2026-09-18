@@ -8,9 +8,10 @@ import { Avatar } from "@/components/Avatar";
 import { prisma } from "@/lib/db";
 import { PhaseCountdown } from "./PhaseCountdown";
 import { PhaseTimeline } from "@/components/PhaseTimeline";
+import { OnboardingTour } from "@/components/OnboardingTour";
 
-export default async function Home() {
-  const [user, { phase, endsAt }] = await Promise.all([getCurrentUser(), getPhase()]);
+export default async function Home({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
+  const [{ welcome }, user, { phase, endsAt }] = await Promise.all([searchParams, getCurrentUser(), getPhase()]);
 
   if (!user) {
     return <LoggedOutLanding phase={phase} endsAt={endsAt ? endsAt.toISOString() : null} />;
@@ -24,12 +25,15 @@ export default async function Home() {
 
   return (
       <Container className="pt-10 space-y-8">
-        <div className="flex flex-wrap items-center gap-4 anim-rise">
-          <Avatar seed={user.avatarSeed || user.id} size={56} className="shrink-0" />
-          <div className="min-w-0">
-            <div className="text-sm text-brand-slate">سلام،</div>
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-brand-navy break-words">{user.nickname} 👋</h1>
+        <div className="flex flex-wrap items-center justify-between gap-4 anim-rise">
+          <div className="flex items-center gap-4">
+            <Avatar seed={user.avatarSeed || user.id} size={56} className="shrink-0" />
+            <div className="min-w-0">
+              <div className="text-sm text-brand-slate">سلام،</div>
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-brand-navy break-words">{user.nickname} 👋</h1>
+            </div>
           </div>
+          <OnboardingTour autoOpen={welcome === "1"} />
         </div>
 
         <div className="grid md:grid-cols-2 gap-4 stagger">

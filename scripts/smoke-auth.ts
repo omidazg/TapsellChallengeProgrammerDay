@@ -178,6 +178,7 @@ async function main() {
     for (const u of users) if (u.teamId) createdTeamIds.add(u.teamId);
     await prisma.teamInvite.deleteMany({ where: { OR: [{ email: { startsWith: TAG } }, { teamId: { in: [...createdTeamIds] } }] } });
     await prisma.user.updateMany({ where: { id: { in: users.map((u) => u.id) } }, data: { teamId: null } });
+    await prisma.notification.deleteMany({ where: { userId: { in: users.map((u) => u.id) } } });
     await prisma.user.deleteMany({ where: { id: { in: users.map((u) => u.id) } } });
     await prisma.team.deleteMany({ where: { id: { in: [...createdTeamIds] } } });
     await setPhase(original.phase, original.endsAt);

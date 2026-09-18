@@ -3,6 +3,8 @@ import { getPhase, getSettingInt } from "./phase";
 import { DEFAULTS } from "./constants";
 import { fa } from "./persian";
 import { notifyUser } from "./notifications";
+import { cached } from "./ttl-cache";
+import { publishAuctionChange, AUCTION_CACHE_PREFIX } from "./auction-events";
 // اقتصاد خالص: nextMinBid و shouldExtendAuction از موتور اقتصاد می‌آیند.
 import { nextMinBid, shouldExtendAuction } from "./economy/engine";
 
@@ -25,6 +27,7 @@ export async function ensureAuctions() {
       })
     )
   );
+  publishAuctionChange();
 }
 
 /**
@@ -33,7 +36,7 @@ export async function ensureAuctions() {
  */
 export async function startNextAuction(durationSec?: number) {
   const dur = durationSec ?? (await getSettingInt("auction_duration_sec", DEFAULTS.auctionDurationSec));
-  return prisma.$transaction(async (tx) => {
+  const started = await prisma.$transaction(async (tx) => {
     const live = await tx.auction.findFirst({ where: { status: "LIVE" } });
     if (live) return null;
 
@@ -53,6 +56,8 @@ export async function startNextAuction(durationSec?: number) {
     if (claimed.count === 0) return null;
     return tx.auction.findUnique({ where: { id: next.id } });
   });
+  if (started) publishAuctionChange();
+  return started;
 }
 
 /**
@@ -103,6 +108,7 @@ async function settleCore(id: string) {
   });
 
   if (settled) {
+    publishAuctionChange();
     const { phase } = await getPhase().catch(() => ({ phase: null as string | null }));
     if (phase === "AUCTION") {
       await startNextAuction();
@@ -172,6 +178,7 @@ export async function placeBid(auctionId: string, userId: string, amount: number
 
     return { ok: true as const, amount, endsAt, outbidUserId: highest && highest.userId !== userId ? highest.userId : null };
   });
+  publishAuctionChange();
 
   if (result.outbidUserId) {
     await notifyUser(result.outbidUserId, {
@@ -187,7 +194,7 @@ export async function placeBid(auctionId: string, userId: string, amount: number
 
 /** قدرت «نفس دوم»: دو دقیقه تمدید یک حراج زنده، یک‌بار در کل بازی برای هر کاربر. */
 export async function activateSecondWind(auctionId: string, userId: string) {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const auction = await tx.auction.findUnique({ where: { id: auctionId } });
     if (!auction || auction.status !== "LIVE" || !auction.endsAt) throw new Error("این حراج زنده نیست");
     if (Date.now() >= auction.endsAt.getTime()) throw new Error("حراج تمام شده است");
@@ -205,6 +212,8 @@ export async function activateSecondWind(auctionId: string, userId: string) {
     await tx.auction.update({ where: { id: auctionId }, data: { endsAt, extensions: { increment: 1 } } });
     return { ok: true as const, endsAt };
   });
+  publishAuctionChange();
+  return result;
 }
 
 export type AuctionStateBid = { amount: number; nickname: string; avatarSeed: string; createdAt: string };
@@ -324,4 +333,28 @@ export async function currentOrNextAuctionId(): Promise<string | null> {
   if (live) return live.id;
   const next = await prisma.auction.findFirst({ where: { status: "SCHEDULED" }, orderBy: { order: "asc" } });
   return next?.id ?? null;
+}
+
+/** TTL کش عمومی حراج؛ هر نوشتن در این فایل با publishAuctionChange آن را باطل می‌کند. */
+const PUBLIC_TTL_MS = 1000;
+
+/** id حراج زنده/بعدی با کش کوتاه‌مدت مشترک (دادهٔ عمومی). */
+export function getLiveAuctionIdCached(): Promise<string | null> {
+  return cached(`${AUCTION_CACHE_PREFIX}live`, PUBLIC_TTL_MS, currentOrNextAuctionId);
+}
+
+/**
+ * وضعیت عمومی یک حراج با کش کوتاه‌مدت مشترک. اگر حراج زنده و زمانش گذشته باشد،
+ * همین‌جا تسویه می‌شود (به‌جای یک کوئری settleIfEnded برای هر درخواست).
+ * شامل هیچ دادهٔ مخصوص کاربر نیست؛ پس کلید مشترک امن است.
+ */
+export async function getPublicAuctionState(id: string): Promise<AuctionState | null> {
+  const key = `${AUCTION_CACHE_PREFIX}state:${id}`;
+  const state = await cached(key, PUBLIC_TTL_MS, () => getAuctionState(id));
+  if (state?.status === "LIVE" && state.endsAt && Date.now() >= new Date(state.endsAt).getTime()) {
+    // settleCore خودش publishAuctionChange را صدا می‌زند و کش را باطل می‌کند.
+    const settled = await settleIfEnded(id).catch(() => false);
+    if (settled) return cached(key, PUBLIC_TTL_MS, () => getAuctionState(id));
+  }
+  return state;
 }

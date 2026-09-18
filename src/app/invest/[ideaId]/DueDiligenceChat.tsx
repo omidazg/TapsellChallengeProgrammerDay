@@ -57,6 +57,7 @@ export function DueDiligenceChat({ ideaId, chats, aiOff = false }: { ideaId: str
         <input type="hidden" name="ideaId" value={ideaId} />
         <input
           name="question"
+          aria-label="سؤال دربارهٔ این ایده"
           required
           minLength={3}
           maxLength={300}

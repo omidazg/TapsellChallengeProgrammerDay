@@ -7,6 +7,7 @@
  */
 import { prisma } from "./db";
 import { computeScores } from "./scoring";
+import { invalidate } from "./ttl-cache";
 import type { DividendLine, ScoreOutput, TeamResult } from "./economy/types";
 
 /** کلید Setting که زمان تسویه در آن ذخیره می‌شود (ISO). */
@@ -51,7 +52,7 @@ export async function settleGame(): Promise<SettlementResult> {
   const output: ScoreOutput = await computeScores();
   const settledAt = new Date();
 
-  return prisma.$transaction<SettlementResult>(async (tx) => {
+  const result = await prisma.$transaction<SettlementResult>(async (tx) => {
     // بررسی دوباره داخل تراکنش (محافظت در برابر فراخوانی هم‌زمان)
     const guard = await tx.setting.findUnique({ where: { key: SETTLED_AT_KEY } });
     if (guard?.value) {
@@ -133,6 +134,11 @@ export async function settleGame(): Promise<SettlementResult> {
       dividendLines,
     };
   });
+
+  // امتیازها بعد از تسویه (سود سرمایه‌گذاران، جریمه، قفل‌شدن نتایج) تغییر کرده‌اند؛
+  // کش صفحات عمومی (جدول امتیازات، نتایج) باید پاک شود تا داده‌های قدیمی نمایش داده نشود.
+  invalidate("scores:");
+  return result;
 }
 
 /**

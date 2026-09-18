@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { isLocalUploadUrl } from "@/lib/product-utils";
 import { requireUser } from "@/lib/auth";
 import { getPhase, getSettingInt, phaseIndex } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
@@ -61,7 +62,7 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
         {banner && (
           <Link href={`/market/${banner.productSlug}`} className="card relative overflow-hidden flex items-center gap-4 p-4 sm:p-6 anim-rise hover:shadow-lift transition">
             <div className="relative size-16 sm:size-20 rounded-2xl overflow-hidden shrink-0">
-              <Image src={banner.cover} alt={banner.productName} fill sizes="80px" className="object-cover" unoptimized />
+              <Image src={banner.cover} alt={banner.productName} fill sizes="80px" className="object-cover" unoptimized={!isLocalUploadUrl(banner.cover)} />
             </div>
             <div className="flex-1 min-w-0">
               <span className="chip-gold mb-1">تبلیغ</span>
@@ -115,7 +116,7 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
                   className="card overflow-hidden anim-rise hover:shadow-lift transition group"
                 >
                   <div className="relative aspect-[8/5]">
-                    <Image src={p.cover} alt={p.name} fill sizes="400px" className="object-cover group-hover:scale-[1.03] transition" unoptimized />
+                    <Image src={p.cover} alt={p.name} fill sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 400px" className="object-cover group-hover:scale-[1.03] transition" unoptimized={!isLocalUploadUrl(p.cover)} />
                     {isFeatured && <span className="chip-gold absolute top-2 right-2">ویژه</span>}
                   </div>
                   <div className="p-4 space-y-2">

@@ -2,7 +2,7 @@
 export function AiUnavailable({ className = "" }: { className?: string }) {
   return (
     <div className={`rounded-2xl border border-brand-mist bg-brand-ice px-4 py-3 text-xs font-medium text-brand-slate ${className}`}>
-      🤖 تحلیل‌گر هوش مصنوعی در این دوره فعال نیست.
+      <span aria-hidden>🤖</span> تحلیل‌گر هوش مصنوعی در این دوره فعال نیست.
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getPhase } from "@/lib/phase";
 import { listNotifications, unreadCount } from "@/lib/notifications";
+import { cached } from "@/lib/ttl-cache";
 
 // این مسیر برای polling است؛ هیچ‌وقت نباید کش شود.
 export const dynamic = "force-dynamic";
@@ -15,7 +16,8 @@ export async function GET() {
   const [unread, items, { phase }] = await Promise.all([
     unreadCount(user.id),
     listNotifications(user.id, 20),
-    getPhase(),
+    // فاز دادهٔ عمومی است و با /api/phase کلید مشترک دارد؛ اعلان‌ها و شمارش (مخصوص کاربر) هرگز کش نمی‌شوند.
+    cached("api:phase", 2000, getPhase),
   ]);
   return NextResponse.json({ unread, items, phase }, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }

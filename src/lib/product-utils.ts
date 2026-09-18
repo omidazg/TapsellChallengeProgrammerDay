@@ -34,6 +34,34 @@ export function randomPicsumUrl(): string {
   return `https://picsum.photos/seed/${seed}/800/500`;
 }
 
+export type UploadResult = { url: string; thumb: string };
+
+/**
+ * آپلود یک فایل تصویر به `/api/upload` (سمت کلاینت).
+ * در صورت خطا، پیام فارسی برگشتی از سرور را در قالب Error پرتاب می‌کند.
+ */
+export async function uploadImageFile(file: File): Promise<UploadResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch("/api/upload", { method: "POST", body: formData });
+  const data: unknown = await res.json().catch(() => ({}));
+  const obj = (data && typeof data === "object" ? data : {}) as { error?: unknown; url?: unknown; thumb?: unknown };
+  if (!res.ok) {
+    throw new Error(typeof obj.error === "string" ? obj.error : "آپلود با خطا مواجه شد");
+  }
+  return { url: String(obj.url ?? ""), thumb: String(obj.thumb ?? "") };
+}
+
+/**
+ * آیا این نشانی یک تصویر آپلودشدهٔ محلی است؟ (سرویس‌شونده از src/app/uploads/[...path]/route.ts)
+ * برای این‌ها می‌توان `next/image` را بدون `unoptimized` استفاده کرد چون مسیر محلی است.
+ * توجه: الگوی نام‌گذاری باید با UPLOAD_NAME_RE در src/lib/uploads.ts هماهنگ بماند
+ * (اینجا تکرار شده چون uploads.ts از sharp/fs استفاده می‌کند و در کلاینت قابل‌ایمپورت نیست).
+ */
+export function isLocalUploadUrl(url: string): boolean {
+  return /^\/uploads\/[a-f0-9]{64}(-480)?\.webp$/.test(url);
+}
+
 /** تشخیص نوع تیزر و ساخت آدرس embed مناسب */
 export function parseTeaser(url: string): { kind: TeaserKind; embedSrc?: string } {
   const u = (url || "").trim();

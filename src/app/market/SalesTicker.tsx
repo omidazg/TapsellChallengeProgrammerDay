@@ -1,39 +1,37 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { fa, coins } from "@/lib/persian";
+import { usePolling } from "@/hooks/usePolling";
+import { ConnectionBanner } from "@/components/ConnectionBanner";
 
 type TickerEntry = { buyer: string; team: string; product: string; amount: number; at: string };
 type TickerResponse = { recent: TickerEntry[]; volume: number; count: number };
 
 export function SalesTicker({ buyWallet }: { buyWallet: number }) {
   const [data, setData] = useState<TickerResponse | null>(null);
+  // شمار خطاهای پیاپی؛ از ۲ به بالا نوار «اتصال قطع شد» نشان داده می‌شود.
+  const [failures, setFailures] = useState(0);
 
-  useEffect(() => {
-    let alive = true;
-    async function load() {
-      try {
-        const res = await fetch("/api/market/ticker", { cache: "no-store" });
-        if (!res.ok) return;
-        const json = (await res.json()) as TickerResponse;
-        if (alive) setData(json);
-      } catch {
-        // خطای موقت شبکه؛ در tick بعدی دوباره تلاش می‌شود
-      }
+  // وقتی تب پنهان است polling متوقف می‌شود و با برگشتن فوراً تازه می‌شود.
+  usePolling(async () => {
+    try {
+      const res = await fetch("/api/market/ticker", { cache: "no-store" });
+      if (!res.ok) throw new Error(String(res.status));
+      setData((await res.json()) as TickerResponse);
+      setFailures(0);
+    } catch {
+      // خطای موقت شبکه؛ در tick بعدی دوباره تلاش می‌شود
+      setFailures((n) => n + 1);
     }
-    load();
-    const t = setInterval(load, 3000);
-    return () => {
-      alive = false;
-      clearInterval(t);
-    };
-  }, []);
+  }, 3000);
 
   const items = data?.recent ?? [];
   const loop = items.length > 0 ? [...items, ...items] : [];
 
   return (
     <div className="card p-0 overflow-hidden anim-rise max-w-full">
+      <ConnectionBanner failing={failures >= 2} />
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-b border-brand-mist bg-brand-ice text-xs">
         <div className="flex items-center gap-3 font-bold text-brand-navy">
           <span className="inline-block size-1.5 rounded-full bg-brand-red pulse-ring" />

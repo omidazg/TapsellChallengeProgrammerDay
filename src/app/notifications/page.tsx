@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { listNotifications, type NotificationItem } from "@/lib/notifications";
 import { PageHeader, Container, Empty } from "@/components/ui";
 import { jdatetime } from "@/lib/persian";
+import { PushToggle } from "@/components/PushToggle";
 
 export const metadata = { title: "اعلان‌ها" };
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ export default async function NotificationsPage() {
     <>
       <PageHeader eyebrow="اعلان‌ها" title="همهٔ اعلان‌ها" desc="تاریخچهٔ کامل اعلان‌های تو در بازی." />
       <Container className="space-y-3">
+        <PushToggle />
         {items.length === 0 ? (
           <Empty title="اعلانی نداری" desc="وقتی فاز بازی عوض شود یا رویدادی برایت رخ دهد، اینجا نشان داده می‌شود." />
         ) : (

@@ -62,10 +62,12 @@ function NumberField({
   value: number;
   onChange: (v: number) => void;
 }) {
+  const id = `stat-${label}`;
   return (
     <div>
-      <label className="label">{label}</label>
+      <label className="label" htmlFor={id}>{label}</label>
       <input
+        id={id}
         type="number"
         min={min}
         max={max}

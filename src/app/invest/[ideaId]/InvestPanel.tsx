@@ -3,10 +3,14 @@
 import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { fa, coins } from "@/lib/persian";
 import { Alert } from "@/components/ui";
-import { Celebrate } from "@/components/Celebrate";
 import { investAction, angelPowerAction, type InvestActionState } from "../actions";
+
+// کانفتی جشن فقط پس از سرمایه‌گذاری/استفاده از قدرت موفق لازم است؛ با ssr:false و mount شرطی
+// زیر، باندل آن تا اولین رویداد موفق بارگذاری نمی‌شود.
+const Celebrate = dynamic(() => import("@/components/Celebrate").then((m) => m.Celebrate), { ssr: false });
 
 function SubmitButton() {
   const status = useFormStatus();
@@ -58,7 +62,7 @@ export function InvestPanel({
 
   return (
     <form action={formAction} className="space-y-4">
-      <Celebrate message="سرمایه‌گذاری ثبت شد 🌱" show={celebrate} onDone={() => setCelebrate(false)} />
+      {celebrate && <Celebrate message="سرمایه‌گذاری ثبت شد 🌱" show onDone={() => setCelebrate(false)} />}
       <input type="hidden" name="ideaId" value={ideaId} />
       {state.error && <Alert kind="error">{state.error}</Alert>}
       {state.ok && <Alert kind="ok">سرمایه‌گذاری ثبت شد.</Alert>}
@@ -129,7 +133,7 @@ export function AngelButton({ ideaId }: { ideaId: string }) {
 
   return (
     <form action={formAction} className="space-y-2">
-      <Celebrate message="سرمایه‌گذاری ثبت شد 🌱" show={celebrate} onDone={() => setCelebrate(false)} />
+      {celebrate && <Celebrate message="سرمایه‌گذاری ثبت شد 🌱" show onDone={() => setCelebrate(false)} />}
       <input type="hidden" name="ideaId" value={ideaId} />
       {state.error && <Alert kind="error">{state.error}</Alert>}
       {state.ok && <Alert kind="ok">{fa(20)} سکهٔ بذر اضافه شد.</Alert>}

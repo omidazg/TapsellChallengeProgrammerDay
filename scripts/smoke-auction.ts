@@ -80,6 +80,8 @@ async function main() {
     await prisma.teamScore.deleteMany({});
     await prisma.collusionFlag.deleteMany({});
     await prisma.teamInvite.deleteMany({});
+    await prisma.notification.deleteMany({});
+    await prisma.pushSubscription.deleteMany({});
     await prisma.user.deleteMany({});
     await prisma.team.deleteMany({});
 

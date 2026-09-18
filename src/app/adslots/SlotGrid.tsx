@@ -28,12 +28,13 @@ export function SlotGrid({ cells, myTeamId, treasury }: { cells: SlotCell[]; myT
         </div>
       )}
       <table className="w-full min-w-[560px] border-separate border-spacing-2">
+        <caption className="sr-only">جایگاه‌های تبلیغاتی به تفکیک ساعت و نوع</caption>
         <thead>
           <tr>
-            <th className="text-right text-xs font-bold text-brand-slate">ساعت</th>
+            <th scope="col" className="text-right text-xs font-bold text-brand-slate">ساعت</th>
             {KINDS.map((k) => (
-              <th key={k} className="text-right text-xs font-bold text-brand-slate">
-                {AD_SLOT_KINDS[k].emoji} {AD_SLOT_KINDS[k].label}
+              <th key={k} scope="col" className="text-right text-xs font-bold text-brand-slate">
+                <span aria-hidden>{AD_SLOT_KINDS[k].emoji}</span> {AD_SLOT_KINDS[k].label}
               </th>
             ))}
           </tr>

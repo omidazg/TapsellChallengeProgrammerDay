@@ -6,9 +6,21 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { getPhase } from "@/lib/phase";
 import { runAnalyst } from "@/lib/analyst";
-import { isHttpUrl } from "@/lib/idea";
+import { isNextImageHost } from "@/lib/idea";
+import { isValidUploadName, UPLOAD_URL_PREFIX } from "@/lib/uploads";
 
 export type IdeaActionState = { error?: string; ok?: boolean };
+
+/**
+ * نشانی تصویر باید یا یک فایل آپلودشدهٔ محلی (`/uploads/<hash>.webp`) یا یک
+ * نشانی https روی یکی از میزبان‌های مجاز در next.config.ts باشد؛ هیچ میزبان
+ * دلخواه دیگری پذیرفته نمی‌شود (جلوگیری از تصاویر ردیاب/میزبان‌های ناشناس).
+ */
+function isAllowedImageUrl(v: string): boolean {
+  if (v === "") return true;
+  if (v.startsWith(UPLOAD_URL_PREFIX)) return isValidUploadName(v.slice(UPLOAD_URL_PREFIX.length));
+  return isNextImageHost(v);
+}
 
 const ideaSchema = z.object({
   title: z.string().trim().min(1, "عنوان را بنویس").max(80, "عنوان خیلی طولانی است"),
@@ -22,7 +34,7 @@ const ideaSchema = z.object({
     .max(500, "نشانی تصویر خیلی طولانی است")
     .optional()
     .default("")
-    .refine((v) => v === "" || isHttpUrl(v), "نشانی تصویر باید با http:// یا https:// شروع شود"),
+    .refine(isAllowedImageUrl, "نشانی تصویر مجاز نیست؛ از دکمهٔ آپلود استفاده کن یا نشانی یکی از میزبان‌های مجاز را بده"),
   fundingCap: z.coerce.number().int().min(50, "سقف سرمایه حداقل ۵۰ است").max(600, "سقف سرمایه حداکثر ۶۰۰ است"),
   revenueShare: z.coerce.number().int().min(20, "سهم سود حداقل ۲۰٪ است").max(60, "سهم سود حداکثر ۶۰٪ است"),
 });

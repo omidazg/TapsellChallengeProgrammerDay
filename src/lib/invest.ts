@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "./db";
 import { validateInvestment } from "./economy/engine";
 import { DEFAULTS } from "./constants";
+import { invalidate } from "./ttl-cache";
 
 export { validateInvestment };
 
@@ -130,5 +131,9 @@ export async function investCore(
   } catch (e) {
     console.error("investCore error", e);
     return { ok: false, error: "خطا در ثبت سرمایه‌گذاری" };
+  } finally {
+    // سرمایه‌گذاری موفق روی externalCapital/netSales و امتیاز تیم اثر می‌گذارد؛
+    // با TTL کوتاه (۱۵ ثانیه) صرفاً اتکا به انقضا کافی است، اما invalidate فوری تازگی بهتری می‌دهد.
+    invalidate("scores:");
   }
 }

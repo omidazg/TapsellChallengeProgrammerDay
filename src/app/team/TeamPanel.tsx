@@ -112,7 +112,7 @@ function IncompleteTeamCard({
   return (
     <div className="card border-2 border-brand-red/30 bg-red-50/60 p-5 anim-pop">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-black text-brand-red">⚠️ تیمت هنوز کامل نیست{missingText ? `: ${missingText}` : "."}</h3>
+        <h3 className="font-black text-brand-red"><span aria-hidden>⚠️</span> تیمت هنوز کامل نیست{missingText ? `: ${missingText}` : "."}</h3>
         <span className="text-xs font-bold text-brand-navy fa-num">اعضا {fa(team.members.length)}/{fa(TEAM_FULL)}</span>
       </div>
       <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-white">
@@ -162,6 +162,7 @@ function CopyJoinLink({ slug }: { slug: string }) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <label htmlFor={inputId} className="sr-only">لینک دعوت تیم</label>
       <input
         id={inputId}
         readOnly
@@ -253,7 +254,7 @@ function InviteForm({
       ) : (
         <form onSubmit={submit} className="flex flex-col sm:flex-row flex-wrap gap-3">
           {error && (
-            <div className="w-full">
+            <div className="w-full" id="invite-error">
               <Alert kind="error">{error}</Alert>
             </div>
           )}
@@ -267,7 +268,9 @@ function InviteForm({
               </div>
             </div>
           )}
+          <label htmlFor="invite-email" className="sr-only">ایمیل هم‌تیمی‌ات</label>
           <input
+            id="invite-email"
             type="email"
             dir="ltr"
             required
@@ -275,6 +278,8 @@ function InviteForm({
             placeholder="ایمیل هم‌تیمی‌ات"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            aria-invalid={!!error}
+            aria-describedby={error ? "invite-error" : undefined}
           />
           <button type="submit" disabled={pending} className="btn-primary w-full sm:w-auto">
             {pending ? "در حال ثبت…" : "دعوت کن"}

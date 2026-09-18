@@ -40,3 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 dev.db*
+
+# local uploaded/optimized images (see src/lib/uploads.ts, UPLOAD_DIR)
+/data/uploads

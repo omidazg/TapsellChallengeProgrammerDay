@@ -22,6 +22,12 @@ const DEFAULT_PHASE_HOURS: Partial<Record<Phase, number>> = {
 
 const DEFAULT_AUCTION_GAP_SEC = 60;
 
+/** حداکثر یک‌بار در ساعت اجرا می‌شود؛ چون فقط پاک‌سازی است، نیازی به ماندگاری در Setting نیست. */
+const NOTIFICATION_CLEANUP_INTERVAL_MS = 3600_000;
+const NOTIFICATION_READ_TTL_MS = 7 * 24 * 3600_000;
+const NOTIFICATION_MAX_AGE_MS = 30 * 24 * 3600_000;
+let lastNotificationCleanupAt = 0;
+
 function nextPhaseOf(p: Phase): Phase | null {
   const idx = PHASES.indexOf(p);
   if (idx < 0 || idx >= PHASES.length - 1) return null;
@@ -39,6 +45,7 @@ export async function runScheduledTasks(): Promise<void> {
   running = true;
   try {
     await autoAdvancePhase().catch((e) => console.error("[scheduler] autoAdvancePhase failed", e));
+    await cleanupOldNotifications().catch((e) => console.error("[scheduler] cleanupOldNotifications failed", e));
 
     const { phase } = await getPhase();
     if (phase === "AUCTION") {
@@ -119,4 +126,25 @@ async function setLastAuctionEndedAt(d: Date) {
 async function runMarketTasks() {
   const closed = await closeDueSlots();
   if (closed.length > 0) console.log(`[scheduler] ${closed.length} جایگاه تبلیغاتی بسته شد`);
+}
+
+/**
+ * ۱.د: پاک‌سازی سبک اعلان‌های قدیمی — حداکثر یک‌بار در ساعت اجرا می‌شود (قفل درون‌حافظه‌ای،
+ * مستقل از فاز بازی). دو دسته حذف می‌شوند: خوانده‌شده و قدیمی‌تر از ۷ روز، یا هر اعلان
+ * (خوانده‌شده یا نه) قدیمی‌تر از ۳۰ روز.
+ */
+export async function cleanupOldNotifications() {
+  const now = Date.now();
+  if (now - lastNotificationCleanupAt < NOTIFICATION_CLEANUP_INTERVAL_MS) return;
+  lastNotificationCleanupAt = now;
+
+  const readCutoff = new Date(now - NOTIFICATION_READ_TTL_MS);
+  const hardCutoff = new Date(now - NOTIFICATION_MAX_AGE_MS);
+
+  const result = await prisma.notification.deleteMany({
+    where: {
+      OR: [{ readAt: { not: null, lt: readCutoff } }, { createdAt: { lt: hardCutoff } }],
+    },
+  });
+  if (result.count > 0) console.log(`[scheduler] ${result.count} اعلان قدیمی پاک شد`);
 }

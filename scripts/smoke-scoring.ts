@@ -87,6 +87,8 @@ async function main() {
     await prisma.investment.deleteMany({});
     await prisma.idea.deleteMany({});
     await prisma.teamInvite.deleteMany({});
+    await prisma.notification.deleteMany({});
+    await prisma.pushSubscription.deleteMany({});
     await prisma.user.deleteMany({});
     await prisma.team.deleteMany({});
     await prisma.setting.deleteMany({});

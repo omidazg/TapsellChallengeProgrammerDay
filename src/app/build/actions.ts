@@ -8,8 +8,20 @@ import { getPhase, phaseIndex } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
 import { serializeImages, readyToSubmit, MAX_IMAGES } from "@/lib/product";
 import { runJuryAi } from "@/lib/jury-ai";
+import { isNextImageHost } from "@/lib/idea";
+import { isValidUploadName, UPLOAD_URL_PREFIX } from "@/lib/uploads";
 
 export type ProductActionState = { error?: string; ok?: boolean };
+
+/**
+ * نشانی تصویر محصول باید یا یک فایل آپلودشدهٔ محلی (`/uploads/<hash>.webp`) یا
+ * یک نشانی https روی یکی از میزبان‌های مجاز در next.config.ts باشد.
+ */
+function isAllowedImageUrl(v: string): boolean {
+  if (v === "") return true;
+  if (v.startsWith(UPLOAD_URL_PREFIX)) return isValidUploadName(v.slice(UPLOAD_URL_PREFIX.length));
+  return isNextImageHost(v);
+}
 
 const productSchema = z.object({
   name: z.string().trim().min(1, "نام محصول را بنویس").max(80, "نام خیلی طولانی است"),
@@ -21,7 +33,8 @@ const productSchema = z.object({
     .array(z.string().trim().max(500))
     .max(MAX_IMAGES)
     .optional()
-    .default([]),
+    .default([])
+    .refine((arr) => arr.every(isAllowedImageUrl), "یکی از نشانی‌های تصویر مجاز نیست"),
   price: z.coerce.number().int().min(DEFAULTS.minPrice, `قیمت حداقل ${DEFAULTS.minPrice} است`).max(DEFAULTS.maxPrice, `قیمت حداکثر ${DEFAULTS.maxPrice} است`),
   specialName: z.string().trim().max(80).optional().default(""),
   specialDesc: z.string().trim().max(400).optional().default(""),

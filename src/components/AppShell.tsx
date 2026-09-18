@@ -3,11 +3,12 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PHASE_LABEL, type Phase } from "@/lib/phases";
 import { fa, duration } from "@/lib/persian";
 import { Avatar } from "./Avatar";
 import { NotificationBell } from "./NotificationBell";
+import { ThemeToggle } from "./ThemeToggle";
 
 type ShellUser = { id: string; nickname: string; isAdmin: boolean; seedWallet: number; buyWallet: number; teamName: string | null; avatarSeed: string };
 
@@ -29,6 +30,7 @@ function isActive(path: string, href: string) {
 
 export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUser | null; phase: Phase; phaseEndsAt: string | null; children: React.ReactNode }) {
   const path = usePathname();
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   // منو فقط در مسیری که باز شده باز می‌ماند؛ با تغییر مسیر خودبه‌خود بسته می‌شود (بدون effect)
   const [openAt, setOpenAt] = useState<string | null>(null);
   const open = openAt === path;
@@ -46,6 +48,20 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
     };
   }, [open]);
 
+  // با Escape منوی موبایل بسته می‌شود و فوکوس به دکمهٔ همبرگر برمی‌گردد
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setOpen هر بار از setOpenAt بازساخته می‌شود اما پایدار است
+  }, [open]);
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-brand-mist">
@@ -57,7 +73,10 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
           </Link>
 
           <div className="mr-auto flex items-center gap-1.5 sm:gap-2 min-w-0">
-            <PhasePill phase={phase} endsAt={phase === "CLOSED" ? null : phaseEndsAt} />
+            {/* برای مهمان روی موبایل جا تنگ است و خود صفحهٔ فرود فاز را نشان می‌دهد */}
+            <span className={user ? "contents" : "hidden sm:contents"}>
+              <PhasePill phase={phase} endsAt={phase === "CLOSED" ? null : phaseEndsAt} />
+            </span>
             {user ? (
               <>
                 <Link href="/wallet" className="hidden md:flex items-center gap-2 rounded-pill bg-brand-ice px-3 py-1.5 text-xs font-bold text-brand-navy hover:bg-brand-mist whitespace-nowrap" title="کیف پول">
@@ -66,6 +85,7 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
                   <span title="کیف خرید">🛒 {fa(user.buyWallet)}</span>
                 </Link>
                 <NotificationBell phase={phase} />
+                <ThemeToggle className="hidden lg:inline-flex" />
                 <Link href="/profile" className="flex items-center shrink-0" aria-label="پروفایل" title={user.nickname}>
                   <Avatar seed={user.avatarSeed || user.id} size={32} />
                 </Link>
@@ -73,6 +93,7 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
                   <button type="submit" className="btn-ghost !py-1.5 !px-3 text-xs" title="خروج از حساب">خروج</button>
                 </form>
                 <button
+                  ref={menuButtonRef}
                   type="button"
                   className="lg:hidden inline-flex items-center justify-center size-10 rounded-full border border-brand-mist text-brand-navy hover:bg-brand-ice shrink-0"
                   onClick={() => setOpen((o) => !o)}
@@ -85,6 +106,7 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
               </>
             ) : (
               <>
+                <ThemeToggle className="hidden sm:inline-flex" />
                 <Link href="/guide" className="hidden sm:inline-flex btn-ghost !py-1.5 !px-4">راهنمای بازی</Link>
                 <Link href="/login" className="btn-ghost !py-1.5 !px-4">ورود</Link>
                 <Link href="/register" className="btn-primary !py-1.5 !px-4">ثبت‌نام</Link>
@@ -95,7 +117,7 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
 
         {/* ردیف دوم (دسکتاپ): منوی اصلی — همیشه در یک خط، بدون شکستن متن */}
         {user && (
-          <nav className="hidden lg:block border-t border-brand-mist/70" aria-label="منوی اصلی">
+          <nav className="hidden lg:block border-t border-brand-mist/70" aria-label="ناوبری اصلی">
             <div className="mx-auto max-w-7xl px-4 h-11 flex items-center gap-1 overflow-x-auto no-scrollbar">
               {NAV.map((n) => (
                 <Link
@@ -148,6 +170,10 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
               <div className="mt-3">
                 <NotificationBell phase={phase} variant="mobile" />
               </div>
+              <div className="mt-3 flex items-center justify-between rounded-2xl border border-brand-mist px-4 py-2.5">
+                <span className="text-xs font-bold text-brand-navy">پوستهٔ نمایش</span>
+                <ThemeToggle />
+              </div>
               <form action="/logout" method="post" className="mt-3">
                 <button type="submit" className="btn-ghost w-full !text-brand-red !border-red-100 hover:!bg-red-50">🚪 خروج از حساب</button>
               </form>
@@ -158,7 +184,9 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
       {/* پس‌زمینهٔ تیرهٔ منوی موبایل — بیرون از header، چون backdrop-blur عناصر fixed داخلش را محصور می‌کند */}
       {user && open && <button type="button" aria-label="بستن منو" className="lg:hidden fixed inset-0 z-30 bg-brand-navy/30" onClick={() => setOpen(false)} />}
 
-      <main className="flex-1 min-w-0">{children}</main>
+      <main id="main" tabIndex={-1} className="flex-1 min-w-0 outline-none">
+        {children}
+      </main>
 
       <footer className="border-t border-brand-mist py-6 px-4 text-center text-xs text-brand-slate">
         میدان بنیان‌گذاران تپسل · روز برنامه‌نویس {fa(1405, { sep: false })}

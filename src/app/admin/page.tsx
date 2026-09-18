@@ -68,7 +68,7 @@ export default async function AdminPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 stagger">
           {SUBPAGES.map((s) => (
             <Link key={s.href} href={s.href} className="card p-5 flex items-center gap-3 hover:shadow-lift transition">
-              <span className="text-2xl">{s.emoji}</span>
+              <span className="text-2xl" aria-hidden>{s.emoji}</span>
               <span className="font-bold text-brand-navy">{s.label}</span>
             </Link>
           ))}

@@ -83,12 +83,13 @@ function LedgerTable({ entries }: { entries: { id: string; wallet: string; delta
   return (
     <div className="card overflow-x-auto anim-rise">
       <table className="w-full text-sm">
+        <caption className="sr-only">دفتر کل تراکنش‌ها</caption>
         <thead>
           <tr className="text-right text-brand-slate border-b border-brand-mist">
-            <th className="px-4 py-3 font-bold">کیف</th>
-            <th className="px-4 py-3 font-bold">دلیل</th>
-            <th className="px-4 py-3 font-bold">تغییر</th>
-            <th className="px-4 py-3 font-bold">زمان</th>
+            <th scope="col" className="px-4 py-3 font-bold">کیف</th>
+            <th scope="col" className="px-4 py-3 font-bold">دلیل</th>
+            <th scope="col" className="px-4 py-3 font-bold">تغییر</th>
+            <th scope="col" className="px-4 py-3 font-bold">زمان</th>
           </tr>
         </thead>
         <tbody>

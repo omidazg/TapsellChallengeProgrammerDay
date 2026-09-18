@@ -1,6 +1,4 @@
 {$SITE_ADDRESS} {
-	encode gzip zstd
-
 	# فایل‌های استاتیک Next.js هش‌دار هستند؛ یک سال کش می‌شوند.
 	@static path /_next/static/* /brand/* /fonts/*
 	header @static {
@@ -8,8 +6,12 @@
 		defer
 	}
 
-	# مسیرهای polling هرگز کش نشوند
-	@api path /api/*
+	# مسیرهای polling هرگز کش نشوند.
+	# جریان SSE مستثناست: خود اپ «no-cache, no-transform» می‌فرستد و نباید بازنویسی شود.
+	@api {
+		path /api/*
+		not path /api/auction/stream
+	}
 	header @api {
 		Cache-Control "no-store"
 		defer
@@ -22,8 +24,20 @@
 		-Server
 	}
 
-	reverse_proxy web:3000 {
-		health_uri /api/phase
-		health_interval 30s
+	# Server-Sent Events حراج زنده: بدون encode (فشرده‌سازی بافر می‌کند)
+	# و با flush فوری هر رویداد به کلاینت.
+	handle /api/auction/stream {
+		reverse_proxy web:3000 {
+			flush_interval -1
+		}
+	}
+
+	# بقیهٔ مسیرها: فشرده‌سازی + پروکسی عادی.
+	handle {
+		encode gzip zstd
+		reverse_proxy web:3000 {
+			health_uri /api/phase
+			health_interval 30s
+		}
 	}
 }

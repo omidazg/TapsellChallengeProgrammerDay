@@ -5,9 +5,14 @@
   --color-brand-red: #e10126;
   --color-brand-red-dark: #b8001e;
   --color-brand-cyan: #00b8e0;
-  --color-brand-cyan-dark: #0095b8;
+  --color-brand-cyan-dark: #007895; /* ≥۴٫۵:۱ روی سفید و brand-ice */
   --color-brand-navy: #002d47;
-  --color-brand-slate: #6f8fa1;
+  /* نسخهٔ اصلی #6f8fa1 روی سفید فقط ۳.۴:۱ کنتراست داشت (زیر آستانهٔ ۴.۵:۱ برای متن معمولی)؛
+     این مقدار تیره‌تر ۵.۷۳:۱ روی سفید و ۵.۴۷:۱ روی brand-ice است. */
+  --color-brand-slate: #4c6a7d;
+  /* فقط برای متن روی زمینه‌های cyan روشن (مثل chip-cyan) که با brand-cyan-dark کنتراست کافی نداشت؛
+     #0095b8 روی brand-mist فقط ۲.۹۴:۱ بود، این مقدار ۵.۰۶:۱ است. */
+  --color-brand-cyan-deep: #006c86;
   --color-brand-ice: #f3fbff;
   --color-brand-mist: #d7effc;
   --color-brand-sky: #eaf4fa;
@@ -25,18 +30,61 @@
   --bg: #ffffff;
   --bg-soft: #f3fbff;
   --ink: #002d47;
-  --muted: #6f8fa1;
+  --muted: #4c6a7d;
   --line: #d7effc;
   --surface: #ffffff;
 }
 
-html { direction: rtl; }
+html { direction: rtl; scroll-behavior: smooth; }
 body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-sans);
   font-feature-settings: "ss01";
   -webkit-font-smoothing: antialiased;
+}
+
+/* حلقهٔ فوکوس یکدست برای کیبورد؛ فقط روی :focus-visible تا با کلیک ماوس ظاهر نشود.
+   outline (نه box-shadow) تا در حالت‌های high-contrast هم قابل مشاهده بماند. */
+@layer base {
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  summary:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--color-brand-cyan);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+/* لینک پرش (skip link) که تا فوکوس‌نگرفتن نامرئی است؛ عنصرش را ایجنت لایه‌بندی اضافه می‌کند */
+.skip-link {
+  position: absolute;
+  top: -999px;
+  right: -999px;
+  z-index: 100;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+.skip-link:focus {
+  position: fixed;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  z-index: 100;
+  padding: 0.625rem 1.25rem;
+  border-radius: 999px;
+  background: var(--color-brand-navy);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.875rem;
+  box-shadow: var(--shadow-lift);
 }
 
 /* اعداد فارسی در همه‌جا */
@@ -56,12 +104,13 @@ body {
 
   .card { @apply bg-white rounded-3xl border border-brand-mist shadow-card; }
   .chip-red { @apply chip bg-red-50 text-brand-red; }
-  .chip-cyan { @apply chip bg-brand-mist text-brand-cyan-dark; }
+  /* text-brand-cyan-dark روی bg-brand-mist فقط ۲.۹۴:۱ کنتراست داشت؛ cyan-deep روی همان زمینه ۵.۰۶:۱ است */
+  .chip-cyan { @apply chip bg-brand-mist text-brand-cyan-deep; }
   .chip-navy { @apply chip bg-brand-sky text-brand-navy; }
   .chip-gold { @apply chip bg-amber-50 text-amber-700; }
   .chip-ok { @apply chip bg-emerald-50 text-emerald-700; }
 
-  .input { @apply w-full rounded-2xl border border-brand-mist bg-white px-4 py-3 text-base text-brand-navy placeholder:text-brand-slate/70 focus:outline-none focus:ring-2 focus:ring-brand-cyan/40 focus:border-brand-cyan transition; }
+  .input { @apply w-full rounded-2xl border border-brand-mist bg-white px-4 py-3 text-base text-brand-navy placeholder:text-brand-slate/90 focus:outline-none focus:ring-2 focus:ring-brand-cyan/40 focus:border-brand-cyan transition; }
   .label { @apply block text-sm font-bold text-brand-navy mb-1.5; }
 
   /* اسکرول افقی بدون نوار اسکرول (برای منوها و تب‌ها در موبایل) */
@@ -100,6 +149,7 @@ img, video { max-width: 100%; height: auto; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  html { scroll-behavior: auto; }
 }
 
 /* پس‌زمینهٔ نقطه‌ای تپسل */

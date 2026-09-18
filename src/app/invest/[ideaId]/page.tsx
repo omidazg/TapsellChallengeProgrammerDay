@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import dynamic from "next/dynamic";
 import { requireUser } from "@/lib/auth";
 import { getPhase, getSettingInt, phaseIndex } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
@@ -10,7 +11,10 @@ import { AnalystCard } from "@/app/idea/AnalystCard";
 import { Cover } from "@/app/idea/Cover";
 import { InvestPanel, AngelButton } from "./InvestPanel";
 import { InvestorList } from "./InvestorList";
-import { DueDiligenceChat } from "./DueDiligenceChat";
+
+// چت بررسی دقیق سنگین‌تر از بقیهٔ صفحه است (فرم + لیست پیام‌ها)؛ با next/dynamic
+// از باندل اصلی صفحه جدا می‌شود تا بار اولیهٔ صفحهٔ سرمایه‌گذاری سبک‌تر بماند.
+const DueDiligenceChat = dynamic(() => import("./DueDiligenceChat").then((m) => m.DueDiligenceChat));
 
 export async function generateMetadata({ params }: { params: Promise<{ ideaId: string }> }) {
   const { ideaId } = await params;

@@ -15,9 +15,11 @@ export function AnnouncementForm() {
   return (
     <form ref={formRef} action={formAction} className="card p-4 sm:p-6 space-y-3 anim-rise">
       <h3 className="font-black text-brand-navy">اطلاعیهٔ جدید</h3>
-      <textarea name="text" required rows={2} className="input w-full" placeholder="متن اطلاعیه…" />
+      <label htmlFor="announcement-text" className="sr-only">متن اطلاعیه</label>
+      <textarea id="announcement-text" name="text" required rows={2} className="input w-full" placeholder="متن اطلاعیه…" />
       <div className="flex flex-wrap items-center gap-3">
-        <select name="level" defaultValue="info" className="input w-auto">
+        <label htmlFor="announcement-level" className="sr-only">سطح اطلاعیه</label>
+        <select id="announcement-level" name="level" defaultValue="info" className="input w-auto">
           <option value="info">اطلاع‌رسانی</option>
           <option value="warning">هشدار</option>
           <option value="danger">خطر</option>

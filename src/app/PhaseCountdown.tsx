@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { duration } from "@/lib/persian";
+import { usePolling } from "@/hooks/usePolling";
 
 type PhaseResponse = { phase: string; endsAt: string | null; serverNow: string };
 
@@ -34,28 +35,19 @@ export function PhaseCountdown({ endsAt }: { endsAt: string | null }) {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function poll() {
-      try {
-        const res = await fetch("/api/phase", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = (await res.json()) as PhaseResponse;
-        if (cancelled) return;
-        setPolled({ endsAt: data.endsAt });
-        const serverNow = new Date(data.serverNow).getTime();
-        if (!Number.isNaN(serverNow)) skewRef.current = serverNow - Date.now();
-      } catch {
-        // شبکه قطع است؛ در تیک بعدی دوباره تلاش می‌شود
-      }
+  // یک‌بار فوری (برای تصحیح ساعت) و سپس هر ۳۰ ثانیه؛ در تب پنهان متوقف و با برگشتن فوراً اجرا می‌شود.
+  usePolling(async () => {
+    try {
+      const res = await fetch("/api/phase", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as PhaseResponse;
+      setPolled({ endsAt: data.endsAt });
+      const serverNow = new Date(data.serverNow).getTime();
+      if (!Number.isNaN(serverNow)) skewRef.current = serverNow - Date.now();
+    } catch {
+      // شبکه قطع است؛ در تیک بعدی دوباره تلاش می‌شود
     }
-    poll(); // یک‌بار فوری، تا تصحیح ساعت از همان ابتدا انجام شود
-    const t = setInterval(poll, 30_000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, []);
+  }, 30_000);
 
   // هر بار هدف عوض شد (فاز جدید/زمان پایان جدید)، اجازهٔ یک رفرش دیگر در پایان شمارش داده می‌شود.
   useEffect(() => {

@@ -3,6 +3,11 @@ import { defaultConfig, scoreGame } from "./economy/engine";
 import type { EconomyConfig, MemberWallet, ScoreOutput, TeamInput, TeamResult } from "./economy/types";
 import { DEFAULTS } from "./constants";
 import { getSetting, getSettingInt } from "./phase";
+import { cached } from "./ttl-cache";
+
+/** پیشوند کلید کش امتیازها؛ برای invalidate("scores:") در جاهایی که امتیاز را تغییر می‌دهند استفاده می‌شود. */
+const SCORES_CACHE_PREFIX = "scores:";
+const SCORES_CACHE_TTL_MS = 15_000;
 
 /** پیش‌فرض درصد سود سرمایه‌گذار وقتی تیم ایده‌ای ثبت نکرده است. */
 const DEFAULT_REVENUE_SHARE = 30;
@@ -99,6 +104,18 @@ export async function computeScores(): Promise<ScoreOutput> {
   }));
 
   return scoreGame(config, teamInputs, wallets);
+}
+
+/**
+ * نسخهٔ کش‌شدهٔ computeScores برای صفحات فقط-خواندنیِ عمومی (جدول امتیازات، نتایج پیش از تسویه و…).
+ * TTL کوتاه (۱۵ ثانیه) است تا کوئری‌های سنگین روی هر بازدید تکرار نشوند.
+ *
+ * هشدار مهم: settleGame و پیش‌نمایش تسویهٔ ادمین باید همیشه از computeScores خام استفاده کنند
+ * (نه این نسخه)، چون تسویه باید روی جدیدترین داده محاسبه شود. پس از نوشتن‌های مؤثر بر امتیاز
+ * (settleGame، سرمایه‌گذاری، خرید) با invalidate("scores:") این کش پاک می‌شود.
+ */
+export function computeScoresCached(): Promise<ScoreOutput> {
+  return cached(SCORES_CACHE_PREFIX, SCORES_CACHE_TTL_MS, computeScores);
 }
 
 export type AwardKey = "champion" | "topSales" | "topCapital" | "popularProduct" | "bestTeaser" | "topInvestor";

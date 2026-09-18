@@ -103,5 +103,7 @@ export async function registerAction(input: RegisterInput): Promise<{ error: str
   }
 
   await createSession(userId);
-  redirect(safeNext(input.next) ?? "/team");
+  // بدون next: به صفحهٔ اصلی با پرچم welcome=1 برو تا راهنمای شروع (OnboardingTour) یک‌بار نمایش داده شود.
+  // اگر next وجود دارد، طبق قرارداد safeNext همان مسیر محترم شمرده می‌شود و پرچم welcome رد می‌شود.
+  redirect(safeNext(input.next) ?? "/?welcome=1");
 }

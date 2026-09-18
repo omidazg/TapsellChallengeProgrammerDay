@@ -104,20 +104,25 @@ function CreateTeamCard() {
 
   return (
     <form onSubmit={submit} className="card p-6 anim-rise">
-      <div className="text-3xl">🚀</div>
+      <div className="text-3xl" aria-hidden>🚀</div>
       <h3 className="mt-2 text-lg font-black text-brand-navy">ساخت تیم</h3>
       <p className="mt-1 text-sm text-brand-slate">یک اسم برای تیمت انتخاب کن و بنیان‌گذارش باش.</p>
       {error && (
-        <div className="mt-3">
+        <div className="mt-3" id="create-team-error">
           <Alert kind="error">{error}</Alert>
         </div>
       )}
+      <label htmlFor="team-name" className="sr-only">اسم تیم</label>
       <input
+        id="team-name"
         className="input mt-4"
         placeholder="اسم تیم"
         maxLength={40}
+        required
         value={name}
         onChange={(e) => setName(e.target.value)}
+        aria-invalid={!!error}
+        aria-describedby={error ? "create-team-error" : undefined}
       />
       <button type="submit" disabled={pending || name.trim().length < 2} className="btn-primary mt-3 w-full">
         {pending ? "در حال ساخت…" : "ساخت تیم"}
@@ -140,7 +145,7 @@ function MatchmakingCard() {
 
   return (
     <div className="card p-6 anim-rise">
-      <div className="text-3xl">🧲</div>
+      <div className="text-3xl" aria-hidden>🧲</div>
       <h3 className="mt-2 text-lg font-black text-brand-navy">تیم برایم پیدا کن</h3>
       <p className="mt-1 text-sm text-brand-slate">به یک تیم نیازمند نقش تو ملحق می‌شوی؛ اگر جایی نبود، تیم تازه‌ای برایت ساخته می‌شود.</p>
       {error && (

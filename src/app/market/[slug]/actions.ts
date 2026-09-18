@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { getPhase, getSettingInt } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
 import { validatePurchase } from "@/lib/market";
+import { invalidate } from "@/lib/ttl-cache";
 import type { Prisma } from "@prisma/client";
 
 export type PurchaseState = { error?: string; ok?: boolean; amount?: number };
@@ -69,6 +70,9 @@ export async function purchaseAction(productId: string, useBargain: boolean, slu
 
     revalidatePath(`/market`);
     revalidatePath(`/market/${slug}`);
+    // خرید روی netSales/grossSales تیم و در نتیجه امتیاز اثر می‌گذارد.
+    invalidate("scores:");
+    invalidate("api:market:ticker");
     return { ok: true, amount: result.amount };
   } catch (e) {
     if (e instanceof UserFacingError) return { error: e.message };
@@ -95,5 +99,7 @@ export async function heartAction(productId: string, slug: string): Promise<Hear
 
   revalidatePath(`/market`);
   revalidatePath(`/market/${slug}`);
+  // قلب روی امتیاز «جامعه» و جایزهٔ محبوب‌ترین محصول اثر می‌گذارد.
+  invalidate("scores:");
   return { ok: true };
 }

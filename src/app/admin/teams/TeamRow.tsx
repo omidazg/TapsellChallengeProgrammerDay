@@ -34,7 +34,8 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
           {renaming ? (
             <form action={renameAction} className="flex flex-wrap items-center gap-2">
               <input type="hidden" name="teamId" value={team.id} />
-              <input name="name" defaultValue={team.name} className="input !py-1.5 !px-3 w-full sm:w-48" />
+              <label htmlFor={`team-name-${team.id}`} className="sr-only">نام تیم</label>
+              <input id={`team-name-${team.id}`} name="name" defaultValue={team.name} className="input !py-1.5 !px-3 w-full sm:w-48" />
               <button type="submit" className="btn-primary !py-1.5 !px-3">ذخیره</button>
               <button type="button" className="btn-ghost !py-1.5 !px-3" onClick={() => setRenaming(false)}>انصراف</button>
             </form>
@@ -64,18 +65,33 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
             {otherTeams.length > 0 && (
               <form action={moveAction} className="flex items-center gap-1">
                 <input type="hidden" name="userId" value={m.id} />
-                <select name="targetTeamId" defaultValue="" className="input !py-0.5 !px-1.5 !text-[11px] !w-auto">
+                <label htmlFor={`move-${m.id}`} className="sr-only">انتقال {m.nickname} به تیم دیگر</label>
+                <select id={`move-${m.id}`} name="targetTeamId" defaultValue="" className="input !py-0.5 !px-1.5 !text-[11px] !w-auto">
                   <option value="" disabled>انتقال به…</option>
                   {otherTeams.map((t) => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
                 </select>
-                <button type="submit" className="text-brand-navy text-xs font-bold hover:underline" title="انتقال به تیم دیگر">↪</button>
+                <button
+                  type="submit"
+                  className="text-brand-navy text-xs font-bold hover:underline"
+                  title="انتقال به تیم دیگر"
+                  aria-label={`انتقال ${m.nickname} به تیم انتخاب‌شده`}
+                >
+                  ↪
+                </button>
               </form>
             )}
             <form action={removeAction}>
               <input type="hidden" name="userId" value={m.id} />
-              <button type="submit" className="text-brand-red text-xs font-bold hover:underline" title="حذف از تیم">✕</button>
+              <button
+                type="submit"
+                className="text-brand-red text-xs font-bold hover:underline"
+                title="حذف از تیم"
+                aria-label={`حذف ${m.nickname} از تیم`}
+              >
+                ✕
+              </button>
             </form>
           </div>
         ))}

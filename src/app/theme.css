@@ -1,0 +1,118 @@
+/* حالت تیره (اختیاری، پیش‌فرض روشن است)
+   ─────────────────────────────────────────────────────────────────────────
+   فعال‌سازی با `data-theme="dark"` روی <html> (توسط ThemeToggle.tsx، با یک
+   اسکریپت پیش از رندر در layout.tsx برای جلوگیری از فلاش نور).
+
+   نکتهٔ مهم: --color-brand-navy در دو نقش کاملاً متفاوت استفاده می‌شود:
+   ۱) به‌عنوان رنگ متن روی پس‌زمینه‌های روشن (.text-brand-navy)
+   ۲) به‌عنوان پس‌زمینهٔ همیشه-تیرهٔ دکمه/پیل فعال با متن سفید (.bg-brand-navy، .btn-navy)
+   بنابراین به‌جای override کردن خودِ متغیر تم (که نقش ۲ را خراب می‌کند)،
+   کلاس‌های تولیدشدهٔ Tailwind را هدف‌گذاری هدفمند می‌کنیم. .bg-brand-navy و
+   .btn-navy دست‌نخورده می‌مانند چون همان‌جا هم در حالت تیره درست کار می‌کنند. */
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+[data-theme="dark"] {
+  /* پس‌زمینه و متن پایه */
+  --bg: #0b1620;
+  --bg-soft: #142434;
+  --ink: #eaf4fa;
+  --muted: #9fb8c9;
+  --line: #23425c;
+  --surface: #10202f;
+}
+
+[data-theme="dark"] body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+/* سطوح و متن‌های اصلی --------------------------------------------------- */
+[data-theme="dark"] .bg-white { background-color: #10202f; }
+[data-theme="dark"] .bg-white\/90 { background-color: rgb(16 32 47 / 90%); }
+
+[data-theme="dark"] .text-brand-navy { color: #eaf4fa; }
+[data-theme="dark"] .text-brand-navy\/90 { color: rgb(234 244 250 / 90%); }
+
+[data-theme="dark"] .text-brand-slate { color: #9fb8c9; }
+[data-theme="dark"] .text-brand-slate\/70 { color: rgb(159 184 201 / 70%); }
+
+[data-theme="dark"] .border-brand-mist { border-color: #23425c; }
+[data-theme="dark"] .border-brand-slate\/30 { border-color: rgb(159 184 201 / 30%); }
+
+[data-theme="dark"] .bg-brand-ice { background-color: #142a3d; }
+[data-theme="dark"] .bg-brand-ice\/60 { background-color: rgb(20 42 61 / 60%); }
+[data-theme="dark"] .bg-brand-sky { background-color: #16324a; }
+[data-theme="dark"] .bg-brand-mist { background-color: #1c3a54; }
+
+[data-theme="dark"] .text-brand-cyan-dark { color: #5fd1ec; }
+
+/* کارت‌ها، ورودی‌ها، دکمه‌های خنثی -------------------------------------- */
+[data-theme="dark"] .card {
+  background-color: #10202f;
+  border-color: #23425c;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 30px -12px rgba(0, 0, 0, 0.55);
+}
+
+[data-theme="dark"] .input {
+  background-color: #0f1f2e;
+  border-color: #23425c;
+  color: #eaf4fa;
+}
+[data-theme="dark"] .input::placeholder { color: rgb(159 184 201 / 70%); }
+
+[data-theme="dark"] .btn-ghost {
+  background-color: transparent;
+  color: #eaf4fa;
+  border-color: #23425c;
+}
+[data-theme="dark"] .btn-ghost:hover { background-color: #16324a; }
+
+[data-theme="dark"] .hover\:bg-brand-ice:hover { background-color: #16324a; }
+[data-theme="dark"] .hover\:bg-brand-mist:hover { background-color: #1c3a54; }
+[data-theme="dark"] .hover\:text-brand-navy:hover { color: #eaf4fa; }
+[data-theme="dark"] .hover\:text-brand-cyan-dark:hover { color: #5fd1ec; }
+
+/* جدول‌ها (ردیف‌ها فقط با border-brand-mist جدا می‌شوند، بالا پوشش داده شد) */
+
+/* چیپ‌ها و نشان‌های وضعیت ------------------------------------------------ */
+[data-theme="dark"] .chip-red { background-color: rgba(225, 1, 38, 0.16); color: #ff9fb1; }
+[data-theme="dark"] .chip-gold { background-color: rgba(245, 165, 36, 0.18); color: #ffcf7a; }
+[data-theme="dark"] .chip-ok { background-color: rgba(73, 186, 134, 0.18); color: #7be3ba; }
+/* chip-cyan (.bg-brand-mist) و chip-navy (.bg-brand-sky) از override بالا تغییر می‌کنند */
+
+[data-theme="dark"] .bg-red-50 { background-color: rgba(225, 1, 38, 0.14); }
+[data-theme="dark"] .bg-emerald-50 { background-color: rgba(73, 186, 134, 0.16); }
+[data-theme="dark"] .bg-amber-50 { background-color: rgba(245, 165, 36, 0.16); }
+[data-theme="dark"] .border-red-100 { border-color: rgba(225, 1, 38, 0.3); }
+[data-theme="dark"] .border-emerald-100 { border-color: rgba(73, 186, 134, 0.3); }
+[data-theme="dark"] .border-amber-200 { border-color: rgba(245, 165, 36, 0.35); }
+[data-theme="dark"] .text-emerald-600,
+[data-theme="dark"] .text-emerald-700,
+[data-theme="dark"] .text-emerald-800 { color: #7be3ba; }
+[data-theme="dark"] .text-amber-600,
+[data-theme="dark"] .text-amber-700 { color: #ffcf7a; }
+
+/* پس‌زمینه‌های تزئینی صفحهٔ اصلی ----------------------------------------- */
+[data-theme="dark"] .bg-hero {
+  background:
+    radial-gradient(1200px 500px at 80% -10%, rgba(0, 184, 224, 0.12) 0%, transparent 60%),
+    radial-gradient(800px 400px at 10% 110%, rgba(225, 1, 38, 0.12) 0%, transparent 60%),
+    #0b1620;
+}
+[data-theme="dark"] .bg-dots { background-image: radial-gradient(rgba(0, 184, 224, 0.14) 1px, transparent 1px); }
+
+/* لینک اسکیپ (پرش به محتوا) — رنگ‌بندی پایه در globals.css توسط تیم دسترسی‌پذیری */
+[data-theme="dark"] .skip-link { background-color: #10202f; color: #eaf4fa; }
+
+/* لوگوی تپسل متن سرمه‌ای دارد و روی هدر تیره دیده نمی‌شود؛ در حالت تیره سفید می‌شود. */
+[data-theme="dark"] img[src*="tapsell-logo"] {
+  filter: brightness(0) invert(1);
+}
+
+/* دایرهٔ پس‌زمینهٔ تصویر hero مستقیماً از متغیر brand-ice رنگ می‌گیرد. */
+[data-theme="dark"] svg circle[fill="var(--color-brand-ice)"] {
+  fill: #12324a;
+}

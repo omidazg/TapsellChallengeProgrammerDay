@@ -58,7 +58,7 @@ export function UnspentReminder({
 
   return (
     <div className="card p-4 flex items-start gap-3 bg-amber-50 border border-amber-200 anim-pop">
-      <span className="text-xl leading-none">⏰</span>
+      <span className="text-xl leading-none" aria-hidden>⏰</span>
       <p className="flex-1 text-sm text-brand-navy leading-6">
         تا پایان {phaseLabel} {duration(remainingMs)} مانده و هنوز {coins(coinsLeft)} خرج‌نشده داری؛ هر سکه{" "}
         {fa(penaltyPerCoin)} امتیاز جریمه دارد.

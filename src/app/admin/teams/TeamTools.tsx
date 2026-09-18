@@ -28,13 +28,15 @@ function MergeTeamsCard({ teams }: { teams: TeamOption[] }) {
       {state.error && <Alert kind="error">{state.error}</Alert>}
       {state.ok && <Alert kind="ok">ادغام انجام شد.</Alert>}
       <div className="grid gap-2 sm:grid-cols-2">
-        <select name="teamAId" required defaultValue="" className="input">
+        <label htmlFor="merge-team-a" className="sr-only">تیم اول (باقی می‌ماند)</label>
+        <select id="merge-team-a" name="teamAId" required defaultValue="" className="input">
           <option value="" disabled>تیم اول (باقی می‌ماند)</option>
           {teams.map((t) => (
             <option key={t.id} value={t.id}>{t.name}</option>
           ))}
         </select>
-        <select name="teamBId" required defaultValue="" className="input">
+        <label htmlFor="merge-team-b" className="sr-only">تیم دوم (حذف می‌شود)</label>
+        <select id="merge-team-b" name="teamBId" required defaultValue="" className="input">
           <option value="" disabled>تیم دوم (حذف می‌شود)</option>
           {teams.map((t) => (
             <option key={t.id} value={t.id}>{t.name}</option>
@@ -90,13 +92,21 @@ function TeamlessUsersCard({ users, teams }: { users: TeamlessUser[]; teams: Tea
             <input type="hidden" name="userId" value={u.id} />
             <Avatar seed={u.avatarSeed || u.id} size={22} />
             <span className="text-sm font-bold text-brand-navy">{u.nickname}</span>
-            <select name="targetTeamId" defaultValue="" className="input !py-0.5 !px-1.5 !text-[11px] !w-auto">
+            <label htmlFor={`add-${u.id}`} className="sr-only">افزودن {u.nickname} به تیم</label>
+            <select id={`add-${u.id}`} name="targetTeamId" defaultValue="" className="input !py-0.5 !px-1.5 !text-[11px] !w-auto">
               <option value="" disabled>افزودن به…</option>
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
-            <button type="submit" className="text-brand-navy text-xs font-bold hover:underline" title="افزودن به این تیم">↪</button>
+            <button
+              type="submit"
+              className="text-brand-navy text-xs font-bold hover:underline"
+              title="افزودن به این تیم"
+              aria-label={`افزودن ${u.nickname} به تیم انتخاب‌شده`}
+            >
+              ↪
+            </button>
           </form>
         ))}
       </div>

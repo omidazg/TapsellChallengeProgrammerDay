@@ -21,6 +21,7 @@ services:
       - .env
     environment:
       DATABASE_URL: file:/app/data/dev.db
+      UPLOAD_DIR: /app/data/uploads
       HOSTNAME: 0.0.0.0
       PORT: 3000
       NODE_ENV: production

@@ -26,17 +26,27 @@ export async function getMarketProducts(
   sort: MarketSort = "all",
   viewer?: { userId: string; maxPerTarget: number }
 ): Promise<MarketCard[]> {
-  const products = await prisma.product.findMany({
-    where: { submittedAt: { not: null } },
-    include: {
-      team: { select: { id: true, name: true, slug: true, logoSeed: true } },
-      purchases: { select: { amount: true, userId: true } },
-      hearts: { select: { id: true } },
-    },
-  });
+  // به‌جای include کردن همهٔ ردیف‌های Purchase (که با رشد بازار سنگین می‌شود)، فقط جمع هر
+  // محصول و — در صورت وجود viewer — جمع خودِ او از یک کوئری تجمیعی خوانده می‌شود.
+  const [products, soldGroups, viewerSpentGroups] = await Promise.all([
+    prisma.product.findMany({
+      where: { submittedAt: { not: null } },
+      include: {
+        team: { select: { id: true, name: true, slug: true, logoSeed: true } },
+        _count: { select: { hearts: true } },
+      },
+    }),
+    prisma.purchase.groupBy({ by: ["productId"], _sum: { amount: true } }),
+    viewer
+      ? prisma.purchase.groupBy({ by: ["productId"], where: { userId: viewer.userId }, _sum: { amount: true } })
+      : Promise.resolve([]),
+  ]);
+
+  const soldByProduct = new Map(soldGroups.map((g) => [g.productId, g._sum.amount ?? 0]));
+  const viewerSpentByProduct = new Map(viewerSpentGroups.map((g) => [g.productId, g._sum.amount ?? 0]));
 
   const cards: MarketCard[] = products.map((p) => {
-    const viewerSpent = viewer ? p.purchases.filter((x) => x.userId === viewer.userId).reduce((a, x) => a + x.amount, 0) : 0;
+    const viewerSpent = viewer ? viewerSpentByProduct.get(p.id) ?? 0 : 0;
     return {
       id: p.id,
       slug: p.team.slug,
@@ -47,8 +57,8 @@ export async function getMarketProducts(
       teamLogoSeed: p.team.logoSeed,
       teamId: p.team.id,
       price: p.price,
-      sold: p.purchases.reduce((a, x) => a + x.amount, 0),
-      hearts: p.hearts.length,
+      sold: soldByProduct.get(p.id) ?? 0,
+      hearts: p._count.hearts,
       limitReached: viewer ? viewerSpent >= viewer.maxPerTarget : false,
     };
   });

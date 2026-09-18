@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getPhase } from "@/lib/phase";
 import { getCurrentUser } from "@/lib/auth";
-import { computeScores, topInvestors } from "@/lib/scoring";
+import { computeScoresCached, topInvestors } from "@/lib/scoring";
 import { getSettledAt, loadSettledOutput } from "@/lib/settlement";
 import type { TeamResult } from "@/lib/economy/types";
 import { PageHeader, Container, Alert, Empty } from "@/components/ui";
@@ -16,7 +16,7 @@ export default async function LeaderboardPage() {
   const settledAt = await getSettledAt();
   const [{ phase }, output, teams, users, viewer] = await Promise.all([
     getPhase(),
-    settledAt ? loadSettledOutput() : computeScores(),
+    settledAt ? loadSettledOutput() : computeScoresCached(),
     prisma.team.findMany({ select: { id: true, name: true, slug: true, logoSeed: true } }),
     prisma.user.findMany({ select: { id: true, nickname: true, avatarSeed: true } }),
     getCurrentUser(),
@@ -144,19 +144,20 @@ export default async function LeaderboardPage() {
 
             <div className="hidden md:block card overflow-x-auto anim-rise">
               <table className="w-full text-sm min-w-[640px]">
+                <caption className="sr-only">جدول امتیازات تیم‌ها</caption>
                 <thead>
                   <tr className="text-right text-brand-slate border-b border-brand-mist">
-                    {closed && <th className="px-4 py-3 font-bold">رتبه</th>}
-                    <th className="px-4 py-3 font-bold">تیم</th>
-                    <th className="px-4 py-3 font-bold">فروش خالص</th>
-                    <th className="px-4 py-3 font-bold">سرمایهٔ خارجی</th>
-                    <th className="px-4 py-3 font-bold">قلب‌ها</th>
+                    {closed && <th scope="col" className="px-4 py-3 font-bold">رتبه</th>}
+                    <th scope="col" className="px-4 py-3 font-bold">تیم</th>
+                    <th scope="col" className="px-4 py-3 font-bold">فروش خالص</th>
+                    <th scope="col" className="px-4 py-3 font-bold">سرمایهٔ خارجی</th>
+                    <th scope="col" className="px-4 py-3 font-bold">قلب‌ها</th>
                     {closed && (
                       <>
-                        <th className="px-4 py-3 font-bold">بازده سرمایه‌گذار</th>
-                        <th className="px-4 py-3 font-bold">کیفیت</th>
-                        <th className="px-4 py-3 font-bold">جریمه</th>
-                        <th className="px-4 py-3 font-bold">امتیاز کل</th>
+                        <th scope="col" className="px-4 py-3 font-bold">بازده سرمایه‌گذار</th>
+                        <th scope="col" className="px-4 py-3 font-bold">کیفیت</th>
+                        <th scope="col" className="px-4 py-3 font-bold">جریمه</th>
+                        <th scope="col" className="px-4 py-3 font-bold">امتیاز کل</th>
                       </>
                     )}
                   </tr>
@@ -203,12 +204,13 @@ export default async function LeaderboardPage() {
             ) : (
               <div className="card overflow-x-auto anim-rise">
                 <table className="w-full text-sm min-w-[480px]">
+                <caption className="sr-only">سرمایه‌گذاران برتر</caption>
                   <thead>
                     <tr className="text-right text-brand-slate border-b border-brand-mist">
-                      <th className="px-4 py-3 font-bold">سرمایه‌گذار</th>
-                      <th className="px-4 py-3 font-bold">مجموع سرمایه‌گذاری</th>
-                      <th className="px-4 py-3 font-bold">مجموع سود</th>
-                      <th className="px-4 py-3 font-bold">بازده سرمایه‌گذار</th>
+                      <th scope="col" className="px-4 py-3 font-bold">سرمایه‌گذار</th>
+                      <th scope="col" className="px-4 py-3 font-bold">مجموع سرمایه‌گذاری</th>
+                      <th scope="col" className="px-4 py-3 font-bold">مجموع سود</th>
+                      <th scope="col" className="px-4 py-3 font-bold">بازده سرمایه‌گذار</th>
                     </tr>
                   </thead>
                   <tbody>

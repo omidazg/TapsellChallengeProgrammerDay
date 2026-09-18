@@ -43,11 +43,13 @@ export function UserRow({ user, isMe }: { user: UserRowData; isMe: boolean }) {
 
       <form action={adjustAction} className="flex flex-wrap items-center gap-1.5">
         <input type="hidden" name="userId" value={user.id} />
-        <select name="wallet" className="input !py-1 !px-2 w-auto text-xs">
+        <label htmlFor={`wallet-${user.id}`} className="sr-only">نوع کیف برای {user.nickname}</label>
+        <select id={`wallet-${user.id}`} name="wallet" className="input !py-1 !px-2 w-auto text-xs">
           <option value="SEED">بذر</option>
           <option value="BUY">خرید</option>
         </select>
-        <input name="amount" type="number" defaultValue={10} className="input !py-1 !px-2 w-20 text-xs" />
+        <label htmlFor={`amount-${user.id}`} className="sr-only">مبلغ سکه برای {user.nickname}</label>
+        <input id={`amount-${user.id}`} name="amount" type="number" defaultValue={10} className="input !py-1 !px-2 w-20 text-xs" />
         <button type="submit" className="btn-ghost !py-1 !px-3 text-xs">افزودن سکه</button>
       </form>
 

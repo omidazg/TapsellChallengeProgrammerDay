@@ -6,7 +6,7 @@ import Image from "next/image";
 import { fa, coins } from "@/lib/persian";
 import { Alert } from "@/components/ui";
 import { DEFAULTS } from "@/lib/constants";
-import { parseTeaser, randomPicsumUrl, MAX_IMAGES } from "@/lib/product-utils";
+import { parseTeaser, randomPicsumUrl, MAX_IMAGES, uploadImageFile, isLocalUploadUrl } from "@/lib/product-utils";
 import { saveProductAction, type ProductActionState } from "./actions";
 
 type ProductInput = {
@@ -149,6 +149,8 @@ export function BuildForm({ editable, submitted, initial }: { editable: boolean;
 
 function ImagesField({ images, setImages, disabled }: { images: string[]; setImages: React.Dispatch<React.SetStateAction<string[]>>; disabled: boolean }) {
   const [draft, setDraft] = useState("");
+  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "error">("idle");
+  const [uploadMessage, setUploadMessage] = useState("");
 
   function addImage(url: string) {
     const v = url.trim();
@@ -160,12 +162,62 @@ function ImagesField({ images, setImages, disabled }: { images: string[]; setIma
     setImages((prev) => prev.filter((_, i) => i !== idx));
   }
 
+  async function handleFiles(files: FileList | null) {
+    const file = files?.[0];
+    if (!file || images.length >= MAX_IMAGES) return;
+    setUploadStatus("uploading");
+    setUploadMessage("در حال آپلود تصویر…");
+    try {
+      const { url } = await uploadImageFile(file);
+      addImage(url);
+      setUploadStatus("idle");
+      setUploadMessage("تصویر آپلود شد.");
+    } catch (e) {
+      setUploadStatus("error");
+      setUploadMessage(e instanceof Error ? e.message : "آپلود با خطا مواجه شد");
+    }
+  }
+
+  const uploadDisabled = disabled || uploadStatus === "uploading" || images.length >= MAX_IMAGES;
+
   return (
     <div>
       <label className="label">تصاویر (حداقل ۳، حداکثر {fa(MAX_IMAGES)})</label>
       {images.map((url) => (
         <input key={url} type="hidden" name="images" value={url} />
       ))}
+
+      <div
+        className="mb-3 rounded-2xl border-2 border-dashed border-brand-mist p-3 text-center transition hover:border-brand-cyan"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (!uploadDisabled) handleFiles(e.dataTransfer.files);
+        }}
+      >
+        <label
+          htmlFor="productImageFile"
+          className={`btn-cyan inline-block ${uploadDisabled ? "pointer-events-none opacity-50" : "cursor-pointer"}`}
+        >
+          {uploadStatus === "uploading" ? "در حال آپلود…" : "آپلود تصویر از رایانه"}
+        </label>
+        <input
+          id="productImageFile"
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="sr-only"
+          disabled={uploadDisabled}
+          onChange={(e) => {
+            handleFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        <p className="mt-1 text-xs text-brand-slate">یا فایل را همین‌جا رها کن</p>
+        <p role="status" aria-live="polite" className={`mt-1 text-xs ${uploadStatus === "error" ? "text-brand-red" : "text-brand-slate"}`}>
+          {uploadMessage}
+        </p>
+      </div>
+
       <div className="flex flex-wrap gap-3 items-center">
         <input
           value={draft}
@@ -192,7 +244,7 @@ function ImagesField({ images, setImages, disabled }: { images: string[]; setIma
         <div className="mt-4 flex gap-3 overflow-x-auto no-scrollbar sm:grid sm:grid-cols-4 sm:overflow-visible stagger">
           {images.map((url, idx) => (
             <div key={url + idx} className="relative aspect-square size-24 shrink-0 rounded-xl overflow-hidden border border-brand-mist group anim-pop sm:size-auto sm:w-full sm:shrink">
-              <Image src={url} alt={`تصویر ${idx + 1}`} fill sizes="200px" className="object-cover" unoptimized />
+              <Image src={url} alt={`تصویر ${idx + 1}`} fill sizes="200px" className="object-cover" unoptimized={!isLocalUploadUrl(url)} />
               {!disabled && (
                 <button
                   type="button"
