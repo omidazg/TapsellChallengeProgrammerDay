@@ -8,7 +8,7 @@
  * وارسی می‌کند. در پایان داده‌ها پاک و فاز به REGISTRATION برمی‌گردد.
  */
 
-import { copyFileSync, existsSync, rmSync } from "node:fs";
+import { createTempDb, type TempDb } from "./lib/temp-db";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -30,11 +30,7 @@ try {
   // نصب نیست؛ کاری لازم نیست
 }
 
-const ROOT = path.resolve(__dirname, "..");
-const DB_FILE = path.join(ROOT, ".smoke-scoring.db");
-
-// باید پیش از import شدن src/lib/db تنظیم شود (dotenv متغیر موجود را بازنویسی نمی‌کند).
-process.env.DATABASE_URL = `file:${DB_FILE.replace(/\\/g, "/")}`;
+let tempDb: TempDb | null = null;
 
 const checks: { name: string; ok: boolean; detail: string }[] = [];
 function check(name: string, ok: boolean, detail = "") {
@@ -42,25 +38,13 @@ function check(name: string, ok: boolean, detail = "") {
   console.log(`${ok ? "PASS" : "FAIL"} — ${name}${detail ? ` (${detail})` : ""}`);
 }
 
-function cleanTempFiles() {
-  for (const suffix of ["", "-journal", "-wal", "-shm"]) {
-    const f = `${DB_FILE}${suffix}`;
-    if (existsSync(f)) rmSync(f, { force: true });
-  }
-}
-
 /**
- * پایگاه‌دادهٔ موقت را از روی اسکیمای dev.db می‌سازد.
- * عمداً `prisma db push` اجرا نمی‌شود تا هیچ دستور مخربی روی پایگاه‌دادهٔ اصلی نرود؛
- * فقط فایل کپی می‌شود و بعد همهٔ ردیف‌ها پاک می‌شوند.
+ * پایگاه‌دادهٔ موقت را از روی مایگریشن‌ها می‌سازد، نه با کپی از dev.db.
+ * کپی از dev.db روی CI می‌شکند: آنجا dev.db وجود ندارد و نتیجه یک فایل
+ * خالی بدون جدول می‌شود. createTempDb همیشه migrate deploy می‌زند.
  */
 function makeTempDb() {
-  cleanTempFiles();
-  const dev = path.join(ROOT, "dev.db");
-  if (!existsSync(dev)) {
-    throw new Error("dev.db پیدا نشد؛ ابتدا `npx prisma db push` را خودت اجرا کن تا اسکیما ساخته شود.");
-  }
-  copyFileSync(dev, DB_FILE);
+  tempDb = createTempDb("smoke-scoring");
 }
 
 async function main() {
@@ -353,7 +337,7 @@ async function main() {
     check("اجرای بدون خطا", false, String(err));
   } finally {
     await prisma.$disconnect();
-    cleanTempFiles();
+    tempDb?.cleanup();
   }
 
   const failed = checks.filter((c) => !c.ok);

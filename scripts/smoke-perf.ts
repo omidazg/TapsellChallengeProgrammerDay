@@ -9,12 +9,9 @@
  */
 
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { createTempDb } from "./lib/temp-db";
 
-const ROOT = path.resolve(__dirname, "..");
-const SOURCE_DB = path.join(ROOT, "dev.db");
-const TMP_DB = path.join(os.tmpdir(), `arena-smoke-perf-${process.pid}.db`);
+let TMP_DB = "";
 
 let passed = 0;
 let failed = 0;
@@ -34,12 +31,10 @@ function eq(label: string, actual: unknown, expected: unknown) {
 }
 
 async function main() {
-  if (!fs.existsSync(SOURCE_DB)) {
-    console.log("FAIL  dev.db پیدا نشد؛ ابتدا `npx prisma db push` را اجرا کنید.");
-    process.exit(1);
-  }
-  fs.copyFileSync(SOURCE_DB, TMP_DB);
-  process.env.DATABASE_URL = `file:${TMP_DB}`;
+  // اسکیما از روی مایگریشن‌ها ساخته می‌شود، نه با کپی از dev.db: روی CI
+  // اصلاً dev.db وجود ندارد. createTempDb خودش DATABASE_URL را هم تنظیم می‌کند
+  // (باید پیش از import شدن prisma باشد).
+  TMP_DB = createTempDb("smoke-perf").file;
   process.env.SCHEDULER_DISABLED = "1";
 
   // پس از تنظیم DATABASE_URL بارگذاری می‌شوند (Prisma آدرس را در زمان import می‌خواند).
