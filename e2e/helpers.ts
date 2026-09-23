@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
 /** ایمیل و رمز یکتا برای هر اجرا (جلوگیری از برخورد در سرور در حال اجرا) */
 export function uniqueEmail(tag: string) {
@@ -12,8 +12,13 @@ export const ADMIN_EMAIL = "admin@tapsell.ir";
 export const ADMIN_PASSWORD = "admin1234";
 
 /**
- * ثبت‌نام یک کاربر تازه از طریق ویزارد ۵ مرحله‌ای /register و بازگشت به صفحهٔ
- * بعد از ثبت‌نام (معمولاً /team). role/power پیش‌فرض روی گزینهٔ اول هر مرحله است.
+ * ثبت‌نام یک کاربر تازه از طریق ویزارد ۵ مرحله‌ای /register.
+ * role/power پیش‌فرض روی گزینهٔ اول هر مرحله است.
+ *
+ * ثبت‌نام موفق به `/?welcome=1` می‌رود و راهنمای شروع (OnboardingTour) را
+ * به‌صورت خودکار باز می‌کند. آن مودال focus-trap و بک‌دراپ دارد، پس اگر بسته
+ * نشود هر کلیک و Tab بعدیِ تست را می‌بلعد. این کمک‌تابع مودال را می‌بندد و
+ * سپس به /team می‌رود تا قرارداد قبلی («بعد از ثبت‌نام روی /team هستیم») حفظ شود.
  */
 export async function registerUser(
   page: Page,
@@ -41,6 +46,19 @@ export async function registerUser(
 
   // مرحله ۵: پیش‌نمایش و ثبت نهایی
   await page.getByRole("button", { name: "ثبت‌نام و ورود به میدان" }).click();
+
+  // ثبت‌نام تمام شده وقتی از /register خارج شدیم.
+  await page.waitForURL((url) => !url.pathname.startsWith("/register"));
+
+  // راهنمای شروع را ببند (اگر باز شد). markSeen در localStorage ذخیره می‌کند،
+  // پس در ادامهٔ همین کانتکست دیگر باز نمی‌شود.
+  const tour = page.getByRole("dialog");
+  if (await tour.isVisible().catch(() => false)) {
+    await page.getByRole("button", { name: "بستن راهنمای شروع" }).click();
+    await expect(tour).toBeHidden();
+  }
+
+  await page.goto("/team");
 }
 
 /** ورود با ایمیل/رمز از طریق /login */
