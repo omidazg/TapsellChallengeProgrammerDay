@@ -12,6 +12,10 @@ WORKDIR /app
 # only when it can't compile at all); this keeps the build robust across
 # architectures without depending on npm/node-gyp internals staying the
 # same.
+# deb.debian.org (Fastly) is unreachable from the deploy server; point apt at
+# ArvanCloud's mirror instead, which that server can actually reach.
+RUN sed -i 's|http://deb.debian.org|https://mirror.arvancloud.ir|g; s|http://security.debian.org|https://mirror.arvancloud.ir/debian-security|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+    sed -i 's|http://deb.debian.org|https://mirror.arvancloud.ir|g; s|http://security.debian.org|https://mirror.arvancloud.ir/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 make g++ \
     && rm -rf /var/lib/apt/lists/*

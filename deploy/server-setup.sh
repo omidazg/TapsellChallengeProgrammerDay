@@ -50,6 +50,22 @@ else
 fi
 systemctl enable --now docker
 
+echo "==> Docker registry mirror (ArvanCloud)"
+# registry-1.docker.io (Docker Hub, AWS-hosted) is unreliable/unreachable from
+# this VPS; ArvanCloud's mirror is. Without this, `docker build`/`docker pull`
+# time out resolving even cached base images.
+DAEMON_JSON=/etc/docker/daemon.json
+if [ ! -f "$DAEMON_JSON" ] || ! grep -q "arvancloud" "$DAEMON_JSON" 2>/dev/null; then
+  cat > "$DAEMON_JSON" <<'EOF'
+{
+  "registry-mirrors": ["https://docker.arvancloud.ir"]
+}
+EOF
+  systemctl restart docker
+else
+  echo "    registry mirror already configured."
+fi
+
 echo "==> firewall (ufw): allow SSH, HTTP, HTTPS"
 ufw allow 22/tcp || true
 ufw allow 80/tcp || true
