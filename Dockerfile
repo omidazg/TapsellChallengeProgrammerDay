@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 ##############################
 # 1) deps: install all deps once (better-sqlite3 ships prebuilt
 #    .node binaries for linux-x64 in its npm package, so no
