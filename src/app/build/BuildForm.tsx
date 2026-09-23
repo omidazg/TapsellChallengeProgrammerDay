@@ -37,11 +37,22 @@ function SubmitButtons({ disabled }: { disabled: boolean }) {
   );
 }
 
-export function BuildForm({ editable, submitted, initial }: { editable: boolean; submitted: boolean; initial: ProductInput | null }) {
+export function BuildForm({
+  editable,
+  submitted,
+  initial,
+  maxPrice = DEFAULTS.maxPrice,
+}: {
+  editable: boolean;
+  submitted: boolean;
+  initial: ProductInput | null;
+  /** سقف مؤثر قیمت (کمینهٔ DEFAULTS.maxPrice و سقف خرید هر نفر)؛ از سرور محاسبه و پاس داده می‌شود. */
+  maxPrice?: number;
+}) {
   const [state, formAction] = useActionState<ProductActionState, FormData>(saveProductAction, {});
   const [images, setImages] = useState<string[]>(initial?.images ?? []);
   const [teaserUrl, setTeaserUrl] = useState(initial?.teaserUrl ?? "");
-  const [price, setPrice] = useState(initial?.price ?? 20);
+  const [price, setPrice] = useState(() => Math.min(initial?.price ?? 20, maxPrice));
   const [specialStart, setSpecialStart] = useState(initial?.specialStart ?? 20);
   const locked = !editable || submitted;
   const teaser = parseTeaser(teaserUrl);
@@ -101,13 +112,13 @@ export function BuildForm({ editable, submitted, initial }: { editable: boolean;
         <ImagesField images={images} setImages={setImages} disabled={locked} />
 
         <div>
-          <label className="label" htmlFor="price">قیمت ({fa(DEFAULTS.minPrice)} تا {fa(DEFAULTS.maxPrice)} سکه): {coins(price)}</label>
+          <label className="label" htmlFor="price">قیمت ({fa(DEFAULTS.minPrice)} تا {fa(maxPrice)} سکه): {coins(price)}</label>
           <input
             id="price"
             name="price"
             type="range"
             min={DEFAULTS.minPrice}
-            max={DEFAULTS.maxPrice}
+            max={maxPrice}
             value={price}
             onChange={(e) => setPrice(Number(e.target.value))}
             className="w-full accent-brand-red"

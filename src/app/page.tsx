@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 import { getPhase, PHASE_LABEL, PHASE_DESC, type Phase } from "@/lib/phase";
 import { ROLES, POWERS, SCORE_WEIGHTS, DEFAULTS } from "@/lib/constants";
+import { SCORE_CATEGORY_ORDER, SCORE_CATEGORY_LABELS } from "@/lib/score-labels";
 import { fa, coins } from "@/lib/persian";
 import { Container, Stat } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
@@ -124,14 +125,7 @@ function nextAction(user: CurrentUser, phase: Phase, hasIdea: boolean): { href: 
   }
 }
 
-const SCORE_ITEMS: { key: keyof typeof SCORE_WEIGHTS; label: string }[] = [
-  { key: "sales", label: "فروش خالص" },
-  { key: "quality", label: "کیفیت محصول" },
-  { key: "capital", label: "جذب سرمایه" },
-  { key: "roi", label: "سود سرمایه‌گذار" },
-  { key: "teaser", label: "تیزر" },
-  { key: "community", label: "جامعه (خرید/قلب)" },
-];
+const SCORE_ITEMS = SCORE_CATEGORY_ORDER;
 
 const FAQ = [
   {
@@ -144,7 +138,7 @@ const FAQ = [
   },
   {
     q: "می‌توانم روی تیم خودم سرمایه‌گذاری کنم؟",
-    a: "بله، اما سرمایه‌گذاری روی تیم خودت «سرمایه‌گذاری خودی» حساب می‌شود و در محاسبهٔ جذب سرمایهٔ خارجی و سود سهام شرکت نمی‌کند.",
+    a: "نه، سرمایه‌گذاری روی ایدهٔ تیم خودت مجاز نیست. باید ایدهٔ تیم‌های دیگر را ارزیابی کنی و روی چند تای امیدوارکننده سرمایه‌گذاری کنی؛ سود آن‌ها به امتیاز «پرتفوی» تیمت هم اضافه می‌شود.",
   },
   {
     q: "چرا سقف سرمایه‌گذاری/خرید روی هر هدف وجود دارد؟",
@@ -199,12 +193,12 @@ function LoggedOutLanding({ phase, endsAt }: { phase: Phase; endsAt: string | nu
       <Container className="py-16 space-y-6">
         <h2 className="text-2xl font-black text-brand-navy text-center">چطور برنده می‌شویم؟</h2>
         <p className="text-center text-brand-slate max-w-2xl mx-auto">
-          امتیاز نهایی هر تیم از شش معیار ساخته می‌شود؛ عدد جلوی هر معیار سهم آن از امتیاز کل است.
+          امتیاز نهایی هر تیم از هشت معیار ساخته می‌شود؛ عدد جلوی هر معیار سهم آن از امتیاز کل است.
         </p>
         <div className="flex flex-wrap justify-center gap-3 stagger">
-          {SCORE_ITEMS.map((s) => (
-            <span key={s.key} className="chip-navy !text-sm !px-4 !py-2">
-              {s.label} <b className="fa-num mr-1">{fa(SCORE_WEIGHTS[s.key])}</b>
+          {SCORE_ITEMS.map((k) => (
+            <span key={k} className="chip-navy !text-sm !px-4 !py-2">
+              {SCORE_CATEGORY_LABELS[k].emoji} {SCORE_CATEGORY_LABELS[k].label} <b className="fa-num mr-1">{fa(SCORE_WEIGHTS[k])}</b>
             </span>
           ))}
         </div>

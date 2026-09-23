@@ -192,6 +192,14 @@ export async function getIdeaDetail(id: string, viewerId: string | null): Promis
 
 /** پایین‌ترین ایدهٔ سرمایه‌گذاری‌شده (به جز تیم خود کاربر) — برای اعتبارسنجی قدرت فرشته */
 export async function lowestRaisedIdeaId(excludeTeamId: string | null): Promise<string | null> {
+  const info = await lowestRaisedIdeaInfo(excludeTeamId);
+  return info?.id ?? null;
+}
+
+/** مثل {@link lowestRaisedIdeaId} اما عنوان و نام تیم را هم برمی‌گرداند — برای نمایش در دکمهٔ قدرت فرشته */
+export async function lowestRaisedIdeaInfo(
+  excludeTeamId: string | null
+): Promise<{ id: string; title: string; teamName: string; raised: number } | null> {
   const ideas = await getIdeasForFloor();
   const candidates = ideas.filter((i) => i.teamId !== excludeTeamId);
   if (candidates.length === 0) return null;
@@ -199,5 +207,5 @@ export async function lowestRaisedIdeaId(excludeTeamId: string | null): Promise<
   for (const i of candidates) {
     if (i.raised < lowest.raised) lowest = i;
   }
-  return lowest.id;
+  return { id: lowest.id, title: lowest.title, teamName: lowest.teamName, raised: lowest.raised };
 }

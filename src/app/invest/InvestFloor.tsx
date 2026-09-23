@@ -49,7 +49,9 @@ export function InvestFloor({
           {ideas.map((idea) => {
             const isOwn = ownTeamId !== null && idea.teamId === ownTeamId;
             const avg = analystAvg(idea);
-            const pct = idea.fundingCap > 0 ? Math.min(100, Math.round((idea.raised / idea.fundingCap) * 100)) : 0;
+            const rawPct = idea.fundingCap > 0 ? Math.round((idea.raised / idea.fundingCap) * 100) : 0;
+            const pct = Math.min(100, rawPct);
+            const overGoal = rawPct > 100;
             return (
               <Link
                 key={idea.id}
@@ -83,17 +85,20 @@ export function InvestFloor({
                   </div>
 
                   <div>
-                    <div className="h-2 rounded-pill bg-brand-sky overflow-hidden">
-                      <div className="h-full rounded-pill bg-brand-red" style={{ width: `${pct}%` }} />
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 flex-1 rounded-pill bg-brand-sky overflow-hidden">
+                        <div className="h-full rounded-pill bg-brand-red" style={{ width: `${pct}%` }} />
+                      </div>
+                      {overGoal && <span className="chip-red shrink-0 !px-1.5 !py-0 text-[10px]">بیش از هدف 🔥</span>}
                     </div>
                     <div className="mt-1 flex justify-between text-xs text-brand-slate fa-num">
                       <span>{coins(idea.raised)}</span>
-                      <span>از {coins(idea.fundingCap)}</span>
+                      <span>از هدف {coins(idea.fundingCap)}</span>
                     </div>
                   </div>
 
                   <span className={isOwn ? "btn-ghost mt-1 pointer-events-none" : "btn-primary mt-1 pointer-events-none"}>
-                    {isOwn ? "خودتأمین" : interactive ? "سرمایه‌گذاری" : "مشاهده"}
+                    {isOwn ? "ایدهٔ خودت" : interactive ? "سرمایه‌گذاری" : "مشاهده"}
                   </span>
                 </div>
               </Link>

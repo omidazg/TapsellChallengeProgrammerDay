@@ -1,5 +1,5 @@
 import { prisma } from "./db";
-import { defaultConfig, scoreGame } from "./economy/engine";
+import { bargainDiscountFor, defaultConfig, effectivePurchaseCap, maxSpendable, scoreGame, unspentPenalty } from "./economy/engine";
 import type { EconomyConfig, MemberWallet, ScoreOutput, TeamInput, TeamResult } from "./economy/types";
 import { DEFAULTS } from "./constants";
 import { getSetting, getSettingInt } from "./phase";
@@ -32,6 +32,8 @@ export const LEDGER_REASON_LABEL: Record<string, string> = {
   DIVIDEND: "سود سهام",
   PENALTY: "جریمه",
   ADMIN: "تنظیم برگزارکننده",
+  AUCTION_WIN: "برد حراج",
+  POWER_ANGEL: "سرمایه‌گذاری فرشته",
 };
 
 export const WALLET_LABEL: Record<string, string> = {
@@ -91,19 +93,96 @@ export async function computeScores(): Promise<ScoreOutput> {
     };
   });
 
-  const users = await prisma.user.findMany({
-    where: { teamId: { not: null } },
-    select: { id: true, teamId: true, seedWallet: true, buyWallet: true, power: true, powerUsed: true },
-  });
-  const wallets: MemberWallet[] = users.map((u) => ({
-    userId: u.id,
-    teamId: u.teamId,
-    seedLeft: u.seedWallet,
-    buyLeft: u.buyWallet,
-    shieldUsed: u.power === "SHIELD" && u.powerUsed,
-  }));
+  const wallets = await buildMemberWallets(config.maxPerTarget);
 
   return scoreGame(config, teamInputs, wallets);
+}
+
+/**
+ * کیف‌پول امتیازدهی هر کاربر را می‌سازد: سکهٔ باقی‌مانده + «سکهٔ خرج‌شدنی»
+ * (بیشترین چیزی که هنوز می‌شد روی هدف‌های دیگران خرج کرد؛ جریمه فقط روی این حساب می‌شود).
+ *
+ * برای همهٔ کاربران (حتی بی‌تیم) ساخته می‌شود؛ scoreGame خودش هنگام جمع‌کردن جریمه/پرتفوی/سلیقهٔ
+ * هر تیم فقط کیف‌پول اعضای همان تیم را برمی‌دارد، پس کاربر بی‌تیم روی هیچ تیمی اثر نمی‌گذارد.
+ *
+ * کوئری‌ها عمداً کم نگه داشته شده‌اند (چند findMany/groupBy، نه N×M کوئری جدا):
+ * یک‌بار ایده‌ها/محصولاتِ ثبت‌شده و یک‌بار جمع سرمایه‌گذاری/خرید هر کاربر روی هر هدف خوانده
+ * می‌شود؛ بقیه محاسبه در حافظه انجام می‌شود.
+ */
+async function buildMemberWallets(maxPerTarget: number, onlyUserId?: string): Promise<MemberWallet[]> {
+  const byUser = onlyUserId ? { userId: onlyUserId } : undefined;
+  const [users, ideas, products, investGroups, purchaseGroups] = await Promise.all([
+    prisma.user.findMany({
+      where: onlyUserId ? { id: onlyUserId } : undefined,
+      select: { id: true, teamId: true, seedWallet: true, buyWallet: true, power: true },
+    }),
+    prisma.idea.findMany({
+      where: { submittedAt: { not: null } },
+      select: { id: true, teamId: true },
+    }),
+    prisma.product.findMany({
+      where: { submittedAt: { not: null } },
+      select: { id: true, teamId: true, price: true },
+    }),
+    prisma.investment.groupBy({ by: ["userId", "ideaId"], where: byUser, _sum: { amount: true } }),
+    prisma.purchase.groupBy({ by: ["userId", "productId"], where: byUser, _sum: { amount: true } }),
+  ]);
+
+  const investedByUserIdea = new Map<string, number>();
+  for (const g of investGroups) {
+    investedByUserIdea.set(`${g.userId}|${g.ideaId}`, g._sum.amount ?? 0);
+  }
+  const purchasedByUserProduct = new Map<string, number>();
+  for (const g of purchaseGroups) {
+    purchasedByUserProduct.set(`${g.userId}|${g.productId}`, g._sum.amount ?? 0);
+  }
+
+  return users.map((u) => {
+    let seedSpendable = 0;
+    for (const idea of ideas) {
+      if (u.teamId && idea.teamId === u.teamId) continue; // ایدهٔ تیم خودش حساب نمی‌شود
+      const invested = investedByUserIdea.get(`${u.id}|${idea.id}`) ?? 0;
+      seedSpendable += Math.max(0, maxPerTarget - invested);
+    }
+
+    // کیف خرید بخش‌پذیر نیست (هر خرید یک واحد با قیمت ثابت است)، پس «خرج‌شدنی» یعنی
+    // بیشترین مبلغی که با موجودی فعلی و واحدهای باقی‌مانده دقیقاً می‌شد پر کرد.
+    const buyUnits: { cost: number; count: number }[] = [];
+    for (const product of products) {
+      if (product.price <= 0) continue; // محافظتی؛ قیمت معتبر همیشه ≥ ۱ است
+      if (u.teamId && product.teamId === u.teamId) continue; // محصول تیم خودش حساب نمی‌شود
+      const purchased = purchasedByUserProduct.get(`${u.id}|${product.id}`) ?? 0;
+      const cap = effectivePurchaseCap(maxPerTarget, product.price);
+      const remainingRevenue = Math.max(0, cap - purchased);
+      const units = Math.floor(remainingRevenue / product.price);
+      const discount = u.power === "BARGAIN" ? bargainDiscountFor(product.price, DEFAULTS.bargainDiscount) : 0;
+      buyUnits.push({ cost: product.price - discount, count: units });
+    }
+    const buySpendable = maxSpendable(u.buyWallet, buyUnits);
+
+    return {
+      userId: u.id,
+      teamId: u.teamId,
+      seedLeft: u.seedWallet,
+      buyLeft: u.buyWallet,
+      seedSpendable,
+      buySpendable,
+      hasShield: u.power === "SHIELD",
+    };
+  });
+}
+
+/**
+ * جریمهٔ دقیق سکهٔ خرج‌نشدهٔ یک نفر، با همان منطق امتیازدهی پایانی (برای پیش‌نمایش کیف پول).
+ * `spendable` = چند سکه از موجودی فعلی‌اش هنوز واقعاً خرج‌شدنی است.
+ */
+export async function personalPenalty(userId: string): Promise<{ penalty: number; spendable: number }> {
+  const config = await configFromSettings();
+  const [w] = await buildMemberWallets(config.maxPerTarget, userId);
+  if (!w) return { penalty: 0, spendable: 0 };
+  const penalty = unspentPenalty(config, [w]);
+  const spendable = Math.min(w.seedLeft, w.seedSpendable) + Math.min(w.buyLeft, w.buySpendable);
+  return { penalty, spendable };
 }
 
 /**

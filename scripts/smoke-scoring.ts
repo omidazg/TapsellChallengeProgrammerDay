@@ -101,17 +101,16 @@ async function main() {
       teamIds[t.key] = team.id;
 
       for (let i = 0; i < 3; i++) {
-        // تیم گاما عضو سومش سپر دارد و آن را فعال کرده است
+        // هر تیم دقیقاً یک عضو BARGAIN، یک SHIELD و یک HYPE دارد (به‌ترتیب چرخشی).
+        // سپر دیگر نیازی به «فعال‌سازی» ندارد؛ همیشه غیرفعال (powerUsed نادیده گرفته می‌شود).
         const power = t.key === "gamma" ? POWER_BY_INDEX[i] : POWER_BY_INDEX[(i + 1) % 3];
-        const isShieldUser = t.key === "gamma" && i === 2;
         const u = await prisma.user.create({
           data: {
             email: `smoke-${t.key}-${i}@example.test`,
             passwordHash: "x",
             nickname: `${t.name} ${i + 1}`,
             role: ["BUILDER", "STORYTELLER", "DEALMAKER"][i],
-            power: isShieldUser ? "SHIELD" : power,
-            powerUsed: isShieldUser,
+            power,
             teamId: team.id,
             seedWallet: 100,
             buyWallet: 100,
@@ -250,24 +249,46 @@ async function main() {
     // کیفیت از داور (نه هوش مصنوعی)
     check("کیفیت آلفا از نمرهٔ داور ۹۰ آمده", alpha.quality === 90, `=${alpha.quality}`);
 
-    // جریمهٔ خرج‌نشده + سپر
+    // جریمهٔ خرج‌نشده: فقط روی سکهٔ «خرج‌شدنی» حساب می‌شود (min(left, spendable))، نه کل مانده.
+    // مقادیر زیر دستی از روی فیکسچر (ایده‌ها/محصولات ثبت‌شده، سرمایه‌گذاری‌ها، خریدها، قدرت‌ها)
+    // با فرمول src/lib/scoring.ts محاسبه شده‌اند تا این یک وارسی مستقل از پیاده‌سازی باشد:
+    //   seedSpendable هر کاربر = Σ روی ایده‌های ثبت‌شدهٔ ۲ تیم دیگر: max(0, ۴۰ − سرمایه‌گذاری‌شده)
+    //   buySpendable هر کاربر = Σ روی محصولات ثبت‌شدهٔ ۲ تیم دیگر (قیمت=۲۰، سقف=۴۰):
+    //     floor(max(0,۴۰−خریده‌شده)/۲۰) × (۲۰ − تخفیفِ BARGAIN‌ی که ۳ است)
     check("جریمهٔ هر سه تیم اعمال شد", [alpha, beta, gamma].every((t) => t.unspentPenalty > 0),
       `alpha=${alpha.unspentPenalty} beta=${beta.unspentPenalty} gamma=${gamma.unspentPenalty}`);
-    // گاما: اعضا ۱۰ سرمایه و ۱۵ خرید کردند؛ سپر ۱۰ سکه را معاف می‌کند
-    const gammaUsers = await prisma.user.findMany({ where: { teamId: teamIds["gamma"] } });
-    const gammaLeft = gammaUsers.reduce((a, u) => a + u.seedWallet + u.buyWallet, 0);
     check(
-      "سپر ۱۰ سکه از جریمهٔ گاما کم کرد",
-      Math.abs(gamma.unspentPenalty - PENALTY_PER_COIN * (gammaLeft - 10)) < 1e-9,
-      `penalty=${gamma.unspentPenalty} left=${gammaLeft}`
+      "جریمهٔ آلفا فقط روی سکهٔ خرج‌شدنی حساب شد (نه کل مانده)؛ ضریب اعشاری ۱٫۵ هم اعمال شد",
+      Math.abs(alpha.unspentPenalty - 1.5 * 384) < 1e-9,
+      `penalty=${alpha.unspentPenalty} انتظار=${1.5 * 384}`
     );
-    const alphaUsers = await prisma.user.findMany({ where: { teamId: teamIds["alpha"] } });
-    const alphaLeft = alphaUsers.reduce((a, u) => a + u.seedWallet + u.buyWallet, 0);
     check(
-      "ضریب جریمهٔ اعشاری ۱٫۵ از Setting خوانده شد (به ۱ بریده نشد)",
-      Math.abs(alpha.unspentPenalty - 1.5 * alphaLeft) < 1e-9,
-      `penalty=${alpha.unspentPenalty} left=${alphaLeft} انتظار=${1.5 * alphaLeft}`
+      "جریمهٔ بتا فقط روی سکهٔ خرج‌شدنی حساب شد",
+      Math.abs(beta.unspentPenalty - 1.5 * 394) < 1e-9,
+      `penalty=${beta.unspentPenalty} انتظار=${1.5 * 394}`
     );
+    check(
+      "جریمهٔ گاما فقط روی سکهٔ خرج‌شدنی حساب شد (سپر دیگر معافیت ثابت نمی‌دهد)",
+      Math.abs(gamma.unspentPenalty - 1.5 * 381) < 1e-9,
+      `penalty=${gamma.unspentPenalty} انتظار=${1.5 * 381}`
+    );
+
+    // ---------- پرتفوی و سلیقه ----------
+    // پرتفوی: اعتبار سود هر سرمایه‌گذاری به تیم *سرمایه‌گذار* می‌رسد، نه تیم سرمایه‌پذیر.
+    //   آلفا: alpha-1 (سپردار) با ۳۰ سکه روی بتا سرمایه‌گذاری کرد؛ سود=floor(27.5*30/30)=۲۷، سپر اثر ندارد چون ۲۷>سقف سپر=۱۵
+    //   بتا: beta-0 با ۴۰ سکه روی آلفا؛ سود=floor(19.5*40/70)=۱۱
+    //   گاما: gamma-0 با ۳۰ سکه روی آلفا؛ سود=floor(19.5*30/70)=۸
+    check("پرتفوی آلفا = ۲۷ (سود سرمایه‌گذاری alpha-1 روی بتا)", alpha.portfolio === 27, `=${alpha.portfolio}`);
+    check("پرتفوی بتا = ۱۱ (سود سرمایه‌گذاری beta-0 روی آلفا)", beta.portfolio === 11, `=${beta.portfolio}`);
+    check("پرتفوی گاما = ۸ (سود سرمایه‌گذاری gamma-0 روی آلفا)", gamma.portfolio === 8, `=${gamma.portfolio}`);
+
+    // سلیقه: Σ خریدهای اعضا از تیم‌های دیگر × کیفیت مؤثر فروشنده / ۱۰۰
+    //   آلفا: alpha-0 از بتا خرید ۳۵×کیفیت۷۰/۱۰۰=۲۴٫۵ + alpha-2 از گاما خرید ۱۵×کیفیت۵۰/۱۰۰=۷٫۵ → ۳۲
+    //   بتا: beta-0 از آلفا خرید ۴۰×کیفیت۹۰/۱۰۰=۳۶
+    //   گاما: gamma-0 از آلفا خرید ۲۵×۹۰/۱۰۰=۲۲٫۵ + gamma-1 از بتا خرید ۲۰×۷۰/۱۰۰=۱۴ → ۳۶٫۵
+    check("سلیقهٔ آلفا = ۳۲", Math.abs(alpha.taste - 32) < 1e-9, `=${alpha.taste}`);
+    check("سلیقهٔ بتا = ۳۶", Math.abs(beta.taste - 36) < 1e-9, `=${beta.taste}`);
+    check("سلیقهٔ گاما = ۳۶٫۵", Math.abs(gamma.taste - 36.5) < 1e-9, `=${gamma.taste}`);
 
     // رتبه‌بندی
     const ranks = [...output.teams].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
@@ -315,9 +336,13 @@ async function main() {
         (f.teamId === teamIds["beta"] && f.otherTeamId === teamIds["alpha"])
     );
     check("پرچم تبانی برای زوج آلفا↔بتا ثبت شد", !!pair, `تعداد پرچم=${flags.length}`);
+    // detectAndFlagCollusion (src/lib/admin.ts) هم خرید و هم سرمایه‌گذاری را جریان حساب می‌کند
+    // (از وقتی سرمایه‌گذاری خودی ممنوع شده، همهٔ سرمایه‌گذاری‌ها بیرونی‌اند):
+    //   آلفا→بتا: خرید alpha-0 از بتا (۳۵) + سرمایه‌گذاری alpha-1 روی بتا (۳۰) = ۶۵
+    //   بتا→آلفا: خرید beta-0 از آلفا (۴۰) + سرمایه‌گذاری beta-0 روی آلفا (۴۰) = ۸۰
     check(
-      "مبالغ پرچم درست‌اند (۳۵ و ۴۰)",
-      !!pair && pair.amountAB + pair.amountBA === 75,
+      "مبالغ پرچم درست‌اند (۶۵ و ۸۰؛ خرید + سرمایه‌گذاری هر دو حساب می‌شوند)",
+      !!pair && pair.amountAB === 65 && pair.amountBA === 80,
       pair ? `AB=${pair.amountAB} BA=${pair.amountBA}` : "-"
     );
     // اجرای دوباره نباید ردیف تکراری بسازد

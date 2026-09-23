@@ -161,7 +161,7 @@ export function IdeaForm({ initial }: { initial: IdeaInput | null }) {
 
       <div className="grid md:grid-cols-2 gap-5">
         <div>
-          <label className="label" htmlFor="fundingCap">سقف سرمایه (۵۰ تا ۶۰۰ سکه)</label>
+          <label className="label" htmlFor="fundingCap">هدف جذب سرمایه (۵۰ تا ۶۰۰ سکه)</label>
           <input
             id="fundingCap"
             name="fundingCap"
@@ -173,6 +173,9 @@ export function IdeaForm({ initial }: { initial: IdeaInput | null }) {
             required
             className="input"
           />
+          <p className="mt-1 text-xs text-brand-slate">
+            این یک هدف است، نه سقف سخت؛ سرمایه‌گذاران می‌توانند بیشتر از این هم روی ایده‌ات بگذارند.
+          </p>
         </div>
         <div>
           <label className="label" htmlFor="revenueShare">سهم سود سرمایه‌گذار: {fa(revenueShare)}٪</label>

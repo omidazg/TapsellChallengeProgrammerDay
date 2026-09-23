@@ -8,6 +8,7 @@
 import { prisma } from "./db";
 import { computeScores } from "./scoring";
 import { invalidate } from "./ttl-cache";
+import { DEFAULTS } from "./constants";
 import type { DividendLine, ScoreOutput, TeamResult } from "./economy/types";
 
 /** کلید Setting که زمان تسویه در آن ذخیره می‌شود (ISO). */
@@ -109,11 +110,15 @@ export async function settleGame(): Promise<SettlementResult> {
         ptsQuality: t.pts.quality,
         ptsTeaser: t.pts.teaser,
         ptsCommunity: t.pts.community,
+        ptsPortfolio: t.pts.portfolio,
+        ptsTaste: t.pts.taste,
         total: t.total,
         rank: t.rank ?? 0,
         selfCapital: t.selfCapital,
         quality: t.quality,
         teaser: t.teaser,
+        portfolio: t.portfolio,
+        taste: t.taste,
         computedAt: settledAt,
       };
       await tx.teamScore.upsert({
@@ -188,9 +193,25 @@ export async function loadSettledOutput(): Promise<ScoreOutput> {
     const key = `${row.userId}|${row.refId}`;
     byUserTeam.set(key, (byUserTeam.get(key) ?? 0) + row.delta);
   }
+
+  // portfolioCredit در دفتر کل ذخیره نمی‌شود (فقط یک مشتق امتیازی است)؛ اینجا از روی
+  // قدرت فعلی کاربر (سپر) بازسازی می‌شود — همان چیزی که scoreGame هنگام تسویه دید.
+  const dividendUserIds = [...new Set([...byUserTeam.keys()].map((k) => k.split("|")[0]))];
+  const shieldUsers = dividendUserIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: dividendUserIds }, power: "SHIELD" },
+        select: { id: true },
+      })
+    : [];
+  const shieldedUserIds = new Set(shieldUsers.map((u) => u.id));
+
   const dividends: DividendLine[] = [...byUserTeam.entries()].map(([key, dividend]) => {
     const [userId, teamId] = key.split("|");
-    return { userId, teamId, invested: investedByUserTeam.get(key) ?? 0, dividend };
+    const invested = investedByUserTeam.get(key) ?? 0;
+    const portfolioCredit = shieldedUserIds.has(userId)
+      ? Math.max(dividend, Math.floor(invested * DEFAULTS.shieldFloor))
+      : dividend;
+    return { userId, teamId, invested, dividend, portfolioCredit };
   });
 
   const teams: TeamResult[] = scores.map((s) => ({
@@ -208,6 +229,9 @@ export async function loadSettledOutput(): Promise<ScoreOutput> {
     // (فقط برای ترتیب جوایز کافی بود).
     quality: legacy ? s.ptsQuality : s.quality,
     teaser: legacy ? s.ptsTeaser : s.teaser,
+    // مسیر قدیمی (پیش از پرتفوی/سلیقه): این ستون‌ها وجود نداشتند، ۰ پیش‌فرض می‌مانند.
+    portfolio: s.portfolio,
+    taste: s.taste,
     unspentPenalty: s.unspentPenalty,
     pts: {
       sales: s.ptsSales,
@@ -216,6 +240,8 @@ export async function loadSettledOutput(): Promise<ScoreOutput> {
       roi: s.ptsRoi,
       teaser: s.ptsTeaser,
       community: s.ptsCommunity,
+      portfolio: s.ptsPortfolio,
+      taste: s.ptsTaste,
     },
     total: s.total,
     rank: legacy ? undefined : s.rank,

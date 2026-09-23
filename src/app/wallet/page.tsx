@@ -1,11 +1,9 @@
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { DEFAULTS, POWERS } from "@/lib/constants";
-import { LEDGER_REASON_LABEL, WALLET_LABEL, getSettingFloat } from "@/lib/scoring";
-import { defaultConfig, unspentPenalty } from "@/lib/economy/engine";
-import { PageHeader, Container, Stat, Alert, Empty } from "@/components/ui";
+import { LEDGER_REASON_LABEL, WALLET_LABEL, getSettingFloat, personalPenalty } from "@/lib/scoring";
+import { PageHeader, Container, Stat, Empty } from "@/components/ui";
 import { fa, coins, jdatetime } from "@/lib/persian";
-import { ShieldButton } from "./ShieldButton";
 
 export const metadata = { title: "کیف پول" };
 
@@ -13,22 +11,22 @@ export default async function WalletPage() {
   const user = await requireUser();
   const penaltyPerCoin = await getSettingFloat("penalty_per_coin", DEFAULTS.penaltyPerCoin);
 
-  const [userLedger, treasuryLedger, team] = await Promise.all([
+  const [userLedger, treasuryLedger, team, now] = await Promise.all([
     prisma.ledgerEntry.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
     user.teamId
       ? prisma.ledgerEntry.findMany({ where: { teamId: user.teamId, wallet: "TREASURY" }, orderBy: { createdAt: "desc" } })
       : Promise.resolve([]),
     user.teamId ? prisma.team.findUnique({ where: { id: user.teamId } }) : Promise.resolve(null),
+    personalPenalty(user.id),
   ]);
 
   const leftover = user.seedWallet + user.buyWallet;
-  const hasShield = user.power === "SHIELD";
-  const shieldUsed = hasShield && user.powerUsed;
-  const shielded = shieldUsed ? Math.min(10, leftover) : 0;
-  // همان محاسبهٔ موتور اقتصاد تا پیش‌نمایش با امتیاز نهایی یکی باشد
-  const penaltyPreview = unspentPenalty({ ...defaultConfig(), penaltyPerCoin }, [
-    { userId: user.id, teamId: user.teamId, seedLeft: user.seedWallet, buyLeft: user.buyWallet, shieldUsed },
-  ]);
+  const hasShield = user.power === "SHIELD"; // سپر همیشه فعال است؛ نیازی به فعال‌سازی نیست
+  // «الان»: همان محاسبهٔ امتیازدهی پایانی روی وضعیت فعلی (فقط سکه‌ای که واقعاً قابل‌خرج است).
+  // «حداکثر»: اگر هیچ‌کدام از سکه‌ها خرج نشود؛ پیش از روز بازار که هنوز محصولی ثبت نشده،
+  // عدد «الان» گمراه‌کننده صفر است، پس هر دو را نشان می‌دهیم.
+  const maxPenalty = penaltyPerCoin * leftover;
+  const round1 = (n: number) => Math.round(n * 10) / 10;
 
   return (
     <>
@@ -43,23 +41,28 @@ export default async function WalletPage() {
         <div className="card p-6 anim-rise">
           <h2 className="text-lg font-black text-brand-navy mb-1">پیش‌نمایش جریمه</h2>
           <p className="text-sm text-brand-slate mb-4">
-            هر سکهٔ خرج‌نشده در پایان بازی {fa(penaltyPerCoin)} امتیاز از امتیاز تیم کم می‌کند.
+            هر سکهٔ خرج‌نشده در پایان بازی {fa(penaltyPerCoin)} امتیاز از امتیاز تیمت کم می‌کند؛ اما فقط سکه‌ای که
+            واقعاً می‌شد خرجش کرد. اگر به سقف {fa(DEFAULTS.maxPerTarget)}‌سکه‌ای همهٔ هدف‌ها رسیده باشی، یا باقی‌ماندهٔ
+            کیف خریدت از قیمت محصولات کمتر باشد، آن سکه‌ها جریمه نمی‌شوند.
           </p>
           <div className="flex flex-wrap items-center gap-4">
-            <div className="text-3xl font-black text-brand-red fa-num">{fa(Math.round(penaltyPreview * 10) / 10)} امتیاز</div>
+            <div>
+              <div className="text-xs text-brand-slate">اگر بازی همین الان تمام شود</div>
+              <div className="text-3xl font-black text-brand-red fa-num">{fa(round1(now.penalty))} امتیاز</div>
+            </div>
             <div className="text-xs text-brand-slate">
-              بر اساس {coins(leftover)} باقی‌مانده {shielded > 0 && <>(با کسر {coins(shielded)} به‌خاطر سپر)</>}
+              {coins(now.spendable)} از {coins(leftover)} باقی‌مانده‌ات هنوز خرج‌شدنی است. اگر هیچ‌کدام را خرج نکنی و
+              بازار پر از محصول شود، جریمه تا {fa(round1(maxPenalty))} امتیاز می‌رسد.
             </div>
           </div>
-          {hasShield && !user.powerUsed && (
+          {hasShield && (
             <div className="mt-4 pt-4 border-t border-brand-mist">
-              <p className="text-sm text-brand-navy mb-2">
-                {POWERS.SHIELD.emoji} قدرت تو «{POWERS.SHIELD.label}» است: {POWERS.SHIELD.desc}
+              <p className="text-sm text-brand-navy">
+                {POWERS.SHIELD.emoji} قدرت تو «{POWERS.SHIELD.label}» است و همیشه فعال است، بدون نیاز به هیچ کاری از طرف تو:{" "}
+                {POWERS.SHIELD.desc}
               </p>
-              <ShieldButton />
             </div>
           )}
-          {hasShield && user.powerUsed && <Alert kind="ok">سپر فعال است؛ ۱۰ سکه از جریمهٔ خرج‌نشدهٔ تو معاف است.</Alert>}
         </div>
 
         <section>

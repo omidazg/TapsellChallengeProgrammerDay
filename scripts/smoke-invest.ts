@@ -2,8 +2,9 @@
  * تست دودی منطق سرمایه‌گذاری.
  * اجرا: npx tsx scripts/smoke-invest.ts
  *
- * دو تیم × دو کاربر و برای هر تیم یک ایدهٔ ثبت‌نهایی‌شده می‌سازد، فاز را روی
- * SEED_ROUND می‌گذارد و هستهٔ سرمایه‌گذاری (`investCore`) را می‌آزماید.
+ * سه تیم (دو تیم با ایده + یک تیم فقط برای آزمون قدرت فرشته) و برای هر تیمِ
+ * ایده‌دار یک ایدهٔ ثبت‌نهایی‌شده می‌سازد، فاز را روی SEED_ROUND می‌گذارد و
+ * هستهٔ سرمایه‌گذاری (`investCore`) و هستهٔ قدرت فرشته (`angelInvestCore`) را می‌آزماید.
  * در پایان همهٔ رکوردهای ساخته‌شده پاک و فاز به REGISTRATION برمی‌گردد.
  */
 
@@ -30,7 +31,7 @@ function check(name: string, condition: boolean, detail = "") {
 
 async function main() {
   const { prisma } = await import("../src/lib/db");
-  const { investCore } = await import("../src/lib/invest");
+  const { investCore, angelInvestCore } = await import("../src/lib/invest");
   const { DEFAULTS } = await import("../src/lib/constants");
 
   async function setPhaseValue(value: string) {
@@ -49,7 +50,8 @@ async function main() {
 
   try {
     // ---------- ساخت داده ----------
-    for (const n of [1, 2]) {
+    // تیم ۱ و ۲: هرکدام یک ایدهٔ ثبت‌شده. تیم ۳: بدون ایده، فقط برای آزمون قدرت فرشته.
+    for (const n of [1, 2, 3]) {
       const team = await prisma.team.create({
         data: { name: `${TAG}_team_${n}`, slug: `${TAG}-team-${n}` },
       });
@@ -61,31 +63,33 @@ async function main() {
           passwordHash: "x",
           nickname: `کاربر ${n}`,
           role: "DEALMAKER",
-          power: "HYPE",
+          power: n === 3 ? "ANGEL" : "HYPE",
           teamId: team.id,
           seedWallet: 100,
         },
       });
       createdUserIds.push(user.id);
 
-      const idea = await prisma.idea.create({
-        data: {
-          teamId: team.id,
-          title: `ایدهٔ ${n}`,
-          oneLiner: "یک جملهٔ کوتاه",
-          problem: "مسئله",
-          audience: "مخاطب",
-          buildPlan: "برنامه",
-          fundingCap: n === 1 ? 200 : 50, // تیم دوم سقف پایین برای آزمون سقف جذب
-          revenueShare: 30,
-          submittedAt: new Date(),
-        },
-      });
-      createdIdeaIds.push(idea.id);
+      if (n !== 3) {
+        const idea = await prisma.idea.create({
+          data: {
+            teamId: team.id,
+            title: `ایدهٔ ${n}`,
+            oneLiner: "یک جملهٔ کوتاه",
+            problem: "مسئله",
+            audience: "مخاطب",
+            buildPlan: "برنامه",
+            fundingCap: n === 1 ? 200 : 50, // تیم دوم هدف پایین‌تر برای آزمون عبور از هدف
+            revenueShare: 30,
+            submittedAt: new Date(),
+          },
+        });
+        createdIdeaIds.push(idea.id);
+      }
     }
 
-    const [userA, userB] = createdUserIds;
-    const [teamA, teamB] = createdTeamIds;
+    const [userA, userB, userC] = createdUserIds; // userC: صاحب قدرت فرشته، بدون ایده
+    const [teamA, teamB, teamC] = createdTeamIds;
     const [ideaA, ideaB] = createdIdeaIds;
 
     await setPhaseValue("SEED_ROUND");
@@ -127,21 +131,27 @@ async function main() {
     );
     await prisma.user.update({ where: { id: userB }, data: { seedWallet: 100 } });
 
-    // ---------- ۴) سقف جذب سرمایهٔ ایده ----------
-    // ایدهٔ B سقف ۵۰ دارد و تا اینجا ۱۰ جذب کرده؛ ۴۰ دیگر یعنی ۵۰ (مجاز) و بیشتر از آن رد.
-    const r4a = await investCore(prisma, userB, ideaB, 40); // خودتأمین، ۱۰+۴۰ = ۵۰ = سقف
-    check("سرمایه‌گذاری تا دقیقاً سقف جذب مجاز است", r4a.ok, r4a.ok ? "" : r4a.error);
-
-    const r4b = await investCore(prisma, userA, ideaB, 1); // ۵۰ + ۱ > ۵۰
+    // ---------- ۴) خودتأمینی ممنوع است ----------
+    const r4 = await investCore(prisma, userB, ideaB, 5); // userB عضو teamB است، ideaB متعلق به teamB
     check(
-      "عبور از سقف جذب سرمایهٔ ایده رد می‌شود",
-      !r4b.ok && r4b.error === "سقف جذب سرمایهٔ این ایده پر شده است",
-      r4b.ok ? "اشتباهاً پذیرفته شد" : r4b.error
+      "سرمایه‌گذاری روی ایدهٔ تیم خودت رد می‌شود",
+      !r4.ok && r4.error === "نمی‌توانی روی ایدهٔ تیم خودت سرمایه‌گذاری کنی",
+      r4.ok ? "اشتباهاً پذیرفته شد" : r4.error
     );
 
-    // ---------- ۵) پرچم خودتأمین ----------
-    check("سرمایه‌گذاری روی تیم خودی با پرچم selfFunded ثبت می‌شود", r4a.ok && r4a.selfFunded === true);
-    check("سرمایه‌گذاری روی تیم دیگر selfFunded ندارد", r1.ok && r1.selfFunded === false);
+    // ---------- ۵) عبور از «هدف جذب سرمایه» مجاز است ----------
+    // ideaB هدفش ۵۰ است و تا اینجا ۱۰ جذب کرده. userA تا سقف ۴۰ خودش شارژ می‌کند (۳۰ بیشتر)،
+    // بعد userC هم ۲۰ می‌گذارد تا جمع به ۶۰ (بیشتر از هدف ۵۰) برسد — باید هر دو رد نشوند.
+    const r5a = await investCore(prisma, userA, ideaB, 30); // ۱۰+۳۰=۴۰ (سقف شخصی، هنوز زیر هدف)
+    check("سرمایه‌گذاری تا سقف شخصی مجاز است", r5a.ok, r5a.ok ? "" : r5a.error);
+    const r5b = await investCore(prisma, userC, ideaB, 20); // ۴۰+۲۰=۶۰ > هدف ۵۰
+    check(
+      "سرمایه‌گذاری‌ای که از هدف جذب سرمایه عبور می‌کند رد نمی‌شود",
+      r5b.ok,
+      r5b.ok ? "" : r5b.error
+    );
+    const raisedB = (await prisma.investment.aggregate({ where: { ideaId: ideaB }, _sum: { amount: true } }))._sum.amount ?? 0;
+    check("جذب ایده از هدفش عبور کرده", raisedB === 60, `raised=${raisedB} هدف=50`);
 
     // ---------- ۶) مبلغ نامعتبر ----------
     const r6 = await investCore(prisma, userA, ideaA, 0);
@@ -158,12 +168,66 @@ async function main() {
     await setPhaseValue("SEED_ROUND");
 
     // ---------- ۸) تراکنش اتمی: تلاش ناموفق نباید اثری بگذارد ----------
-    const walletBefore = (await prisma.user.findUniqueOrThrow({ where: { id: userA } })).seedWallet;
-    await investCore(prisma, userA, ideaB, 5); // سقف جذب پر است → باید رد شود
-    const walletUnchanged = (await prisma.user.findUniqueOrThrow({ where: { id: userA } })).seedWallet;
+    const walletBefore = (await prisma.user.findUniqueOrThrow({ where: { id: userB } })).seedWallet;
+    await investCore(prisma, userB, ideaB, 5); // خودتأمینی → باید رد شود
+    const walletUnchanged = (await prisma.user.findUniqueOrThrow({ where: { id: userB } })).seedWallet;
     check("تلاش ناموفق کیف پول را تغییر نمی‌دهد", walletBefore === walletUnchanged, `${walletBefore} → ${walletUnchanged}`);
 
-    void teamA;
+    // ---------- ۹) قدرت فرشته: سرمایه‌گذاری اتمی ۲۰ سکه‌ای روی کم‌سرمایه‌ترین ایدهٔ تیم دیگر ----------
+    // در این مرحله ideaA هنوز ۰ جذب کرده و ideaB شصت‌تا؛ پس کم‌سرمایه‌ترین ideaA است.
+    const userCWalletBefore = (await prisma.user.findUniqueOrThrow({ where: { id: userC } })).seedWallet;
+    const treasuryABefore = (await prisma.team.findUniqueOrThrow({ where: { id: teamA } })).treasury;
+
+    const rAngel = await angelInvestCore(prisma, userC);
+    check("قدرت فرشته با موفقیت اجرا می‌شود", rAngel.ok, rAngel.ok ? "" : rAngel.error);
+    check(
+      "قدرت فرشته دقیقاً روی کم‌سرمایه‌ترین ایده (ideaA) می‌نشیند",
+      rAngel.ok && rAngel.ideaId === ideaA,
+      rAngel.ok ? `ideaId=${rAngel.ideaId}` : ""
+    );
+
+    const angelInvestment = rAngel.ok
+      ? await prisma.investment.findUnique({ where: { id: rAngel.investmentId } })
+      : null;
+    check(
+      "سرمایه‌گذاری فرشته با مبلغ درست و selfFunded=false ثبت شد",
+      !!angelInvestment && angelInvestment.amount === DEFAULTS.angelBonus && angelInvestment.selfFunded === false && angelInvestment.userId === userC,
+      angelInvestment ? JSON.stringify(angelInvestment) : "یافت نشد"
+    );
+
+    const userCWalletAfter = (await prisma.user.findUniqueOrThrow({ where: { id: userC } })).seedWallet;
+    check(
+      "کیف بذر کاربر با قدرت فرشته تغییر نمی‌کند (سکه از هیچ ساخته می‌شود)",
+      userCWalletAfter === userCWalletBefore,
+      `${userCWalletBefore} → ${userCWalletAfter}`
+    );
+
+    const treasuryAAfter = (await prisma.team.findUniqueOrThrow({ where: { id: teamA } })).treasury;
+    check(
+      `خزانهٔ تیم گیرنده به‌اندازهٔ ${DEFAULTS.angelBonus} سکه زیاد می‌شود`,
+      treasuryAAfter === treasuryABefore + DEFAULTS.angelBonus,
+      `${treasuryABefore} → ${treasuryAAfter}`
+    );
+
+    const angelLedgers = rAngel.ok
+      ? await prisma.ledgerEntry.findMany({ where: { refId: rAngel.investmentId }, orderBy: { delta: "desc" } })
+      : [];
+    check(
+      "دو سطر دفتر کل SEED (+۲۰ POWER_ANGEL و −۲۰ INVEST) و یک سطر TREASURY (+۲۰ INVEST) ساخته شد",
+      angelLedgers.length === 3 &&
+        angelLedgers.some((l) => l.wallet === "SEED" && l.delta === DEFAULTS.angelBonus && l.reason === "POWER_ANGEL") &&
+        angelLedgers.some((l) => l.wallet === "SEED" && l.delta === -DEFAULTS.angelBonus && l.reason === "INVEST") &&
+        angelLedgers.some((l) => l.wallet === "TREASURY" && l.delta === DEFAULTS.angelBonus && l.reason === "INVEST"),
+      JSON.stringify(angelLedgers.map((l) => ({ wallet: l.wallet, delta: l.delta, reason: l.reason })))
+    );
+
+    const userCAfter = await prisma.user.findUniqueOrThrow({ where: { id: userC } });
+    check("powerUsed کاربر فرشته true شد", userCAfter.powerUsed === true, `powerUsed=${userCAfter.powerUsed}`);
+
+    const rAngelAgain = await angelInvestCore(prisma, userC);
+    check("استفادهٔ دوباره از قدرت فرشته رد می‌شود", !rAngelAgain.ok, rAngelAgain.ok ? "اشتباهاً پذیرفته شد" : rAngelAgain.error);
+
+    void teamC;
   } finally {
     // ---------- پاک‌سازی ----------
     await prisma.ledgerEntry.deleteMany({ where: { userId: { in: createdUserIds } } });

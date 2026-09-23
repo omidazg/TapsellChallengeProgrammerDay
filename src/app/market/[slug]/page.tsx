@@ -7,7 +7,7 @@ import { Container, PageHeader, Locked } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { fa, coins } from "@/lib/persian";
 import { getProductBySlug, parseTeaser } from "@/lib/product";
-import { salesSummary, userSpentOn, getBuyers, hasHearted } from "@/lib/market";
+import { salesSummary, userSpentOn, getBuyers, hasHearted, effectivePurchaseCap } from "@/lib/market";
 import { Gallery } from "./Gallery";
 import { PurchasePanel } from "./PurchasePanel";
 
@@ -46,7 +46,9 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const isOwnTeam = user.teamId === product.teamId;
   const teaser = parseTeaser(product.teaserUrl);
   const hasPurchasedAny = buyers.some((b) => b.userId === user.id);
-  const canUsePower = user.power === "BARGAIN" && !user.powerUsed;
+  // چانه‌زنی برای کل فاز بازار فعال است (یک‌بار مصرف نیست)، پس powerUsed اینجا نقشی ندارد.
+  const hasBargain = user.power === "BARGAIN";
+  const purchaseCap = effectivePurchaseCap(maxPerTarget, product.price);
 
   return (
     <>
@@ -111,9 +113,9 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             price={product.price}
             phaseIsMarket={phase === "MARKET"}
             isOwnTeam={isOwnTeam}
-            canUsePower={canUsePower}
+            hasBargain={hasBargain}
             alreadySpent={alreadySpent}
-            maxPerTarget={maxPerTarget}
+            maxPerTarget={purchaseCap}
             hasPurchasedAny={hasPurchasedAny}
             alreadyHearted={alreadyHearted}
             heartsCount={summary.heartsCount}

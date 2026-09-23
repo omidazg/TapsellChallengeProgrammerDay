@@ -278,11 +278,15 @@ model TeamScore {
   ptsQuality      Float    @default(0)
   ptsTeaser       Float    @default(0)
   ptsCommunity    Float    @default(0)
+  ptsPortfolio    Float    @default(0)
+  ptsTaste        Float    @default(0)
   total           Float    @default(0)
   rank            Int      @default(0)
   selfCapital     Int      @default(0)
   quality         Float    @default(0)
   teaser          Float    @default(0)
+  portfolio       Int      @default(0)
+  taste           Float    @default(0)
   computedAt      DateTime @default(now())
 }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { computeScores, LEDGER_REASON_LABEL, WALLET_LABEL } from "@/lib/scoring";
+import { SCORE_CATEGORY_ORDER, SCORE_CATEGORY_LABELS } from "@/lib/score-labels";
 
 // BOM تا اکسل فارسی فایل را UTF-8 بخواند
 const BOM = "﻿";
@@ -76,6 +77,9 @@ export async function GET(req: NextRequest) {
       "قلب‌ها",
       "کیفیت",
       "تیزر",
+      "پرتفوی (خام)",
+      "سلیقه (خام)",
+      ...SCORE_CATEGORY_ORDER.map((k) => `امتیاز ${SCORE_CATEGORY_LABELS[k].label}`),
       "جریمهٔ خرج‌نشده",
       "امتیاز کل",
     ],
@@ -93,6 +97,9 @@ export async function GET(req: NextRequest) {
         t.hearts,
         t.quality,
         t.teaser,
+        Math.round(t.portfolio * 10) / 10,
+        Math.round(t.taste * 10) / 10,
+        ...SCORE_CATEGORY_ORDER.map((k) => Math.round(t.pts[k] * 10) / 10),
         Math.round(t.unspentPenalty * 10) / 10,
         Math.round(t.total * 10) / 10,
       ]),

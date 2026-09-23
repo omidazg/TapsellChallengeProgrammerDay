@@ -3,6 +3,7 @@ import { prisma } from "./db";
 import { validateInvestment } from "./economy/engine";
 import { DEFAULTS } from "./constants";
 import { invalidate } from "./ttl-cache";
+import { lowestRaisedIdeaId } from "./idea";
 
 export { validateInvestment };
 
@@ -73,34 +74,30 @@ export async function investCore(
       });
       if (!idea || !idea.submittedAt) return { ok: false, error: "این ایده یافت نشد" };
 
+      // خودتأمینی ممنوع است — پیش از هر بررسی دیگری همین‌جا رد می‌شود تا به
+      // ترتیب فراخوانی اعتبارسنجی موتور وابسته نباشد (موتور هم جداگانه همین را رد می‌کند).
+      const isOwnTeam = idea.teamId === user.teamId;
+      if (isOwnTeam) {
+        return { ok: false, error: "نمی‌توانی روی ایدهٔ تیم خودت سرمایه‌گذاری کنی" };
+      }
+
       const maxPerTarget = await settingInt(tx, "max_per_target", DEFAULTS.maxPerTarget);
 
-      const [mine, total] = await Promise.all([
-        tx.investment.aggregate({ where: { userId, ideaId }, _sum: { amount: true } }),
-        tx.investment.aggregate({ where: { ideaId }, _sum: { amount: true } }),
-      ]);
+      const mine = await tx.investment.aggregate({ where: { userId, ideaId }, _sum: { amount: true } });
       const alreadyOnTarget = mine._sum.amount ?? 0;
-      const raised = total._sum.amount ?? 0;
 
-      const selfFunded = idea.teamId === user.teamId;
-
-      // سرمایه‌گذاری روی تیم خودی مجاز است (فقط با پرچم selfFunded ثبت می‌شود)،
-      // پس isOwnTeam را به موتور می‌دهیم — validateInvestment آن را مسدود نمی‌کند.
       const validation = validateInvestment({
         amount: amt,
         alreadyOnTarget,
         walletLeft: user.seedWallet,
         maxPerTarget,
-        isOwnTeam: selfFunded,
+        isOwnTeam,
       });
       if (!validation.ok) return { ok: false, error: validation.error };
 
-      if (raised + amt > idea.fundingCap) {
-        return { ok: false, error: "سقف جذب سرمایهٔ این ایده پر شده است" };
-      }
-
+      // «سقف سرمایه» دیگر سقف سخت نیست، فقط هدف جذب سرمایه است؛ جذب بیشتر از هدف مجاز است.
       const investment = await tx.investment.create({
-        data: { ideaId: idea.id, userId: user.id, amount: amt, selfFunded },
+        data: { ideaId: idea.id, userId: user.id, amount: amt, selfFunded: false },
       });
       await tx.user.update({ where: { id: user.id }, data: { seedWallet: { decrement: amt } } });
       await tx.team.update({ where: { id: idea.teamId }, data: { treasury: { increment: amt } } });
@@ -114,8 +111,8 @@ export async function investCore(
           refId: investment.id,
         },
       });
-      // خزانهٔ تیم برای هر سرمایه‌گذاری (خودی و خارجی) افزایش می‌یابد،
-      // پس سطر متناظر دفتر کل هم برای هر دو ساخته می‌شود تا خزانه با دفتر کل بخواند.
+      // خزانهٔ تیم برای هر سرمایه‌گذاری افزایش می‌یابد؛ سطر متناظر دفتر کل هم ساخته می‌شود
+      // تا خزانه با دفتر کل بخواند.
       await tx.ledgerEntry.create({
         data: {
           teamId: idea.teamId,
@@ -126,7 +123,7 @@ export async function investCore(
         },
       });
 
-      return { ok: true, investmentId: investment.id, selfFunded };
+      return { ok: true, investmentId: investment.id, selfFunded: false };
     });
   } catch (e) {
     console.error("investCore error", e);
@@ -137,3 +134,71 @@ export async function investCore(
     invalidate("scores:");
   }
 }
+
+export type AngelInvestResult =
+  | { ok: true; investmentId: string; ideaId: string }
+  | { ok: false; error: string };
+
+/**
+ * هستهٔ قدرت «فرشته»: ۲۰ سکهٔ بذر از هیچ (نه از کیف کاربر) ساخته و در یک تراکنش
+ * روی کم‌سرمایه‌ترین ایدهٔ ثبت‌شدهٔ یک تیم دیگر سرمایه‌گذاری می‌شود؛ سودش مال کاربر است.
+ * کیف بذر کاربر دست‌نخورده می‌ماند: یک سطر SEED +۲۰ (POWER_ANGEL) و یک سطر SEED −۲۰ (INVEST)
+ * برای شفافیت دفتر کل ثبت می‌شود، اما جمعشان صفر است.
+ */
+export async function angelInvestCore(db: PrismaClient, userId: string): Promise<AngelInvestResult> {
+  // هدف (کم‌سرمایه‌ترین ایدهٔ یک تیم دیگر) بیرون از تراکنش پیدا می‌شود: lowestRaisedIdeaId
+  // از کلاینت سراسری می‌خواند و نباید وسط یک تراکنش SQLite اجرا شود.
+  const owner = await db.user.findUnique({ where: { id: userId }, select: { teamId: true } });
+  if (!owner?.teamId) return { ok: false, error: "ابتدا باید عضو یک تیم باشی" };
+  const ideaId = await lowestRaisedIdeaId(owner.teamId);
+  if (!ideaId) return { ok: false, error: "ایدهٔ دیگری برای دریافت قدرت فرشته پیدا نشد" };
+
+  try {
+    return await db.$transaction<AngelInvestResult>(async (tx) => {
+      // هر خطا throw می‌شود، نه return: return تراکنش را commit می‌کند و قدرت
+      // «مصرف‌شده» می‌ماند بدون آنکه سرمایه‌گذاری‌ای ثبت شده باشد.
+      const phaseRow = await tx.setting.findUnique({ where: { key: "phase" } });
+      if ((phaseRow?.value ?? "REGISTRATION") !== "SEED_ROUND") {
+        throw new AngelError("این قدرت فقط در «دور سرمایه‌گذاری» فعال است");
+      }
+
+      const idea = await tx.idea.findUnique({ where: { id: ideaId }, select: { id: true, teamId: true, submittedAt: true } });
+      if (!idea || !idea.submittedAt || idea.teamId === owner.teamId) throw new AngelError("این ایده یافت نشد");
+
+      // شرط قدرت/عدم‌استفاده اتمی با updateMany تا دوبار استفاده ممکن نباشد.
+      const claimed = await tx.user.updateMany({
+        where: { id: userId, power: "ANGEL", powerUsed: false },
+        data: { powerUsed: true },
+      });
+      if (claimed.count === 0) throw new AngelError("قدرت فرشته قبلاً استفاده شده یا متعلق به تو نیست");
+
+      const amount = DEFAULTS.angelBonus;
+      const investment = await tx.investment.create({
+        data: { ideaId: idea.id, userId, amount, selfFunded: false },
+      });
+      await tx.team.update({ where: { id: idea.teamId }, data: { treasury: { increment: amount } } });
+
+      // سکه از هیچ ساخته می‌شود: یک سطر ورودی و یک سطر خروجی برای کیف بذر، که خالص اثرشان صفر است.
+      await tx.ledgerEntry.create({
+        data: { userId, wallet: "SEED", delta: amount, reason: "POWER_ANGEL", refId: investment.id },
+      });
+      await tx.ledgerEntry.create({
+        data: { userId, teamId: idea.teamId, wallet: "SEED", delta: -amount, reason: "INVEST", refId: investment.id },
+      });
+      await tx.ledgerEntry.create({
+        data: { teamId: idea.teamId, wallet: "TREASURY", delta: amount, reason: "INVEST", refId: investment.id },
+      });
+
+      return { ok: true, investmentId: investment.id, ideaId: idea.id };
+    });
+  } catch (e) {
+    if (e instanceof AngelError) return { ok: false, error: e.message };
+    console.error("angelInvestCore error", e);
+    return { ok: false, error: "خطا در استفاده از قدرت فرشته" };
+  } finally {
+    invalidate("scores:");
+  }
+}
+
+/** خطای قابل نمایش قدرت فرشته؛ throw می‌شود تا تراکنش rollback شود. */
+class AngelError extends Error {}

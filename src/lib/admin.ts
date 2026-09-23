@@ -131,23 +131,44 @@ export interface CollusionCandidate {
   amountBA: number;
 }
 
-/** تشخیص خرید متقابل مشکوک بین تیم‌ها و ثبت/به‌روزرسانی پرچم برای هر جفت مشکوک */
+/**
+ * تشخیص خرید/سرمایه‌گذاری متقابل مشکوک بین تیم‌ها و ثبت/به‌روزرسانی پرچم برای هر جفت مشکوک.
+ *
+ * هم خریدهای بازار و هم سرمایه‌گذاری‌های بیرونی (غیر خودتأمین — از وقتی خودتأمینی
+ * ممنوع شده، عملاً همهٔ سرمایه‌گذاری‌ها بیرونی‌اند) را به‌عنوان «جریان خرج از تیم A
+ * به تیم B» جمع می‌زند. جفت (A,B) فقط وقتی پرچم می‌خورد که:
+ *   ۱) جریان هر دو طرف مثبت باشد (ab>0 و ba>0)،
+ *   ۲) مجموع دو جریان از آستانه بگذرد (ab+ba ≥ collusionThreshold)، و
+ *   ۳) برای هر طرف، جریانش به سمت دیگری دست‌کم collusionShare از کل خرج بیرونی‌اش باشد
+ *      (ab ≥ collusionShare×spendA و ba ≥ collusionShare×spendB) — یعنی واقعاً روی هم
+ *      متمرکز شده باشند، نه اینکه هر دو صرفاً پرخرج بوده باشند.
+ */
 export async function detectAndFlagCollusion() {
   const teams = await prisma.team.findMany({ select: { id: true } });
-  const purchases = await prisma.purchase.findMany({
-    select: { amount: true, product: { select: { teamId: true } }, user: { select: { teamId: true } } },
-  });
+  const [purchases, investments] = await Promise.all([
+    prisma.purchase.findMany({
+      select: { amount: true, product: { select: { teamId: true } }, user: { select: { teamId: true } } },
+    }),
+    prisma.investment.findMany({
+      where: { selfFunded: false },
+      select: { amount: true, idea: { select: { teamId: true } }, user: { select: { teamId: true } } },
+    }),
+  ]);
 
+  // جریان جفتی خرج A→B، و مجموع خرج بیرونی هر تیم (صرف‌نظر از اینکه به کدام تیم رفته)
   const mutual = new Map<string, number>();
-  for (const p of purchases) {
-    const buyerTeam = p.user.teamId;
-    const sellerTeam = p.product.teamId;
-    if (!buyerTeam || buyerTeam === sellerTeam) continue;
+  const spend = new Map<string, number>();
+  function addFlow(buyerTeam: string | null, sellerTeam: string, amount: number) {
+    if (!buyerTeam || buyerTeam === sellerTeam) return;
     const key = `${buyerTeam}=>${sellerTeam}`;
-    mutual.set(key, (mutual.get(key) ?? 0) + p.amount);
+    mutual.set(key, (mutual.get(key) ?? 0) + amount);
+    spend.set(buyerTeam, (spend.get(buyerTeam) ?? 0) + amount);
   }
+  for (const p of purchases) addFlow(p.user.teamId, p.product.teamId, p.amount);
+  for (const i of investments) addFlow(i.user.teamId, i.idea.teamId, i.amount);
 
   const threshold = DEFAULTS.collusionThreshold;
+  const share = DEFAULTS.collusionShare;
   const candidates: CollusionCandidate[] = [];
   for (let i = 0; i < teams.length; i++) {
     for (let j = i + 1; j < teams.length; j++) {
@@ -155,9 +176,11 @@ export async function detectAndFlagCollusion() {
       const b = teams[j].id;
       const ab = mutual.get(`${a}=>${b}`) ?? 0;
       const ba = mutual.get(`${b}=>${a}`) ?? 0;
-      if (ab > 0 && ba > 0 && ab + ba >= threshold) {
-        candidates.push({ teamId: a, otherTeamId: b, amountAB: ab, amountBA: ba });
-      }
+      if (ab <= 0 || ba <= 0 || ab + ba < threshold) continue;
+      const spendA = spend.get(a) ?? 0;
+      const spendB = spend.get(b) ?? 0;
+      if (ab < share * spendA || ba < share * spendB) continue;
+      candidates.push({ teamId: a, otherTeamId: b, amountAB: ab, amountBA: ba });
     }
   }
 
@@ -167,7 +190,13 @@ export async function detectAndFlagCollusion() {
       await prisma.collusionFlag.update({ where: { id: existing.id }, data: { amountAB: c.amountAB, amountBA: c.amountBA } });
     } else {
       await prisma.collusionFlag.create({
-        data: { teamId: c.teamId, otherTeamId: c.otherTeamId, amountAB: c.amountAB, amountBA: c.amountBA, note: "خرید متقابل مشکوک بین دو تیم" },
+        data: {
+          teamId: c.teamId,
+          otherTeamId: c.otherTeamId,
+          amountAB: c.amountAB,
+          amountBA: c.amountBA,
+          note: "خرید/سرمایه‌گذاری متقابل مشکوک بین دو تیم",
+        },
       });
     }
   }

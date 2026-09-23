@@ -7,13 +7,13 @@ import { requireUser } from "@/lib/auth";
 import { getPhase } from "@/lib/phase";
 import { createHash } from "crypto";
 import { askText } from "@/lib/ai";
-import { investCore } from "@/lib/invest";
-import { lowestRaisedIdeaId } from "@/lib/idea";
+import { investCore, angelInvestCore } from "@/lib/invest";
 import { checkDailyBudget, checkUserDailyMessageCap, normalizeQuestion } from "@/lib/ai-budget";
 import { rateLimit, rateLimitMessage } from "@/lib/rate-limit";
 import { cached } from "@/lib/ttl-cache";
 
 export type InvestActionState = { error?: string; ok?: boolean };
+export type AngelActionState = { error?: string; ok?: boolean; ideaTitle?: string };
 export type ChatActionState = { error?: string; ok?: boolean; aiUnavailable?: boolean; aiReason?: "off" | "budget" | "cap" };
 
 function ideaIdOf(formData: FormData): string {
@@ -35,41 +35,25 @@ export async function investAction(_prevState: InvestActionState, formData: Form
   return { ok: true };
 }
 
-/** استفادهٔ کاربر با قدرت «فرشته»: ۲۰ سکهٔ بذر اضافه، فقط روی کم‌سرمایه‌ترین ایده */
-export async function angelPowerAction(_prevState: InvestActionState, formData: FormData): Promise<InvestActionState> {
+/**
+ * استفادهٔ کاربر با قدرت «فرشته»: ۲۰ سکهٔ بذر از هیچ ساخته و در یک تراکنش اتمی
+ * روی کم‌سرمایه‌ترین ایدهٔ ثبت‌شدهٔ یک تیم دیگر سرمایه‌گذاری می‌شود (هرگز تیم خودت).
+ * هدف دقیقاً داخل خودِ `angelInvestCore` دوباره محاسبه می‌شود تا با چیزی که کاربر
+ * قبل از کلیک دیده بود مسابقه نداشته باشد.
+ */
+export async function angelPowerAction(): Promise<AngelActionState> {
   const user = await requireUser();
-  const ideaId = ideaIdOf(formData);
   if (user.power !== "ANGEL") return { error: "این قدرت متعلق به تو نیست" };
   if (user.powerUsed) return { error: "قدرت فرشته قبلاً استفاده شده است" };
 
-  const { phase } = await getPhase();
-  if (phase !== "SEED_ROUND") return { error: "این قدرت فقط در «دور سرمایه‌گذاری» فعال است" };
+  const result = await angelInvestCore(prisma, user.id);
+  if (!result.ok) return { error: result.error };
 
-  const lowestId = await lowestRaisedIdeaId(user.teamId);
-  if (!lowestId || lowestId !== ideaId) {
-    return { error: "قدرت فرشته فقط روی کم‌سرمایه‌ترین ایده کار می‌کند" };
-  }
+  const idea = await prisma.idea.findUnique({ where: { id: result.ideaId }, select: { title: true } });
 
-  try {
-    await prisma.$transaction(async (tx) => {
-      // شرط powerUsed داخل همان تراکنش بررسی می‌شود تا دوبار استفاده نشود.
-      const claimed = await tx.user.updateMany({
-        where: { id: user.id, power: "ANGEL", powerUsed: false },
-        data: { seedWallet: { increment: 20 }, powerUsed: true },
-      });
-      if (claimed.count === 0) throw new Error("قدرت فرشته قبلاً استفاده شده است");
-
-      await tx.ledgerEntry.create({
-        data: { userId: user.id, wallet: "SEED", delta: 20, reason: "POWER_ANGEL", refId: ideaId },
-      });
-    });
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : "خطا در استفاده از قدرت فرشته" };
-  }
-
-  revalidatePath(`/invest/${ideaId}`);
+  revalidatePath(`/invest/${result.ideaId}`);
   revalidatePath("/invest");
-  return { ok: true };
+  return { ok: true, ideaTitle: idea?.title };
 }
 
 /** استفادهٔ کاربر با قدرت «خبرچین»: فهرست سرمایه‌گذاران را زودتر می‌بیند */
@@ -127,7 +111,7 @@ export async function dueDiligenceAction(_prevState: ChatActionState, formData: 
 مسئله: ${idea.problem}
 مخاطب: ${idea.audience}
 برنامهٔ ساخت ۴۸ ساعته: ${idea.buildPlan}
-سقف سرمایه: ${idea.fundingCap} سکه
+هدف جذب سرمایه: ${idea.fundingCap} سکه
 سهم سود سرمایه‌گذار: ${idea.revenueShare}٪`;
 
   // سؤال‌های نرمال‌شدهٔ یکسان برای همین ایده تا ۱ ساعت از کش پاسخ می‌گیرند (بدون فراخوانی دوبارهٔ API)

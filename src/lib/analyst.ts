@@ -91,7 +91,7 @@ async function runAnalystUnsafe(ideaId: string): Promise<AnalystResult | null> {
     `مسئله: ${idea.problem}`,
     `مخاطب: ${idea.audience}`,
     `برنامهٔ ساخت ۴۸ ساعته: ${idea.buildPlan}`,
-    `سقف سرمایه درخواستی: ${idea.fundingCap} سکه`,
+    `هدف جذب سرمایهٔ درخواستی: ${idea.fundingCap} سکه`,
     `سهم سود سرمایه‌گذار: ${idea.revenueShare}٪`,
   ].join("\n");
 

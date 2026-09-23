@@ -35,7 +35,7 @@ const ideaSchema = z.object({
     .optional()
     .default("")
     .refine(isAllowedImageUrl, "نشانی تصویر مجاز نیست؛ از دکمهٔ آپلود استفاده کن یا نشانی یکی از میزبان‌های مجاز را بده"),
-  fundingCap: z.coerce.number().int().min(50, "سقف سرمایه حداقل ۵۰ است").max(600, "سقف سرمایه حداکثر ۶۰۰ است"),
+  fundingCap: z.coerce.number().int().min(50, "هدف جذب سرمایه حداقل ۵۰ است").max(600, "هدف جذب سرمایه حداکثر ۶۰۰ است"),
   revenueShare: z.coerce.number().int().min(20, "سهم سود حداقل ۲۰٪ است").max(60, "سهم سود حداکثر ۶۰٪ است"),
 });
 

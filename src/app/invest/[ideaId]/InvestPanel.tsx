@@ -4,9 +4,10 @@ import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { fa, coins } from "@/lib/persian";
+import { coins } from "@/lib/persian";
 import { Alert } from "@/components/ui";
-import { investAction, angelPowerAction, type InvestActionState } from "../actions";
+import { DEFAULTS } from "@/lib/constants";
+import { investAction, type InvestActionState } from "../actions";
 
 // کانفتی جشن فقط پس از سرمایه‌گذاری/استفاده از قدرت موفق لازم است؛ با ssr:false و mount شرطی
 // زیر، باندل آن تا اولین رویداد موفق بارگذاری نمی‌شود.
@@ -25,14 +26,10 @@ export function InvestPanel({
   ideaId,
   seedWallet,
   maxAllowed,
-  isOwnTeam,
-  capFull,
 }: {
   ideaId: string;
   seedWallet: number;
   maxAllowed: number;
-  isOwnTeam: boolean;
-  capFull: boolean;
 }) {
   const [state, formAction] = useActionState<InvestActionState, FormData>(investAction, {});
   const [amount, setAmount] = useState(1);
@@ -51,7 +48,8 @@ export function InvestPanel({
   if (maxAllowed <= 0) {
     return (
       <Alert kind="info">
-        {capFull ? "سقف جذب سرمایهٔ این ایده پر شده است." : "دیگر امکان سرمایه‌گذاری بیشتر روی این ایده را نداری."}
+        دیگر امکان سرمایه‌گذاری بیشتر روی این ایده را نداری (به سقف {coins(DEFAULTS.maxPerTarget)} خودت روی این ایده رسیده‌ای
+        یا کیف بذرت خالی است).
       </Alert>
     );
   }
@@ -66,7 +64,6 @@ export function InvestPanel({
       <input type="hidden" name="ideaId" value={ideaId} />
       {state.error && <Alert kind="error">{state.error}</Alert>}
       {state.ok && <Alert kind="ok">سرمایه‌گذاری ثبت شد.</Alert>}
-      {isOwnTeam && <Alert kind="info">این سرمایه‌گذاری روی تیم خودت به‌صورت «خودتأمین» ثبت می‌شود و سودی به تو تعلق نمی‌گیرد.</Alert>}
 
       <div>
         <label className="label" htmlFor="amount">مبلغ سرمایه‌گذاری</label>
@@ -113,31 +110,6 @@ export function InvestPanel({
       </p>
 
       <SubmitButton />
-    </form>
-  );
-}
-
-export function AngelButton({ ideaId }: { ideaId: string }) {
-  const [state, formAction] = useActionState<InvestActionState, FormData>(angelPowerAction, {});
-  const [celebrate, setCelebrate] = useState(false);
-  const router = useRouter();
-
-  useEffect(() => {
-    if (state.ok) {
-      router.refresh();
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- واکنش به نتیجهٔ server action (منبع خارجی)، نه همگام‌سازی رندر
-      setCelebrate(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state]);
-
-  return (
-    <form action={formAction} className="space-y-2">
-      {celebrate && <Celebrate message="سرمایه‌گذاری ثبت شد 🌱" show onDone={() => setCelebrate(false)} />}
-      <input type="hidden" name="ideaId" value={ideaId} />
-      {state.error && <Alert kind="error">{state.error}</Alert>}
-      {state.ok && <Alert kind="ok">{fa(20)} سکهٔ بذر اضافه شد.</Alert>}
-      <button type="submit" className="btn-cyan w-full">👼 استفاده از قدرت فرشته</button>
     </form>
   );
 }

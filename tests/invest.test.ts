@@ -79,12 +79,13 @@ describe("invest.ts: investCore — basic flow", () => {
     expect(res.selfFunded).toBe(false);
   });
 
-  it("flags self-funded investment on your own team", async () => {
+  it("rejects investing in your own team's idea (self-funding is banned)", async () => {
     const { team, idea } = await makeTeamWithIdea();
     const owner = await makeInvestor(100, team.id);
     const res = await invest.investCore(prisma, owner.id, idea.id, 10);
-    expect(res.ok).toBe(true);
-    if (res.ok) expect(res.selfFunded).toBe(true);
+    expect(res.ok).toBe(false);
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: owner.id } });
+    expect(after.seedWallet).toBe(100);
   });
 });
 
@@ -114,12 +115,11 @@ describe("invest.ts: investCore — limits", () => {
     expect(res.ok).toBe(false);
   });
 
-  it("rejects exceeding the idea's funding cap even under the per-target cap", async () => {
-    const { idea } = await makeTeamWithIdea(15); // سقف جذب کوچک
+  it("allows raising beyond the idea's funding goal (goal is not a hard cap)", async () => {
+    const { idea } = await makeTeamWithIdea(15); // هدف جذب کوچک
     const investor = await makeInvestor(100);
     const res = await invest.investCore(prisma, investor.id, idea.id, 20);
-    expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.error).toBe("سقف جذب سرمایهٔ این ایده پر شده است");
+    expect(res.ok).toBe(true);
   });
 
   it("rejects investing when the user has no team", async () => {
@@ -146,11 +146,11 @@ describe("invest.ts: investCore — limits", () => {
 
 describe("invest.ts: investCore — atomicity", () => {
   it("leaves the wallet unchanged when a rejected call happens after a successful one", async () => {
-    const { idea } = await makeTeamWithIdea(20);
+    const { idea } = await makeTeamWithIdea();
     const investor = await makeInvestor(100);
-    await invest.investCore(prisma, investor.id, idea.id, 20); // fills funding cap exactly
+    await invest.investCore(prisma, investor.id, idea.id, 40); // fills the per-target cap exactly
     const before = (await prisma.user.findUniqueOrThrow({ where: { id: investor.id } })).seedWallet;
-    const rejected = await invest.investCore(prisma, investor.id, idea.id, 5); // exceeds cap
+    const rejected = await invest.investCore(prisma, investor.id, idea.id, 5); // exceeds per-target cap
     expect(rejected.ok).toBe(false);
     const after = (await prisma.user.findUniqueOrThrow({ where: { id: investor.id } })).seedWallet;
     expect(after).toBe(before);

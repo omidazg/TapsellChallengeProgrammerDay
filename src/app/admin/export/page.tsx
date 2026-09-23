@@ -14,7 +14,7 @@ export default async function AdminExportPage() {
           <span className="text-2xl" aria-hidden>📊</span>
           <div>
             <div className="font-black text-brand-navy">امتیاز تیم‌ها (CSV)</div>
-            <div className="text-xs text-brand-slate break-words">رتبه، فروش، سرمایه، ROI، کیفیت و امتیاز کل هر تیم</div>
+            <div className="text-xs text-brand-slate break-words">رتبه، فروش، سرمایه، ROI، کیفیت، پرتفوی، سلیقه و امتیاز هر یک از هشت معیار به تفکیک هر تیم</div>
           </div>
         </a>
         <a href="/admin/export/csv?type=ledger" className="card p-4 sm:p-6 flex items-center gap-3 hover:shadow-lift transition">

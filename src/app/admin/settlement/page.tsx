@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { getPhase, PHASE_LABEL } from "@/lib/phase";
 import { computeScores } from "@/lib/scoring";
 import { getSettledAt } from "@/lib/settlement";
+import { SCORE_CATEGORY_ORDER, SCORE_CATEGORY_LABELS } from "@/lib/score-labels";
 import { PageHeader, Container, Stat, Alert, Empty } from "@/components/ui";
 import { fa, coins, jdatetime } from "@/lib/persian";
 import { SettleButton } from "./SettleButton";
@@ -115,6 +116,45 @@ export default async function AdminSettlementPage() {
                         {fa(Math.round(t.unspentPenalty * 10) / 10)}
                       </td>
                       <td className="px-4 py-3 fa-num font-black">{fa(Math.round(t.total))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section>
+          <h2 className="text-lg font-black text-brand-navy mb-3">ریزامتیاز وزنی تیم‌ها (پیش‌نمایش)</h2>
+          {output.teams.length === 0 ? (
+            <Empty title="هنوز تیمی ثبت نشده" />
+          ) : (
+            <div className="card overflow-x-auto anim-rise">
+              <table className="w-full text-sm min-w-[900px]">
+                <thead>
+                  <tr className="text-right text-brand-slate border-b border-brand-mist">
+                    <th className="px-3 py-2 font-bold">تیم</th>
+                    {SCORE_CATEGORY_ORDER.map((k) => (
+                      <th key={k} className="px-3 py-2 font-bold whitespace-nowrap">
+                        {SCORE_CATEGORY_LABELS[k].emoji} {SCORE_CATEGORY_LABELS[k].label}
+                      </th>
+                    ))}
+                    <th className="px-3 py-2 font-bold text-brand-red">جریمه</th>
+                    <th className="px-3 py-2 font-bold">امتیاز کل</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {output.teams.map((t) => (
+                    <tr key={t.teamId} className="border-b border-brand-mist last:border-0">
+                      <td className="px-3 py-2 font-bold text-brand-navy">{teamNames.get(t.teamId) ?? t.teamId}</td>
+                      {SCORE_CATEGORY_ORDER.map((k) => (
+                        <td key={k} className="px-3 py-2 fa-num">{fa(Math.round(t.pts[k]))}</td>
+                      ))}
+                      <td className="px-3 py-2 fa-num text-brand-red">
+                        {"−"}
+                        {fa(Math.round(t.unspentPenalty * 10) / 10)}
+                      </td>
+                      <td className="px-3 py-2 fa-num font-black">{fa(Math.round(t.total))}</td>
                     </tr>
                   ))}
                 </tbody>

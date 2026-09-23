@@ -1,9 +1,22 @@
 import { prisma } from "./db";
 export * from "./product-utils";
 import { parseImages } from "./product-utils";
+import { getSettingInt } from "./phase";
+import { DEFAULTS } from "./constants";
+
 /** محصول تیم برای صفحهٔ مرکز ساخت */
 export async function getProductForTeam(teamId: string) {
   return prisma.product.findUnique({ where: { teamId } });
+}
+
+/**
+ * حداکثر قیمت مؤثر یک محصول: هرگز از DEFAULTS.maxPrice یا سقف خرید هر نفر (تنظیم max_per_target)
+ * بیشتر نیست؛ وگرنه محصولی که برگزارکننده سقفش را پایین بیاورد، دیگر برای هیچ‌کس قابل خرید نمی‌ماند.
+ * هم در اعتبارسنجی سمت سرور و هم در چک‌لیست/فرم مرکز ساخت استفاده می‌شود.
+ */
+export async function effectiveMaxPrice(): Promise<number> {
+  const maxPerTarget = await getSettingInt("max_per_target", DEFAULTS.maxPerTarget);
+  return Math.min(DEFAULTS.maxPrice, maxPerTarget);
 }
 
 export type ProductDetail = {

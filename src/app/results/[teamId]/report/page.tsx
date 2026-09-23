@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getPhase } from "@/lib/phase";
 import { SCORE_WEIGHTS } from "@/lib/constants";
+import { SCORE_CATEGORY_LABELS } from "@/lib/score-labels";
 import { computeScoresCached } from "@/lib/scoring";
 import { getSettledAt, loadSettledOutput } from "@/lib/settlement";
 import { loadTimeline } from "@/lib/timeline";
@@ -141,16 +142,28 @@ export default async function TeamReportPage({ params }: { params: Promise<{ tea
               </tr>
             </thead>
             <tbody>
-              <ScoreRow label="فروش" value={result.pts.sales} max={SCORE_WEIGHTS.sales} raw={coins(result.netSales)} />
-              <ScoreRow label="کیفیت" value={result.pts.quality} max={SCORE_WEIGHTS.quality} raw={fa(Math.round(result.quality))} />
-              <ScoreRow label="جذب سرمایه" value={result.pts.capital} max={SCORE_WEIGHTS.capital} raw={coins(result.externalCapital)} />
-              <ScoreRow label="بازده سرمایه‌گذار" value={result.pts.roi} max={SCORE_WEIGHTS.roi} raw={`${fa(Math.round(result.investorRoi * 100))}٪`} />
-              <ScoreRow label="تیزر" value={result.pts.teaser} max={SCORE_WEIGHTS.teaser} raw={fa(Math.round(result.teaser))} />
+              <ScoreRow label={`${SCORE_CATEGORY_LABELS.sales.emoji} ${SCORE_CATEGORY_LABELS.sales.label}`} value={result.pts.sales} max={SCORE_WEIGHTS.sales} raw={coins(result.netSales)} />
+              <ScoreRow label={`${SCORE_CATEGORY_LABELS.quality.emoji} ${SCORE_CATEGORY_LABELS.quality.label}`} value={result.pts.quality} max={SCORE_WEIGHTS.quality} raw={fa(Math.round(result.quality))} />
+              <ScoreRow label={`${SCORE_CATEGORY_LABELS.capital.emoji} ${SCORE_CATEGORY_LABELS.capital.label}`} value={result.pts.capital} max={SCORE_WEIGHTS.capital} raw={coins(result.externalCapital)} />
+              <ScoreRow label={`${SCORE_CATEGORY_LABELS.roi.emoji} ${SCORE_CATEGORY_LABELS.roi.label}`} value={result.pts.roi} max={SCORE_WEIGHTS.roi} raw={`${fa(Math.round(result.investorRoi * 100))}٪`} />
+              <ScoreRow label={`${SCORE_CATEGORY_LABELS.teaser.emoji} ${SCORE_CATEGORY_LABELS.teaser.label}`} value={result.pts.teaser} max={SCORE_WEIGHTS.teaser} raw={fa(Math.round(result.teaser))} />
               <ScoreRow
-                label="جامعه (خریداران/قلب)"
+                label={`${SCORE_CATEGORY_LABELS.community.emoji} ${SCORE_CATEGORY_LABELS.community.label}`}
                 value={result.pts.community}
                 max={SCORE_WEIGHTS.community}
                 raw={`${fa(result.uniqueBuyers)} خریدار، ${fa(result.hearts)} قلب`}
+              />
+              <ScoreRow
+                label={`${SCORE_CATEGORY_LABELS.portfolio.emoji} ${SCORE_CATEGORY_LABELS.portfolio.label}`}
+                value={result.pts.portfolio}
+                max={SCORE_WEIGHTS.portfolio}
+                raw={coins(Math.round(result.portfolio))}
+              />
+              <ScoreRow
+                label={`${SCORE_CATEGORY_LABELS.taste.emoji} ${SCORE_CATEGORY_LABELS.taste.label}`}
+                value={result.pts.taste}
+                max={SCORE_WEIGHTS.taste}
+                raw={fa(Math.round(result.taste))}
               />
               <tr>
                 <td className="px-3 py-2 font-bold text-brand-red">جریمهٔ خرج‌نشده</td>

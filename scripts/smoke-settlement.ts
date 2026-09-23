@@ -135,12 +135,34 @@ async function main() {
       { team: "alpha", user: "beta1", amount: 40 },
       { team: "alpha", user: "beta2", amount: 20 },
       { team: "beta", user: "alpha1", amount: 30 },
-      { team: "alpha", user: "alpha2", amount: 10 }, // خودی
     ];
     for (const iv of invests) {
       const res = await investCore(prisma, userIds[iv.user], ideaIds[iv.team], iv.amount);
       if (!res.ok) throw new Error(`investCore شکست خورد: ${res.error}`);
     }
+
+    // سرمایه‌گذاری خودی از مسیر واقعی دیگر ممکن نیست (ممنوع شده): وارسی رد شدنش
+    const selfAttempt = await investCore(prisma, userIds["alpha2"], ideaIds["alpha"], 10);
+    check("investCore سرمایه‌گذاری خودی را رد می‌کند", selfAttempt.ok === false, JSON.stringify(selfAttempt));
+
+    // دادهٔ قدیمی (پیش از ممنوعیت): یک ردیف Investment خودیِ alpha2 مستقیم ساخته می‌شود، دقیقاً
+    // همان‌طور که مسیر واقعی پیش از این تغییر می‌ساخت (خزانه + سطر دفتر کل TREASURY هم دارد)،
+    // تا وارسی شود که سرمایه‌گذاری خودیِ قدیمی هنوز از سرمایهٔ بیرونی/سود کنار گذاشته می‌شود.
+    const legacySelfInvestment = await prisma.investment.create({
+      data: { ideaId: ideaIds["alpha"], userId: userIds["alpha2"], amount: 10, selfFunded: true },
+    });
+    await prisma.user.update({ where: { id: userIds["alpha2"] }, data: { seedWallet: { decrement: 10 } } });
+    await prisma.team.update({ where: { id: teamIds["alpha"] }, data: { treasury: { increment: 10 } } });
+    await prisma.ledgerEntry.create({
+      data: {
+        userId: userIds["alpha2"],
+        teamId: teamIds["alpha"],
+        wallet: "TREASURY",
+        delta: 10,
+        reason: "INVEST",
+        refId: legacySelfInvestment.id,
+      },
+    });
 
     const alphaTeam = await prisma.team.findUniqueOrThrow({ where: { id: teamIds["alpha"] } });
     check("خزانهٔ آلفا = ۴۰+۲۰+۱۰ = ۷۰", alphaTeam.treasury === 70, `=${alphaTeam.treasury}`);
@@ -211,12 +233,20 @@ async function main() {
       scoreRows.map((s) => s.computedAt.toISOString()).join(" ")
     );
 
-    // جریمه باید روی کیف‌پول‌های *پیش از* واریز سود حساب شده باشد
+    // جریمه باید روی کیف‌پول‌های *پیش از* واریز سود، و فقط روی سکهٔ «خرج‌شدنی» حساب شده باشد
+    // (min(left, spendable))، نه کل مانده — leftoverBefore دیگر معیار درستی نیست.
+    // مقدار زیر دستی از روی فیکسچر محاسبه شده (۲ ایده/محصول ثبت‌شده، قیمت=۲۰، سقف=۴۰):
+    //   alpha1: seedSpendable=max(0,40−30)=10، buySpendable=floor(max(0,40−25)/20)*20=0 → min(70,10)+min(75,0)=10
+    //   alpha2: seedSpendable=max(0,40−0)=40، buySpendable=floor(40/20)*20=40 → min(90,40)+min(100,40)=80
+    //   beta1:  seedSpendable=max(0,40−40)=0،  buySpendable=floor(max(0,40−30)/20)*20=0 → min(60,0)+min(70,0)=0
+    //   beta2:  seedSpendable=max(0,40−20)=20، buySpendable=floor(max(0,40−20)/20)*20=20 → min(80,20)+min(80,20)=40
+    //   جمع = ۱۰+۸۰+۰+۴۰ = ۱۳۰
     const penaltyTotal = scoreRows.reduce((a, s) => a + s.unspentPenalty, 0);
+    const EXPECTED_UNSPENT_SPENDABLE_COINS = 130;
     check(
-      "جریمهٔ خرج‌نشده روی کیف‌پول پیش از واریز سود محاسبه شد",
-      Math.abs(penaltyTotal - PENALTY_PER_COIN * leftoverBefore) < 1e-6,
-      `penalty=${penaltyTotal} انتظار=${PENALTY_PER_COIN * leftoverBefore}`
+      "جریمهٔ خرج‌نشده فقط روی سکهٔ خرج‌شدنیِ پیش از واریز سود حساب شد",
+      Math.abs(penaltyTotal - PENALTY_PER_COIN * EXPECTED_UNSPENT_SPENDABLE_COINS) < 1e-6,
+      `penalty=${penaltyTotal} انتظار=${PENALTY_PER_COIN * EXPECTED_UNSPENT_SPENDABLE_COINS} (leftoverBefore خام=${leftoverBefore})`
     );
 
     const divRows1 = await prisma.ledgerEntry.findMany({ where: { reason: "DIVIDEND", wallet: "BUY" } });
@@ -264,12 +294,34 @@ async function main() {
     check("quality بتا = ۷۰", betaScore.quality === 70, `=${betaScore.quality}`);
     check("teaser بتا = ۶۰", betaScore.teaser === 60, `=${betaScore.teaser}`);
 
+    // پرتفوی: سود سرمایه‌گذاری‌های اعضا روی تیم‌های دیگر، به تیم *سرمایه‌گذار* می‌رسد
+    //   آلفا: alpha1 روی بتا سرمایه‌گذاری کرد و ۱۰ سود گرفت → پرتفوی آلفا = ۱۰
+    //   بتا: beta1+beta2 روی آلفا سرمایه‌گذاری کردند و ۱۶+۸=۲۴ سود گرفتند → پرتفوی بتا = ۲۴
+    check("portfolio آلفا = ۱۰ (سود alpha1 روی بتا)", alphaScore.portfolio === 10, `=${alphaScore.portfolio}`);
+    check("portfolio بتا = ۲۴ (سود beta1+beta2 روی آلفا)", betaScore.portfolio === 24, `=${betaScore.portfolio}`);
+
+    // سلیقه: Σ خرید اعضا از تیم‌های دیگر × کیفیت مؤثر فروشنده / ۱۰۰
+    //   بتا: beta1 (۳۰×۹۰/۱۰۰=۲۷) + beta2 (۲۰×۹۰/۱۰۰=۱۸) از آلفا → ۴۵
+    //   آلفا: alpha1 (۲۵×۷۰/۱۰۰=۱۷٫۵) از بتا → ۱۷٫۵
+    check("taste آلفا = ۱۷٫۵", Math.abs(alphaScore.taste - 17.5) < 1e-9, `=${alphaScore.taste}`);
+    check("taste بتا = ۴۵", Math.abs(betaScore.taste - 45) < 1e-9, `=${betaScore.taste}`);
+
     // مسیر جدید loadSettledOutput باید همین مقادیر خام را مستقیم بخواند (بدون بازسازی)
     const outputNew = await loadSettledOutput();
     const alphaOutNew = outputNew.teams.find((t) => t.teamId === teamIds["alpha"])!;
     const betaOutNew = outputNew.teams.find((t) => t.teamId === teamIds["beta"])!;
     check("loadSettledOutput (مسیر جدید): selfCapital آلفا از ستون خوانده شد", alphaOutNew.selfCapital === 10, `=${alphaOutNew.selfCapital}`);
     check("loadSettledOutput (مسیر جدید): quality/teaser آلفا از ستون خوانده شد", alphaOutNew.quality === 90 && alphaOutNew.teaser === 80, `q=${alphaOutNew.quality} t=${alphaOutNew.teaser}`);
+    check(
+      "loadSettledOutput (مسیر جدید): portfolio/taste از ستون خوانده شدند",
+      alphaOutNew.portfolio === 10 && Math.abs(alphaOutNew.taste - 17.5) < 1e-9 && betaOutNew.portfolio === 24 && Math.abs(betaOutNew.taste - 45) < 1e-9,
+      `alpha portfolio=${alphaOutNew.portfolio} taste=${alphaOutNew.taste}; beta portfolio=${betaOutNew.portfolio} taste=${betaOutNew.taste}`
+    );
+    check(
+      "loadSettledOutput (مسیر جدید): pts.portfolio/pts.taste هم بازسازی شدند",
+      alphaOutNew.pts.portfolio === alphaScore.ptsPortfolio && alphaOutNew.pts.taste === alphaScore.ptsTaste,
+      `pts.portfolio=${alphaOutNew.pts.portfolio} pts.taste=${alphaOutNew.pts.taste}`
+    );
     check("loadSettledOutput (مسیر جدید): rank با ستون rank یکی است", alphaOutNew.rank === alphaScore.rank && betaOutNew.rank === betaScore.rank, `alpha=${alphaOutNew.rank}/${alphaScore.rank}`);
     check(
       "loadSettledOutput (مسیر جدید): مجموع total با مسیر بازمحاسبه یکی است",

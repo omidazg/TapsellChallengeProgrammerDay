@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { fa, coins } from "@/lib/persian";
 import { Alert, Coin } from "@/components/ui";
+import { DEFAULTS } from "@/lib/constants";
+import { bargainDiscountFor } from "@/lib/economy/engine";
 import { purchaseAction, heartAction } from "./actions";
 
 // کانفتی جشن فقط پس از خرید/قلب موفق لازم است؛ با ssr:false و mount شرطی زیر،
@@ -17,7 +19,7 @@ export function PurchasePanel({
   price,
   phaseIsMarket,
   isOwnTeam,
-  canUsePower,
+  hasBargain,
   alreadySpent,
   maxPerTarget,
   hasPurchasedAny,
@@ -30,8 +32,10 @@ export function PurchasePanel({
   price: number;
   phaseIsMarket: boolean;
   isOwnTeam: boolean;
-  canUsePower: boolean;
+  /** آیا کاربر قدرت «چانه‌زنی» دارد؛ برای کل فاز بازار فعال است، نه یک‌بار مصرف */
+  hasBargain: boolean;
   alreadySpent: number;
+  /** سقف مؤثر خرید از *این* محصول (effectivePurchaseCap: حداقل قیمت محصول، حتی اگر از سقف عمومی بیشتر باشد) */
   maxPerTarget: number;
   hasPurchasedAny: boolean;
   alreadyHearted: boolean;
@@ -41,8 +45,6 @@ export function PurchasePanel({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [useBargain, setUseBargain] = useState(false);
-  const [bargainAvailable, setBargainAvailable] = useState(canUsePower);
   const [spent, setSpent] = useState(alreadySpent);
   const [purchased, setPurchased] = useState(hasPurchasedAny);
   const [justBought, setJustBought] = useState(false);
@@ -51,28 +53,27 @@ export function PurchasePanel({
   const [sold, setSold] = useState(soldCount);
   const [celebrate, setCelebrate] = useState<string | null>(null);
 
+  // سقف بر مبنای قیمت کامل شمرده می‌شود، حتی برای دارندهٔ چانه‌زنی (فروشنده قیمت کامل می‌گیرد).
   const remaining = Math.max(0, maxPerTarget - spent);
-  const discount = useBargain && bargainAvailable ? Math.floor(price * 0.1) : 0;
+  const discount = hasBargain ? bargainDiscountFor(price, DEFAULTS.bargainDiscount) : 0;
   const amount = price - discount;
-  const disabled = pending || isOwnTeam || !phaseIsMarket || amount > remaining;
+  const disabled = pending || isOwnTeam || !phaseIsMarket || price > remaining;
 
   function buy() {
     setError(null);
     startTransition(async () => {
-      const res = await purchaseAction(productId, useBargain, slug);
+      const res = await purchaseAction(productId, slug);
       if (res.error) {
         setError(res.error);
         return;
       }
-      const paid = res.amount ?? amount;
-      setSpent((s) => s + paid);
-      setSold((s) => s + paid);
+      // سقف و فروش همیشه با قیمت کامل افزایش می‌یابند؛ فقط کیف خریدار با تخفیف کم می‌شود.
+      setSpent((s) => s + price);
+      setSold((s) => s + price);
       setPurchased(true);
-      if (useBargain && bargainAvailable) setBargainAvailable(false);
-      setUseBargain(false);
       setJustBought(true);
       setTimeout(() => setJustBought(false), 1200);
-      setCelebrate("خرید انجام شد 🎉");
+      setCelebrate(discount > 0 ? `خرید با چانه‌زنی انجام شد 🎉 (${coins(res.amount ?? amount)} پرداخت شد)` : "خرید انجام شد 🎉");
       router.refresh();
     });
   }
@@ -111,21 +112,20 @@ export function PurchasePanel({
       {phaseIsMarket && !isOwnTeam && (
         <>
           <p className="text-xs text-brand-slate">
-            تا سقف {coins(remaining)} دیگر می‌توانی روی این محصول خرج کنی.
+            تا سقف {coins(remaining)} دیگر (قیمت کامل) می‌توانی از این محصول بخری.
           </p>
 
-          {bargainAvailable && (
-            <label className="flex items-center gap-2 text-sm font-medium text-brand-navy cursor-pointer">
-              <input type="checkbox" checked={useBargain} onChange={(e) => setUseBargain(e.target.checked)} className="accent-brand-red size-4" />
-              استفاده از قدرت چانه‌زنی (۱۰٪ تخفیف)
-            </label>
+          {hasBargain && (
+            <p className="text-sm font-bold text-brand-cyan-dark">
+              🏷️ با چانه‌زنی: {coins(amount)} سکه به‌جای {coins(price)}
+            </p>
           )}
 
           <button type="button" onClick={buy} disabled={disabled} className={`btn-primary w-full ${justBought ? "anim-pop" : ""}`}>
             {pending ? "در حال خرید…" : `خرید — ${coins(amount)}`}
           </button>
 
-          {amount > remaining && <p className="text-xs text-brand-red">به سقف مجاز رسیده‌ای.</p>}
+          {price > remaining && <p className="text-xs text-brand-red">به سقف مجاز رسیده‌ای.</p>}
         </>
       )}
 

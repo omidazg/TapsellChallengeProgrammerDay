@@ -16,11 +16,15 @@ export default async function AdminFlagsPage() {
 
   return (
     <>
-      <PageHeader eyebrow="پنل برگزارکننده" title="پرچم‌های تخلف" desc="تشخیص خرید متقابل مشکوک بین دو تیم (احتمال همدستی)." />
+      <PageHeader eyebrow="پنل برگزارکننده" title="پرچم‌های تخلف" desc="تشخیص خرید/سرمایه‌گذاری متقابل مشکوک بین دو تیم (احتمال همدستی)." />
       <Container className="space-y-6">
         <div className="card p-4 sm:p-6 space-y-3 anim-rise">
           <RunCheckButton />
-          <Alert kind="info">اگر مجموع خرید متقابل دو تیم از آستانهٔ تعریف‌شده بیشتر باشد، پرچم ثبت می‌شود.</Alert>
+          <Alert kind="info">
+            وقتی مجموع خرید و سرمایه‌گذاری متقابل دو تیم از آستانه بگذرد و سهم قابل‌توجهی از خرج بیرونی هر دو طرف
+            روی هم متمرکز شده باشد، پرچم ثبت می‌شود؛ این پرچم فقط یک نشانه برای بررسی دستی برگزارکننده است، نه اثبات
+            تخلف.
+          </Alert>
         </div>
 
         {flags.length === 0 ? (
@@ -37,8 +41,8 @@ export default async function AdminFlagsPage() {
                     <span className="font-bold text-brand-navy break-words">{teamNames.get(f.otherTeamId) ?? "—"}</span>
                   </div>
                   <div className="flex flex-wrap items-center gap-3 text-xs text-brand-slate">
-                    <span>خرید اول از دوم: <b className="fa-num text-brand-navy">{fa(f.amountAB)}</b></span>
-                    <span>خرید دوم از اول: <b className="fa-num text-brand-navy">{fa(f.amountBA)}</b></span>
+                    <span>خرج اول به دوم: <b className="fa-num text-brand-navy">{fa(f.amountAB)}</b></span>
+                    <span>خرج دوم به اول: <b className="fa-num text-brand-navy">{fa(f.amountBA)}</b></span>
                   </div>
                   <div className="text-xs text-brand-slate">{jdatetime(f.createdAt)}</div>
                 </div>
@@ -47,13 +51,13 @@ export default async function AdminFlagsPage() {
 
             <div className="hidden md:block card overflow-x-auto anim-rise">
               <table className="w-full text-sm min-w-[640px]">
-                <caption className="sr-only">پرچم‌های خرید متقابل مشکوک بین تیم‌ها</caption>
+                <caption className="sr-only">پرچم‌های خرید/سرمایه‌گذاری متقابل مشکوک بین تیم‌ها</caption>
                 <thead>
                   <tr className="text-right text-brand-slate border-b border-brand-mist">
                     <th scope="col" className="px-4 py-3 font-bold">تیم اول</th>
                     <th scope="col" className="px-4 py-3 font-bold">تیم دوم</th>
-                    <th scope="col" className="px-4 py-3 font-bold">خرید تیم اول از دوم</th>
-                    <th scope="col" className="px-4 py-3 font-bold">خرید تیم دوم از اول</th>
+                    <th scope="col" className="px-4 py-3 font-bold">خرج تیم اول به دوم</th>
+                    <th scope="col" className="px-4 py-3 font-bold">خرج تیم دوم به اول</th>
                     <th scope="col" className="px-4 py-3 font-bold">زمان</th>
                   </tr>
                 </thead>

@@ -1,12 +1,13 @@
 import { requireUser } from "@/lib/auth";
 import { getPhase, getSetting, phaseIndex } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
-import { getIdeasForFloor, parseFloorFilter } from "@/lib/idea";
+import { getIdeasForFloor, lowestRaisedIdeaInfo, parseFloorFilter } from "@/lib/idea";
 import { totalInvestedByUser } from "@/lib/invest";
 import { PageHeader, Container, Locked, Stat, Alert } from "@/components/ui";
 import { UnspentReminder } from "@/components/UnspentReminder";
 import { fa, coins } from "@/lib/persian";
 import { InvestFloor } from "./InvestFloor";
+import { AngelCard } from "./AngelCard";
 
 export const metadata = { title: "طبقهٔ سرمایه‌گذاری" };
 
@@ -38,6 +39,9 @@ export default async function InvestPage({ searchParams }: { searchParams: Promi
   const penaltyPerCoin = Number.isFinite(parsedPenalty) ? parsedPenalty : DEFAULTS.penaltyPerCoin;
 
   const interactive = phase === "SEED_ROUND";
+
+  const canAngel = interactive && user.power === "ANGEL" && !user.powerUsed;
+  const angelTarget = canAngel ? await lowestRaisedIdeaInfo(user.teamId) : null;
 
   return (
     <>
@@ -74,6 +78,18 @@ export default async function InvestPage({ searchParams }: { searchParams: Promi
               coinsLeft={user.seedWallet}
               penaltyPerCoin={DEFAULTS.penaltyPerCoin}
             />
+          </div>
+        )}
+        <div className="mb-6">
+          <Alert kind="info">
+            «هدف جذب سرمایه» سقف سخت نیست: هرچه سرمایهٔ بیشتری روی یک ایده جمع شود، سهم هر سرمایه‌گذار از سود آن (که از
+            فروش × سهم سود، متناسب با مبلغ سرمایه‌گذاری‌اش تقسیم می‌شود) کوچک‌تر می‌شود؛ پس رقم بزرگ همیشه گزینهٔ بهتری
+            نیست.
+          </Alert>
+        </div>
+        {canAngel && angelTarget && (
+          <div className="mb-6">
+            <AngelCard ideaTitle={angelTarget.title} teamName={angelTarget.teamName} />
           </div>
         )}
         <InvestFloor ideas={ideas} ownTeamId={user.teamId} interactive={interactive} filter={filter} aiOff={aiOff} />

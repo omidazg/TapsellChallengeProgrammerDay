@@ -6,10 +6,11 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { getPhase, phaseIndex } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
-import { serializeImages, readyToSubmit, MAX_IMAGES } from "@/lib/product";
+import { serializeImages, readyToSubmit, MAX_IMAGES, effectiveMaxPrice } from "@/lib/product";
 import { runJuryAi } from "@/lib/jury-ai";
 import { isNextImageHost } from "@/lib/idea";
 import { isValidUploadName, UPLOAD_URL_PREFIX } from "@/lib/uploads";
+import { fa } from "@/lib/persian";
 
 export type ProductActionState = { error?: string; ok?: boolean };
 
@@ -79,18 +80,29 @@ export async function saveProductAction(prevState: ProductActionState, formData:
   const data = parsed.data;
   const imagesJson = serializeImages(data.images);
 
+  // قیمت هرگز نباید از سقف خرید هر نفر (max_per_target) بیشتر باشد، وگرنه محصول
+  // برای هیچ خریداری قابل خرید نمی‌ماند؛ zod فقط سقف مطلق DEFAULTS.maxPrice را چک می‌کند،
+  // اینجا سقفِ پویای تنظیم برگزارکننده هم بررسی می‌شود.
+  const maxPrice = await effectiveMaxPrice();
+  if (data.price > maxPrice) {
+    return { error: `قیمت حداکثر ${fa(maxPrice)} سکه است (برابر سقف خرید هر نفر از یک محصول)` };
+  }
+
   if (intent === "submit") {
-    const readyCheck = readyToSubmit({
-      name: data.name,
-      tagline: data.tagline,
-      description: data.description,
-      demoUrl: data.demoUrl,
-      teaserUrl: data.teaserUrl,
-      images: imagesJson,
-      price: data.price,
-      specialName: data.specialName,
-      submittedAt: null,
-    });
+    const readyCheck = readyToSubmit(
+      {
+        name: data.name,
+        tagline: data.tagline,
+        description: data.description,
+        demoUrl: data.demoUrl,
+        teaserUrl: data.teaserUrl,
+        images: imagesJson,
+        price: data.price,
+        specialName: data.specialName,
+        submittedAt: null,
+      },
+      maxPrice
+    );
     if (!readyCheck) {
       return { error: "پیش از ثبت نهایی، همهٔ موارد چک‌لیست را کامل کن" };
     }

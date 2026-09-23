@@ -3,8 +3,14 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { LEDGER_REASON_LABEL, WALLET_LABEL } from "@/lib/scoring";
+import { SCORE_CATEGORY_ORDER, SCORE_CATEGORY_LABELS } from "@/lib/score-labels";
 
 export const dynamic = "force-dynamic";
+
+// نام ستون pts در جدول TeamScore برای یک معیار امتیازی؛ مثلاً "portfolio" → "ptsPortfolio"
+function ptsFieldName(key: string): string {
+  return `pts${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+}
 
 // نمای راست‌به‌چپ برای همهٔ شیت‌ها + هدر بولد و ثابت (freeze) روی سطر اول
 function setupSheet(ws: ExcelJS.Worksheet, headers: { header: string; key: string; width: number }[]) {
@@ -70,12 +76,19 @@ export async function buildExportWorkbookBuffer(): Promise<Buffer> {
     { header: "قلب‌ها", key: "hearts", width: 10 },
     { header: "کیفیت", key: "quality", width: 10 },
     { header: "تیزر", key: "teaser", width: 10 },
+    { header: "پرتفوی (خام)", key: "portfolio", width: 12 },
+    { header: "سلیقه (خام)", key: "taste", width: 12 },
+    ...SCORE_CATEGORY_ORDER.map((k) => ({ header: `امتیاز ${SCORE_CATEGORY_LABELS[k].label}`, key: ptsFieldName(k), width: 14 })),
     { header: "جریمهٔ خرج‌نشده", key: "unspentPenalty", width: 16 },
     { header: "امتیاز کل", key: "total", width: 12 },
     { header: "زمان محاسبه", key: "computedAt", width: 20 },
   ]);
   for (const t of teams) {
     const s = scoreByTeam.get(t.id);
+    // ستون‌های pts* با نام پویا خوانده می‌شوند چون کلید هرکدام از روی SCORE_CATEGORY_ORDER ساخته می‌شود؛
+    // مدل Prisma TeamScore امضای اندیس ندارد، پس با یک cast امن به Record عبور می‌کنیم.
+    const sRecord = s as unknown as Record<string, number> | undefined;
+    const ptsRow = Object.fromEntries(SCORE_CATEGORY_ORDER.map((k) => [ptsFieldName(k), sRecord?.[ptsFieldName(k)] ?? 0]));
     wsTeams.addRow({
       id: t.id,
       name: t.name,
@@ -92,6 +105,9 @@ export async function buildExportWorkbookBuffer(): Promise<Buffer> {
       hearts: s?.hearts ?? 0,
       quality: s?.quality ?? 0,
       teaser: s?.teaser ?? 0,
+      portfolio: s?.portfolio ?? 0,
+      taste: s?.taste ?? 0,
+      ...ptsRow,
       unspentPenalty: s?.unspentPenalty ?? 0,
       total: s?.total ?? 0,
       computedAt: s?.computedAt ?? "",
@@ -136,7 +152,7 @@ export async function buildExportWorkbookBuffer(): Promise<Buffer> {
     { header: "تیم", key: "team", width: 20 },
     { header: "عنوان", key: "title", width: 24 },
     { header: "یک‌خطی", key: "oneLiner", width: 30 },
-    { header: "سقف سرمایه", key: "fundingCap", width: 12 },
+    { header: "هدف جذب سرمایه", key: "fundingCap", width: 12 },
     { header: "سهم سرمایه‌گذار (٪)", key: "revenueShare", width: 16 },
     { header: "زمان ثبت", key: "submittedAt", width: 20 },
   ]);

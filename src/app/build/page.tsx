@@ -2,7 +2,7 @@ import { requireUser } from "@/lib/auth";
 import { getPhase, phaseIndex } from "@/lib/phase";
 import { prisma } from "@/lib/db";
 import { PageHeader, Container, Empty, Locked } from "@/components/ui";
-import { buildChecklist, parseImages } from "@/lib/product";
+import { buildChecklist, parseImages, effectiveMaxPrice } from "@/lib/product";
 import { BuildForm } from "./BuildForm";
 import { ChecklistCard } from "./ChecklistCard";
 
@@ -36,6 +36,7 @@ export default async function BuildPage() {
 
   const product = await prisma.product.findUnique({ where: { teamId: user.teamId } });
   const editable = phaseIndex(phase) < phaseIndex("MARKET");
+  const maxPrice = await effectiveMaxPrice();
 
   const checklistInput = {
     name: product?.name ?? "",
@@ -48,7 +49,7 @@ export default async function BuildPage() {
     specialName: product?.specialName ?? "",
     submittedAt: product?.submittedAt ?? null,
   };
-  const checklist = buildChecklist(checklistInput);
+  const checklist = buildChecklist(checklistInput, maxPrice);
 
   return (
     <>
@@ -72,6 +73,7 @@ export default async function BuildPage() {
         <BuildForm
           editable={editable}
           submitted={!!product?.submittedAt}
+          maxPrice={maxPrice}
           initial={
             product
               ? {

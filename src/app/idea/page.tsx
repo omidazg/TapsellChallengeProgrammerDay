@@ -109,7 +109,7 @@ export default async function IdeaPage() {
             <p className="text-brand-navy leading-7 break-words">{idea.buildPlan}</p>
           </div>
           <div className="flex flex-wrap gap-3 pt-2">
-            <span className="chip-navy">سقف سرمایه: {coins(idea.fundingCap)}</span>
+            <span className="chip-navy">هدف جذب سرمایه: {coins(idea.fundingCap)}</span>
             <span className="chip-cyan">سهم سود سرمایه‌گذار: {fa(idea.revenueShare)}٪</span>
           </div>
         </div>

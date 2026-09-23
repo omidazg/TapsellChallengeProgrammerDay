@@ -5,9 +5,14 @@
  * ۱۲ تیم × ۳ عضو با رفتارهای تصادفی (احتکارکننده / سرمایه‌گذار متمرکز / معمولی)
  * می‌سازد، ۲۰۰ بار با seed های مختلف scoreGame را اجرا می‌کند و خلاصه‌ای
  * فارسی/انگلیسی از نتایج چاپ می‌کند.
+ *
+ * مدل جدید (پرتفوی/سلیقه/سپر/چانه‌زنی/بدون سرمایه‌گذاری خودی) اینجا هم شبیه‌سازی می‌شود:
+ * هر تیم یک قیمت محصول ثابت دارد، هر کاربر یک قدرت تصادفی (از ۶ قدرت بازی) می‌گیرد،
+ * و seedSpendable/buySpendable/hasShield دقیقاً با همان فرمول src/lib/scoring.ts محاسبه می‌شوند.
  */
 
-import { defaultConfig, scoreGame } from "../src/lib/economy/engine";
+import { bargainDiscountFor, defaultConfig, effectivePurchaseCap, maxSpendable, scoreGame } from "../src/lib/economy/engine";
+import { DEFAULTS } from "../src/lib/constants";
 import type { MemberWallet, TeamInput } from "../src/lib/economy/types";
 
 // ---------- PRNG بدون وابستگی (mulberry32) ----------
@@ -32,6 +37,7 @@ const NUM_RUNS = 200;
 const SEED_WALLET = 100;
 const BUY_WALLET = 100;
 const MAX_PER_TARGET = 40;
+const POWERS = ["HYPE", "BARGAIN", "ANGEL", "SECOND_WIND", "INSIDER", "SHIELD"] as const;
 
 type Profile = "hoarder" | "concentrated" | "normal";
 
@@ -39,7 +45,16 @@ interface RunOutcome {
   totals: number[];
   hoarderWon: boolean;
   winnerZeroSales: boolean;
-  metricShares: { sales: number; quality: number; capital: number; roi: number; teaser: number; community: number };
+  metricShares: {
+    sales: number;
+    quality: number;
+    capital: number;
+    roi: number;
+    teaser: number;
+    community: number;
+    portfolio: number;
+    taste: number;
+  };
 }
 
 function buildTeams(rand: Rand): { teamIds: string[]; hoarderIdx: number; concentratedIdx: number } {
@@ -62,12 +77,31 @@ function runOnce(seed: number): RunOutcome {
     Array.from({ length: MEMBERS_PER_TEAM }, (_, m) => `${teamId}_u${m}`)
   );
 
-  // انباشت سرمایه‌گذاری و فروش هر تیم
+  // هر تیم یک محصول با قیمت ثابت دارد (۵..۴۰، مثل بازی واقعی)
+  const priceByTeam = new Map<string, number>(teamIds.map((id) => [id, randInt(rand, DEFAULTS.minPrice, DEFAULTS.maxPrice)]));
+  // هر کاربر یک قدرت تصادفی از ۶ قدرت بازی؛ فقط BARGAIN و SHIELD روی موتور اثر دارند
+  const powerByUser = new Map<string, (typeof POWERS)[number]>();
+  for (const members of memberIdsByTeam) for (const userId of members) powerByUser.set(userId, pick(rand, [...POWERS]));
+
+  // انباشت سرمایه‌گذاری و فروش هر تیم (+ نگاشت هر کاربر روی هر هدف، برای محاسبهٔ seedSpendable/buySpendable)
   const investmentsByTeam: Map<string, { userId: string; amount: number; selfFunded: boolean }[]> = new Map(
     teamIds.map((id) => [id, []])
   );
   const salesByTeam: Map<string, { userId: string; amount: number }[]> = new Map(teamIds.map((id) => [id, []]));
+  const investedByUserTeam = new Map<string, number>(); // `${userId}|${targetTeamId}` -> سرمایهٔ سرمایه‌گذاری‌شده
+  const purchasedByUserTeam = new Map<string, number>(); // `${userId}|${targetTeamId}` -> مجموع درآمدِ فروشنده (قیمت کامل)
   const walletLeft: Map<string, { seedLeft: number; buyLeft: number }> = new Map();
+
+  const addInvest = (userId: string, targetTeam: string, amount: number) => {
+    investmentsByTeam.get(targetTeam)!.push({ userId, amount, selfFunded: false });
+    const key = `${userId}|${targetTeam}`;
+    investedByUserTeam.set(key, (investedByUserTeam.get(key) ?? 0) + amount);
+  };
+  const addSale = (userId: string, targetTeam: string, amount: number) => {
+    salesByTeam.get(targetTeam)!.push({ userId, amount });
+    const key = `${userId}|${targetTeam}`;
+    purchasedByUserTeam.set(key, (purchasedByUserTeam.get(key) ?? 0) + amount);
+  };
 
   for (let ti = 0; ti < NUM_TEAMS; ti++) {
     const teamId = teamIds[ti];
@@ -75,43 +109,41 @@ function runOnce(seed: number): RunOutcome {
     for (const userId of memberIdsByTeam[ti]) {
       let seedLeft = SEED_WALLET;
       let buyLeft = BUY_WALLET;
+      const isBargain = powerByUser.get(userId) === "BARGAIN";
+
+      // هزینهٔ واقعیِ کیف خرید یک خرید به مبلغ (درآمد فروشنده) amount؛
+      // با چانه‌زنی خریدار کمتر می‌پردازد، فروشنده همچنان amount کامل را می‌گیرد.
+      const buyerCost = (amount: number) => (isBargain ? Math.max(1, amount - bargainDiscountFor(amount, DEFAULTS.bargainDiscount)) : amount);
 
       if (profile === "hoarder") {
         // احتکارکننده: تقریباً هیچ خرج نمی‌کند
-        // (احتمال کوچک یک سرمایه‌گذاری/خرید ناچیز برای واقع‌گرایی)
         if (rand() < 0.1) {
           const other = pick(rand, teamIds.filter((t) => t !== teamId));
           const amt = randInt(rand, 1, 5);
-          investmentsByTeam.get(other)!.push({ userId, amount: amt, selfFunded: false });
+          addInvest(userId, other, amt);
           seedLeft -= amt;
         }
       } else if (profile === "concentrated") {
         // همهٔ سرمایه روی یک هدف؛ خرید هم متمرکز
         const targetTeam = pick(rand, teamIds.filter((t) => t !== teamId));
         const invAmt = Math.min(MAX_PER_TARGET, seedLeft);
-        investmentsByTeam.get(targetTeam)!.push({ userId, amount: invAmt, selfFunded: false });
+        addInvest(userId, targetTeam, invAmt);
         seedLeft -= invAmt;
 
         const buyTarget = pick(rand, teamIds.filter((t) => t !== teamId));
         const buyAmt = Math.min(MAX_PER_TARGET, buyLeft);
-        salesByTeam.get(buyTarget)!.push({ userId, amount: buyAmt });
-        buyLeft -= buyAmt;
+        const cost = Math.min(buyLeft, buyerCost(buyAmt));
+        addSale(userId, buyTarget, buyAmt);
+        buyLeft -= cost;
       } else {
-        // معمولی: سرمایه‌گذاری و خرید پراکنده در ۲ تا ۳ هدف
+        // معمولی: سرمایه‌گذاری و خرید پراکنده در ۲ تا ۳ هدف (سرمایه‌گذاری خودی دیگر مجاز نیست)
         const investTargets = new Set<string>();
         const numInv = randInt(rand, 1, 3);
         while (investTargets.size < numInv) investTargets.add(pick(rand, teamIds.filter((t) => t !== teamId)));
         for (const target of investTargets) {
           const amt = Math.min(randInt(rand, 5, 25), seedLeft);
           if (amt <= 0) continue;
-          const selfFunded = false;
-          investmentsByTeam.get(target)!.push({ userId, amount: amt, selfFunded });
-          seedLeft -= amt;
-        }
-        // گاهی هم روی تیم خودش سرمایه‌گذاری می‌کند (selfFunded)
-        if (rand() < 0.3 && seedLeft > 0) {
-          const amt = Math.min(randInt(rand, 5, 15), seedLeft);
-          investmentsByTeam.get(teamId)!.push({ userId, amount: amt, selfFunded: true });
+          addInvest(userId, target, amt);
           seedLeft -= amt;
         }
 
@@ -121,12 +153,13 @@ function runOnce(seed: number): RunOutcome {
         for (const target of buyTargets) {
           const amt = Math.min(randInt(rand, 5, 20), buyLeft);
           if (amt <= 0) continue;
-          salesByTeam.get(target)!.push({ userId, amount: amt });
-          buyLeft -= amt;
+          const cost = Math.min(buyLeft, buyerCost(amt));
+          addSale(userId, target, amt);
+          buyLeft -= cost;
         }
       }
 
-      walletLeft.set(userId, { seedLeft, buyLeft });
+      walletLeft.set(userId, { seedLeft: Math.max(0, seedLeft), buyLeft: Math.max(0, buyLeft) });
     }
   }
 
@@ -145,12 +178,33 @@ function runOnce(seed: number): RunOutcome {
   const wallets: MemberWallet[] = teamIds.flatMap((teamId, i) =>
     memberIdsByTeam[i].map((userId) => {
       const w = walletLeft.get(userId)!;
+      const power = powerByUser.get(userId);
+
+      // seedSpendable/buySpendable: همان فرمول src/lib/scoring.ts، برای هر هدف دیگر
+      let seedSpendable = 0;
+      const buyUnits: { cost: number; count: number }[] = [];
+      for (const otherTeam of teamIds) {
+        if (otherTeam === teamId) continue;
+        const invested = investedByUserTeam.get(`${userId}|${otherTeam}`) ?? 0;
+        seedSpendable += Math.max(0, MAX_PER_TARGET - invested);
+
+        const price = priceByTeam.get(otherTeam)!;
+        const purchased = purchasedByUserTeam.get(`${userId}|${otherTeam}`) ?? 0;
+        const cap = effectivePurchaseCap(MAX_PER_TARGET, price);
+        const units = Math.floor(Math.max(0, cap - purchased) / price);
+        const discount = power === "BARGAIN" ? bargainDiscountFor(price, DEFAULTS.bargainDiscount) : 0;
+        buyUnits.push({ cost: price - discount, count: units });
+      }
+      const buySpendable = maxSpendable(w.buyLeft, buyUnits);
+
       return {
         userId,
         teamId,
         seedLeft: w.seedLeft,
         buyLeft: w.buyLeft,
-        shieldUsed: rand() < 0.15,
+        seedSpendable,
+        buySpendable,
+        hasShield: power === "SHIELD",
       };
     })
   );
@@ -163,7 +217,7 @@ function runOnce(seed: number): RunOutcome {
   const hoarderResult = output.teams.find((t) => t.teamId === hoarderTeamId)!;
 
   // سهم هر معیار از مجموع امتیازهای مثبت (بدون جریمه) در این اجرا
-  const metricSums = { sales: 0, quality: 0, capital: 0, roi: 0, teaser: 0, community: 0 };
+  const metricSums = { sales: 0, quality: 0, capital: 0, roi: 0, teaser: 0, community: 0, portfolio: 0, taste: 0 };
   for (const t of output.teams) {
     metricSums.sales += t.pts.sales;
     metricSums.quality += t.pts.quality;
@@ -171,6 +225,8 @@ function runOnce(seed: number): RunOutcome {
     metricSums.roi += t.pts.roi;
     metricSums.teaser += t.pts.teaser;
     metricSums.community += t.pts.community;
+    metricSums.portfolio += t.pts.portfolio;
+    metricSums.taste += t.pts.taste;
   }
   const grandTotal = Object.values(metricSums).reduce((a, b) => a + b, 0) || 1;
   const metricShares = {
@@ -180,6 +236,8 @@ function runOnce(seed: number): RunOutcome {
     roi: metricSums.roi / grandTotal,
     teaser: metricSums.teaser / grandTotal,
     community: metricSums.community / grandTotal,
+    portfolio: metricSums.portfolio / grandTotal,
+    taste: metricSums.taste / grandTotal,
   };
 
   return {
@@ -208,7 +266,7 @@ function main() {
   const hoarderWinCount = outcomes.filter((o) => o.hoarderWon).length;
   const zeroSalesWinCount = outcomes.filter((o) => o.winnerZeroSales).length;
 
-  const metricKeys = ["sales", "quality", "capital", "roi", "teaser", "community"] as const;
+  const metricKeys = ["sales", "quality", "capital", "roi", "teaser", "community", "portfolio", "taste"] as const;
   const avgMetricShare = Object.fromEntries(
     metricKeys.map((k) => [k, mean(outcomes.map((o) => o.metricShares[k]))])
   ) as Record<(typeof metricKeys)[number], number>;

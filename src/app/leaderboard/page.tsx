@@ -4,6 +4,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { computeScoresCached, topInvestors } from "@/lib/scoring";
 import { getSettledAt, loadSettledOutput } from "@/lib/settlement";
 import type { TeamResult } from "@/lib/economy/types";
+import { SCORE_WEIGHTS } from "@/lib/constants";
+import { SCORE_CATEGORY_ORDER, SCORE_CATEGORY_LABELS } from "@/lib/score-labels";
 import { PageHeader, Container, Alert, Empty } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { fa } from "@/lib/persian";
@@ -194,6 +196,47 @@ export default async function LeaderboardPage() {
               </table>
             </div>
           </>
+        )}
+
+        {closed && (
+          <section>
+            <h2 className="text-lg font-black text-brand-navy mb-3">ریزامتیاز تیم‌ها</h2>
+            <div className="space-y-2.5 stagger">
+              {ranked.map((t) => {
+                const team = teamMap.get(t.teamId);
+                return (
+                  <details key={t.teamId} className="card p-4 group">
+                    <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
+                      <span className="flex items-center gap-2 min-w-0 font-bold text-brand-navy">
+                        <Avatar seed={team?.logoSeed || t.teamId} size={26} />
+                        <span className="truncate">{team?.name ?? "—"}</span>
+                      </span>
+                      <span className="flex items-center gap-3 shrink-0">
+                        <span className="fa-num font-black text-brand-navy">{fa(Math.round(t.total))}</span>
+                        <span className="text-brand-cyan-dark group-open:rotate-45 transition-transform">＋</span>
+                      </span>
+                    </summary>
+                    <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {SCORE_CATEGORY_ORDER.map((k) => (
+                        <div key={k} className="rounded-xl bg-brand-ice px-3 py-2 text-xs">
+                          <div className="text-brand-slate">
+                            {SCORE_CATEGORY_LABELS[k].emoji} {SCORE_CATEGORY_LABELS[k].label}
+                          </div>
+                          <div className="fa-num font-black text-brand-navy">
+                            {fa(Math.round(t.pts[k]))} <span className="font-normal text-brand-slate">/ {fa(SCORE_WEIGHTS[k])}</span>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="rounded-xl bg-red-50 px-3 py-2 text-xs">
+                        <div className="text-brand-red">جریمهٔ خرج‌نشده</div>
+                        <div className="fa-num font-black text-brand-red">−{fa(Math.round(t.unspentPenalty))}</div>
+                      </div>
+                    </div>
+                  </details>
+                );
+              })}
+            </div>
+          </section>
         )}
 
         {closed && (

@@ -32,7 +32,7 @@ export default async function AuctionPage() {
       <PageHeader
         eyebrow="حراج زنده"
         title="حراج زنده"
-        desc="نسخه‌های ویژهٔ محصولات، یکی‌یکی و به‌ترتیب، زنده حراج می‌شوند."
+        desc="نسخه‌های ویژهٔ محصولات یکی‌یکی زنده حراج می‌شوند؛ ترتیب صف با قرعه چیده شده و از قبل پیداست، پس کیفت را برای حراج‌های بعدی هم نگه دار."
         action={
           <div className="card px-4 py-2 flex items-center gap-2">
             <span className="text-xs font-bold text-brand-slate">کیف خرید</span>

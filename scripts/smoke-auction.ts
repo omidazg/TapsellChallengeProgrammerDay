@@ -56,8 +56,11 @@ async function main() {
     settleIfEnded,
     activateSecondWind,
     currentOrNextAuctionId,
+    shuffleOrder,
+    clampAuctionDuration,
   } = await import("../src/lib/auction");
   const { ensureAdSlots, upsertBid, closeSlot } = await import("../src/lib/adslots");
+  const { DEFAULTS } = await import("../src/lib/constants");
 
   try {
     // ---------- پاکسازی کپی برای قطعیت نتیجه ----------
@@ -109,11 +112,54 @@ async function main() {
     await ensureAuctions(); // idempotent
     const auctions = await prisma.auction.findMany({ orderBy: { order: "asc" } });
     eq("ensureAuctions: دقیقاً دو حراج (idempotent)", auctions.length, 2);
-    eq("ensureAuctions: ترتیب بر اساس submittedAt", auctions[0]?.productId, productA.id);
+    // ترتیب صف تصادفی است (shuffleOrder)، پس فقط عضویت/پوشش را چک می‌کنیم، نه جایگاه دقیق.
+    eq(
+      "ensureAuctions: هر دو محصول در صف هستند",
+      [...auctions.map((a) => a.productId)].sort().join(","),
+      [productA.id, productB.id].sort().join(",")
+    );
     eq("ensureAuctions: order صفر و یک", `${auctions[0]?.order},${auctions[1]?.order}`, "0,1");
-    eq("ensureAuctions: startPrice = specialStart (الف)", auctions[0]?.startPrice, 20);
-    eq("ensureAuctions: startPrice = specialStart (ب)", auctions[1]?.startPrice, productB.specialStart);
+    eq(
+      "ensureAuctions: startPrice برابر specialStart هر محصول است",
+      auctions.map((a) => a.startPrice).sort((x, y) => x - y).join(","),
+      [productA.specialStart, productB.specialStart].sort((x, y) => x - y).join(",")
+    );
     eq("ensureAuctions: وضعیت اولیه SCHEDULED", auctions[0]?.status, "SCHEDULED");
+
+    // ---------- shuffleOrder: جابه‌جایی Fisher–Yates (تابع خالص) ----------
+    {
+      const original = Array.from({ length: 8 }, (_, i) => i);
+      const shuffled = shuffleOrder([...original]);
+      eq("shuffleOrder: طول آرایه ثابت می‌ماند", shuffled.length, original.length);
+      eq(
+        "shuffleOrder: جایگشتی از همان عناصر است",
+        [...shuffled].sort((a, b) => a - b).join(","),
+        original.join(",")
+      );
+      // با ۲۰۰ بار اجرا روی آرایهٔ ۶تایی، احتمال این‌که همیشه دقیقاً همان ترتیب اولیه برگردد عملاً صفر است.
+      let sawDifferentOrder = false;
+      for (let i = 0; i < 200; i++) {
+        if (shuffleOrder([0, 1, 2, 3, 4, 5]).join(",") !== "0,1,2,3,4,5") {
+          sawDifferentOrder = true;
+          break;
+        }
+      }
+      check("shuffleOrder: واقعاً ترتیب را به‌هم می‌ریزد (آماری، ۲۰۰ تلاش)", sawDifferentOrder);
+    }
+
+    // ---------- clampAuctionDuration: محاسبهٔ خالص مدت حراج ----------
+    {
+      eq("clampAuctionDuration: با زمان کافی، مدت پیکربندی‌شده حفظ می‌شود", clampAuctionDuration(10_000, 2, 300), 300);
+      eq(
+        "clampAuctionDuration: با زمان کم، متناسب با تعداد صف کوتاه می‌شود",
+        clampAuctionDuration(600, 5, 300),
+        Math.max(60, Math.floor((600 * 0.85) / 5))
+      );
+      eq("clampAuctionDuration: هرگز از ۶۰ ثانیه کمتر نمی‌شود", clampAuctionDuration(10, 10, 300), 60);
+      eq("clampAuctionDuration: هرگز از مدت پیکربندی‌شده بیشتر نمی‌شود", clampAuctionDuration(1_000_000, 1, 300), 300);
+      eq("clampAuctionDuration: بدون حراج باقی‌مانده، حداقل مطلق برمی‌گردد", clampAuctionDuration(1000, 0, 300), 60);
+      eq("clampAuctionDuration: زمان صفر/منفی هم حداقل مطلق می‌دهد", clampAuctionDuration(0, 3, 300), 60);
+    }
 
     // ---------- startNextAuction ----------
     const started = await startNextAuction(5);
@@ -126,26 +172,37 @@ async function main() {
     eq("currentOrNextAuctionId: حراج زنده", await currentOrNextAuctionId(), auctions[0]!.id);
 
     const liveId = auctions[0]!.id;
+    // چون ترتیب صف حراج تصادفی است (شافل)، از قبل معلوم نیست محصول کدام تیم زودتر زنده می‌شود؛
+    // پس «خریدار» (عضو تیم مقابل) و «عضو تیم خودی» (که باید رد شود) را بر اساس تیم صاحبِ حراج زنده تعیین می‌کنیم.
+    const liveAuctionMeta = auctions.find((a) => a.id === liveId)!;
+    const liveIsProductA = liveAuctionMeta.productId === productA.id;
+    const bidder = liveIsProductA ? b1 : a1;
+    const ownTeamUser = liveIsProductA ? a1 : b1;
+    // قیمت پایه و گام پیشنهاد هم به محصول زنده بستگی دارد (productA و productB مقدار specialStart متفاوتی دارند)،
+    // پس نردبان مبلغ‌های تست را نسبت به آن‌ها می‌سازیم، نه با عدد ثابت.
+    const start = liveAuctionMeta.startPrice;
+    const inc = DEFAULTS.bidIncrement;
     // زمان کافی برای مراحل بعدی (بدون افتادن در پنجرهٔ ضد-اسنایپ)
     await prisma.auction.update({ where: { id: liveId }, data: { endsAt: new Date(Date.now() + 600_000) } });
 
     // ---------- placeBid ----------
-    await expectError("placeBid: پیشنهاد کمتر از حداقل رد می‌شود", () => placeBid(liveId, b1.id, 19), "حداقل");
-    await expectError("placeBid: پیشنهاد تیم خودی رد می‌شود", () => placeBid(liveId, a1.id, 25), "تیم خودت");
-    await placeBid(liveId, b1.id, 20);
+    await expectError("placeBid: پیشنهاد کمتر از حداقل رد می‌شود", () => placeBid(liveId, bidder.id, start - 1), "حداقل");
+    await expectError("placeBid: پیشنهاد تیم خودی رد می‌شود", () => placeBid(liveId, ownTeamUser.id, start + 5), "تیم خودت");
+    await placeBid(liveId, bidder.id, start);
     eq("placeBid: پیشنهاد معتبر ثبت شد", await prisma.bid.count({ where: { auctionId: liveId } }), 1);
-    await expectError("placeBid: تکرار همان مبلغ توسط بالاترین پیشنهاددهنده رد می‌شود", () => placeBid(liveId, b1.id, 20));
-    await expectError("placeBid: افزایش کمتر از bid_increment رد می‌شود", () => placeBid(liveId, b1.id, 21), "حداقل");
-    await placeBid(liveId, b1.id, 22); // بالا بردن پیشنهاد خود مجاز است
+    await expectError("placeBid: تکرار همان مبلغ توسط بالاترین پیشنهاددهنده رد می‌شود", () => placeBid(liveId, bidder.id, start));
+    await expectError("placeBid: افزایش کمتر از bid_increment رد می‌شود", () => placeBid(liveId, bidder.id, start + 1), "حداقل");
+    await placeBid(liveId, bidder.id, start + inc); // بالا بردن پیشنهاد خود مجاز است
     eq("placeBid: بالا بردن پیشنهاد خود پذیرفته شد", await prisma.bid.count({ where: { auctionId: liveId } }), 2);
-    await expectError("placeBid: بیش از موجودی کیف خرید رد می‌شود", () => placeBid(liveId, b1.id, 500), "کیف خرید");
+    await expectError("placeBid: بیش از موجودی کیف خرید رد می‌شود", () => placeBid(liveId, bidder.id, 500), "کیف خرید");
 
     // ---------- ضد-اسنایپ ----------
     const beforeSnipe = await prisma.auction.update({
       where: { id: liveId },
       data: { endsAt: new Date(Date.now() + 10_000), extensions: 0 },
     });
-    await placeBid(liveId, b1.id, 24);
+    const finalBid = start + 2 * inc;
+    await placeBid(liveId, bidder.id, finalBid);
     const afterSnipe = await prisma.auction.findUniqueOrThrow({ where: { id: liveId } });
     eq("ضد-اسنایپ: extensions افزایش یافت", afterSnipe.extensions, 1);
     const delta = afterSnipe.endsAt!.getTime() - beforeSnipe.endsAt!.getTime();
@@ -167,27 +224,27 @@ async function main() {
 
     const settledAuction = await prisma.auction.findUniqueOrThrow({ where: { id: liveId } });
     eq("تسویه: وضعیت ENDED", settledAuction.status, "ENDED");
-    eq("تسویه: برنده درست است", settledAuction.winnerId, b1.id);
-    eq("تسویه: قیمت نهایی = بالاترین پیشنهاد", settledAuction.finalPrice, 24);
+    eq("تسویه: برنده درست است", settledAuction.winnerId, bidder.id);
+    eq("تسویه: قیمت نهایی = بالاترین پیشنهاد", settledAuction.finalPrice, finalBid);
 
-    const purchases = await prisma.purchase.findMany({ where: { productId: productA.id } });
+    const purchases = await prisma.purchase.findMany({ where: { productId: liveAuctionMeta.productId } });
     eq("تسویه: دقیقاً یک Purchase (بدون خرید دوباره)", purchases.length, 1);
-    eq("تسویه: Purchase به نام برنده", purchases[0]?.userId, b1.id);
-    eq("تسویه: مبلغ Purchase", purchases[0]?.amount, 24);
+    eq("تسویه: Purchase به نام برنده", purchases[0]?.userId, bidder.id);
+    eq("تسویه: مبلغ Purchase", purchases[0]?.amount, finalBid);
     eq("تسویه: تخفیف صفر", purchases[0]?.discount, 0);
 
     const ledger = await prisma.ledgerEntry.findMany({ where: { refId: liveId, reason: "AUCTION_WIN" } });
     eq("تسویه: دقیقاً یک LedgerEntry با reason=AUCTION_WIN", ledger.length, 1);
     eq("تسویه: کیف BUY", ledger[0]?.wallet, "BUY");
-    eq("تسویه: delta منفی قیمت نهایی", ledger[0]?.delta, -24);
+    eq("تسویه: delta منفی قیمت نهایی", ledger[0]?.delta, -finalBid);
 
-    eq("تسویه: کیف خرید برنده کم شد", (await prisma.user.findUniqueOrThrow({ where: { id: b1.id } })).buyWallet, 76);
+    eq("تسویه: کیف خرید برنده کم شد", (await prisma.user.findUniqueOrThrow({ where: { id: bidder.id } })).buyWallet, 100 - finalBid);
 
     const next = await prisma.auction.findUniqueOrThrow({ where: { id: auctions[1]!.id } });
     eq("تسویه: حراج بعدی خودکار زنده شد", next.status, "LIVE");
     eq("پس از تسویه هم فقط یک حراج LIVE", await prisma.auction.count({ where: { status: "LIVE" } }), 1);
 
-    await expectError("placeBid روی حراج پایان‌یافته رد می‌شود", () => placeBid(liveId, b1.id, 40), "زنده");
+    await expectError("placeBid روی حراج پایان‌یافته رد می‌شود", () => placeBid(liveId, bidder.id, 40), "زنده");
 
     // حراج بدون پیشنهاد: پایان بدون برنده
     await prisma.auction.update({ where: { id: next.id }, data: { endsAt: new Date(Date.now() - 1000) } });
@@ -195,6 +252,48 @@ async function main() {
     const noBid = await prisma.auction.findUniqueOrThrow({ where: { id: next.id } });
     eq("حراج بدون پیشنهاد: ENDED", noBid.status, "ENDED");
     eq("حراج بدون پیشنهاد: بدون برنده", noBid.winnerId, null);
+
+    // ---------- یکپارچه‌سازی: startNextAuction بدون durationSec صریح، مدت را با زمان فاز کلمپ می‌کند ----------
+    {
+      await prisma.setting.upsert({
+        where: { key: "auction_duration_sec" },
+        update: { value: "300" },
+        create: { key: "auction_duration_sec", value: "300" },
+      });
+      const phaseEndsAt = new Date(Date.now() + 100_000); // ۱۰۰ ثانیه تا پایان فاز
+      await setPhase("AUCTION", phaseEndsAt);
+
+      // تیم جداگانه چون هر تیم فقط می‌تواند یک محصول داشته باشد (teamA و teamB قبلاً محصول دارند).
+      const teamC = await prisma.team.create({ data: { name: "تیم پ", slug: "smoke-c", treasury: 100 } });
+      const productC = await prisma.product.create({
+        data: { teamId: teamC.id, name: "محصول پ", specialName: "ویژهٔ پ", specialStart: 10, submittedAt: new Date() },
+      });
+      await ensureAuctions();
+      const scheduledBefore = await prisma.auction.count({ where: { status: "SCHEDULED" } });
+      const startedFit = await startNextAuction(); // durationSec داده نشده → از تنظیم + کلمپ فاز استفاده می‌کند
+
+      check("startNextAuction: بدون durationSec صریح، حراج بعدی زنده شد", !!startedFit && !!startedFit.startsAt && !!startedFit.endsAt);
+      if (startedFit?.startsAt && startedFit?.endsAt) {
+        const actualDur = Math.round((startedFit.endsAt.getTime() - startedFit.startsAt.getTime()) / 1000);
+        const expectedDur = clampAuctionDuration(100, scheduledBefore, 300);
+        check(
+          "startNextAuction: مدت واقعی با clampAuctionDuration(زمان باقی‌ماندهٔ فاز، صف، مدت تنظیم‌شده) هم‌خوان است",
+          Math.abs(actualDur - expectedDur) <= 2,
+          { actualDur, expectedDur, scheduledBefore }
+        );
+        check("startNextAuction: مدت کلمپ‌شده کمتر از مدت پیکربندی‌شدهٔ ۳۰۰ ثانیه است", actualDur < 300, { actualDur });
+        await settleAuctionCleanup(startedFit.id);
+      }
+      void productC;
+
+      async function settleAuctionCleanup(id: string) {
+        await prisma.auction.update({ where: { id }, data: { endsAt: new Date(Date.now() - 1000) } });
+        await settleIfEnded(id);
+      }
+
+      // فاز را به حالت بدون endsAt برگردان تا رفتار بقیهٔ اسکریپت (و پاک‌سازی پایانی) تغییر نکند.
+      await setPhase("AUCTION", null);
+    }
 
     // ---------- جایگاه‌های تبلیغاتی ----------
     const marketStart = new Date(Date.now() + 24 * 60 * 60 * 1000); // فردا، تا due نشوند

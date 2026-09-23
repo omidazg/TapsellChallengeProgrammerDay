@@ -3,9 +3,9 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getPhase } from "@/lib/phase";
-import { DEFAULTS, SCORE_WEIGHTS } from "@/lib/constants";
-import { computeScoresCached, computeAwards, getSettingFloat } from "@/lib/scoring";
-import { defaultConfig, unspentPenalty } from "@/lib/economy/engine";
+import { SCORE_WEIGHTS } from "@/lib/constants";
+import { SCORE_CATEGORY_ORDER, SCORE_CATEGORY_LABELS } from "@/lib/score-labels";
+import { computeScoresCached, computeAwards } from "@/lib/scoring";
 import { getSettledAt, loadSettledOutput } from "@/lib/settlement";
 import { loadTimeline } from "@/lib/timeline";
 import { TrendChart } from "@/components/TrendChart";
@@ -35,11 +35,10 @@ export default async function ResultsPage() {
   const settledAt = await getSettledAt();
   const settled = !!settledAt;
 
-  const [output, teams, users, penaltyPerCoin, investments, purchases, myDividendRows, timeline] = await Promise.all([
+  const [output, teams, users, investments, purchases, myDividendRows, timeline] = await Promise.all([
     settled ? loadSettledOutput() : computeScoresCached(),
     prisma.team.findMany({ select: { id: true, name: true } }),
     prisma.user.findMany({ select: { id: true, nickname: true } }),
-    getSettingFloat("penalty_per_coin", DEFAULTS.penaltyPerCoin),
     prisma.investment.findMany({ where: { userId: user.id }, include: { idea: { include: { team: true } } } }),
     prisma.purchase.findMany({ where: { userId: user.id }, include: { product: { include: { team: true } } } }),
     prisma.ledgerEntry.findMany({ where: { userId: user.id, reason: "DIVIDEND", wallet: "BUY" } }),
@@ -73,19 +72,10 @@ export default async function ResultsPage() {
   }
   const myInvestments = [...investedByIdea.values()];
 
-  // جریمهٔ شخصی با همان تابع موتور اقتصاد تا با امتیاز تیم هم‌خوان باشد.
-  // بعد از تسویه، سود واریزشده از کیف خرید کسر می‌شود تا وضعیت «لحظهٔ تسویه» بازسازی شود
-  // (جریمه پیش از پرداخت سود محاسبه شده است).
-  const buyAtSettlement = settled ? Math.max(0, user.buyWallet - receivedDividends) : user.buyWallet;
-  const myPenalty = unspentPenalty({ ...defaultConfig(), penaltyPerCoin }, [
-    {
-      userId: user.id,
-      teamId: user.teamId,
-      seedLeft: user.seedWallet,
-      buyLeft: buyAtSettlement,
-      shieldUsed: user.power === "SHIELD" && user.powerUsed,
-    },
-  ]);
+  // سکهٔ فعلاً باقی‌ماندهٔ من (بذر + خرید)؛ جریمهٔ دقیق سکهٔ خرج‌نشده در سطح تیم محاسبه و
+  // در myTeam.unspentPenalty نشان داده می‌شود (به «سکهٔ خرج‌شدنی» هر بازیکن روی اهداف
+  // باقی‌ماندهٔ بازار وابسته است، نه فقط موجودی کیف).
+  const myCoinsLeft = user.seedWallet + user.buyWallet;
 
   const showConfetti = settled && !!myTeam && (myTeam.rank ?? 99) <= 3;
 
@@ -138,12 +128,14 @@ export default async function ResultsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  <ScoreRow label="فروش" value={myTeam.pts.sales} max={SCORE_WEIGHTS.sales} />
-                  <ScoreRow label="کیفیت" value={myTeam.pts.quality} max={SCORE_WEIGHTS.quality} />
-                  <ScoreRow label="جذب سرمایه" value={myTeam.pts.capital} max={SCORE_WEIGHTS.capital} />
-                  <ScoreRow label="بازده سرمایه‌گذار" value={myTeam.pts.roi} max={SCORE_WEIGHTS.roi} />
-                  <ScoreRow label="تیزر" value={myTeam.pts.teaser} max={SCORE_WEIGHTS.teaser} />
-                  <ScoreRow label="جامعه (خریداران/قلب)" value={myTeam.pts.community} max={SCORE_WEIGHTS.community} />
+                  {SCORE_CATEGORY_ORDER.map((k) => (
+                    <ScoreRow
+                      key={k}
+                      label={`${SCORE_CATEGORY_LABELS[k].emoji} ${SCORE_CATEGORY_LABELS[k].label}`}
+                      value={myTeam.pts[k]}
+                      max={SCORE_WEIGHTS[k]}
+                    />
+                  ))}
                   <tr>
                     <td className="px-3 py-2 font-bold text-brand-red">جریمهٔ خرج‌نشده</td>
                     <td className="px-3 py-2 font-bold text-brand-red fa-num" colSpan={2}>
@@ -166,8 +158,8 @@ export default async function ResultsPage() {
             hint={settled ? "واریزشده به کیف خرید" : "پس از تسویهٔ نهایی واریز می‌شود"}
             tone="cyan"
           />
-          <Stat label="مجموع خرید در بازار" value={coins(purchases.reduce((a, p) => a + p.amount, 0))} tone="red" />
-          <Stat label="جریمهٔ سکهٔ خرج‌نشدهٔ من" value={fa(Math.round(myPenalty * 10) / 10)} tone="navy" />
+          <Stat label="مجموع خرید در بازار" value={coins(purchases.reduce((a, p) => a + p.amount - p.discount, 0))} tone="red" />
+          <Stat label="سکهٔ باقی‌ماندهٔ من (بذر + خرید)" value={coins(myCoinsLeft)} hint="تا پایان بازی خرجش کن تا جریمه نخوری" tone="navy" />
         </section>
 
         <section>
@@ -222,7 +214,7 @@ export default async function ResultsPage() {
                     <tr key={p.id} className="border-b border-brand-mist last:border-0">
                       <td className="px-4 py-3">{p.product.name}</td>
                       <td className="px-4 py-3 text-brand-slate">{p.product.team.name}</td>
-                      <td className="px-4 py-3 fa-num">{fa(p.amount)}</td>
+                      <td className="px-4 py-3 fa-num">{fa(p.amount - p.discount)}</td>
                     </tr>
                   ))}
                 </tbody>

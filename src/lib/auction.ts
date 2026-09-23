@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { prisma } from "./db";
 import { getPhase, getSettingInt } from "./phase";
 import { DEFAULTS } from "./constants";
@@ -11,13 +12,47 @@ import { nextMinBid, shouldExtendAuction } from "./economy/engine";
 /** تمدید قدرت «نفس دوم» بر حسب ثانیه. */
 const SECOND_WIND_EXTEND_SEC = 120;
 
-/** یک حراج به ازای هر محصول ثبت‌شده می‌سازد (idempotent)، به ترتیب زمان ثبت. */
+/** ضریب ایمنی: فقط تا این نسبت از زمان باقی‌ماندهٔ فاز صرف حراج‌ها می‌شود (بقیه برای تسویه/تأخیرها). */
+const AUCTION_PHASE_FIT_RATIO = 0.85;
+/** حداقل مطلق مدت هر حراج، حتی وقتی زمان فاز خیلی کم است. */
+const MIN_AUCTION_DURATION_SEC = 60;
+
+/**
+ * جابه‌جایی Fisher–Yates با node:crypto.randomInt (تصادفی رمزنگارانه، نه Math.random).
+ * آرایهٔ ورودی را درجا به‌هم می‌ریزد و همان را برمی‌گرداند.
+ */
+export function shuffleOrder<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/**
+ * مدت هر حراج را طوری کوتاه می‌کند که همهٔ حراج‌های باقی‌مانده در زمان باقی‌ماندهٔ فاز جا شوند:
+ * duration = clamp(floor(secondsLeftInPhase × ۰٫۸۵ ÷ auctionsRemainingIncludingThis), ۶۰, configuredDuration).
+ * تابعی خالص است (بدون I/O) تا مستقیم قابل تست باشد.
+ */
+export function clampAuctionDuration(
+  secondsLeftInPhase: number,
+  auctionsRemainingIncludingThis: number,
+  configuredDuration: number
+): number {
+  if (auctionsRemainingIncludingThis <= 0 || secondsLeftInPhase <= 0) return MIN_AUCTION_DURATION_SEC;
+  const fitted = Math.floor((secondsLeftInPhase * AUCTION_PHASE_FIT_RATIO) / auctionsRemainingIncludingThis);
+  return Math.min(configuredDuration, Math.max(MIN_AUCTION_DURATION_SEC, fitted));
+}
+
+/** یک حراج به ازای هر محصول ثبت‌شده می‌سازد (idempotent)؛ ترتیب صف هر بار به‌طور تصادفی چیده می‌شود
+ *  تا تیم‌هایی که زود ثبت کرده‌اند همیشه آخر صف (و با کیف خرج‌شدهٔ همه) نمانند. */
 export async function ensureAuctions() {
   const products = await prisma.product.findMany({
     where: { submittedAt: { not: null }, auction: null },
-    orderBy: { submittedAt: "asc" },
+    orderBy: { submittedAt: "asc" }, // فقط برای پایداری کوئری؛ ترتیب واقعی زیر با shuffleOrder به‌هم می‌ریزد
   });
   if (products.length === 0) return;
+  shuffleOrder(products);
   const last = await prisma.auction.findFirst({ orderBy: { order: "desc" }, select: { order: true } });
   const base = last ? last.order + 1 : 0;
   await prisma.$transaction(
@@ -31,11 +66,26 @@ export async function ensureAuctions() {
 }
 
 /**
+ * مدت حراج بعدی را با توجه به زمان باقی‌ماندهٔ فاز AUCTION تعیین می‌کند (در صورت نبود endsAt،
+ * همان مدت پیکربندی‌شده). عمداً *بیرون* از $transaction فراخوانی می‌شود (مثل خواندن تنظیمات در
+ * بقیهٔ این فایل)، چون کوئری با نمونهٔ اصلی prisma داخل یک تراکنش باز ممکن است قفل شود.
+ */
+async function resolveAuctionDuration(configuredDuration: number): Promise<number> {
+  const { phase, endsAt } = await getPhase();
+  if (phase !== "AUCTION" || !endsAt) return configuredDuration;
+  const secondsLeftInPhase = Math.max(0, Math.floor((endsAt.getTime() - Date.now()) / 1000));
+  // شامل همین حراجی که قرار است زنده شود، به‌علاوهٔ بقیهٔ صف (SCHEDULED فعلی).
+  const remainingCount = await prisma.auction.count({ where: { status: "SCHEDULED" } });
+  return clampAuctionDuration(secondsLeftInPhase, remainingCount, configuredDuration);
+}
+
+/**
  * حراج بعدیِ در صف را زنده می‌کند.
  * اگر همین حالا حراجی زنده باشد هیچ کاری نمی‌کند (هم‌زمان فقط یک حراج زنده است).
  */
 export async function startNextAuction(durationSec?: number) {
-  const dur = durationSec ?? (await getSettingInt("auction_duration_sec", DEFAULTS.auctionDurationSec));
+  const configuredDuration = durationSec ?? (await getSettingInt("auction_duration_sec", DEFAULTS.auctionDurationSec));
+  const dur = await resolveAuctionDuration(configuredDuration);
   const started = await prisma.$transaction(async (tx) => {
     const live = await tx.auction.findFirst({ where: { status: "LIVE" } });
     if (live) return null;
