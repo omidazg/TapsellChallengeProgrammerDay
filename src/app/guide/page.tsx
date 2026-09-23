@@ -4,6 +4,7 @@ import { getPhase, PHASES, PHASE_LABEL, type Phase } from "@/lib/phase";
 import { ROLES, POWERS, DEFAULTS, SCORE_WEIGHTS, AD_SLOT_KINDS, type RoleKey, type PowerKey } from "@/lib/constants";
 import { fa, coins } from "@/lib/persian";
 import { Container } from "@/components/ui";
+import { PRIZES, CASH_PRIZE_TOTAL_MILLION_TOMAN } from "@/lib/prizes";
 
 export const metadata = { title: "راهنمای بازی" };
 
@@ -195,6 +196,16 @@ const PHASE_LIST: readonly Phase[] = PHASES;
 function TimelineSection({ phase }: { phase: Phase | null }) {
   return (
     <Section id="timeline" emoji="⏳" title="زمان‌بندی" desc="هفت مرحله، یکی پس از دیگری. وقتی یک مرحله تمام شود، صفحه‌های مربوط به آن فقط‌خواندنی می‌شوند.">
+      <div className="rounded-2xl bg-brand-ice border border-brand-mist p-4 grid sm:grid-cols-2 gap-3">
+        <div>
+          <div className="text-xs font-bold text-brand-cyan-dark mb-1">🧪 فاز تست</div>
+          <div className="text-sm text-brand-navy">۴ تا ۱۱ مهر — آزمایشی، بدون تأثیر در نتیجهٔ نهایی.</div>
+        </div>
+        <div>
+          <div className="text-xs font-bold text-brand-cyan-dark mb-1">🚀 شروع رسمی مسابقه</div>
+          <div className="text-sm text-brand-navy">۱۱ مهر</div>
+        </div>
+      </div>
       <ol className="relative border-r-2 border-brand-mist pr-6 space-y-6">
         {PHASE_LIST.map((p) => {
           const current = phase === p;
@@ -489,6 +500,34 @@ const AWARDS = [
 function AwardsSection() {
   return (
     <Section id="awards" emoji="🏆" title="جوایز">
+      <div>
+        <div className="flex items-baseline justify-between gap-2 mb-3">
+          <h3 className="font-black text-brand-navy">جایزهٔ نقدی نهایی</h3>
+          <span className="chip-navy !text-xs">مجموعاً {fa(CASH_PRIZE_TOTAL_MILLION_TOMAN, { sep: true })} میلیون تومان</span>
+        </div>
+        <div className="overflow-x-auto -mx-1">
+          <table className="w-full text-sm min-w-[420px]">
+            <caption className="sr-only">فهرست جوایز نقدی و مبلغ هرکدام</caption>
+            <thead>
+              <tr className="text-right text-brand-slate border-b border-brand-mist">
+                <th scope="col" className="px-3 py-2 font-bold">عنوان جایزه</th>
+                <th scope="col" className="px-3 py-2 font-bold">مبلغ (میلیون تومان)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {PRIZES.map((p) => (
+                <tr key={p.key} className="border-b border-brand-mist/60 last:border-0">
+                  <td className="px-3 py-2 font-bold text-brand-navy">{p.label}</td>
+                  <td className="px-3 py-2 fa-num text-brand-cyan-dark font-black">{fa(p.amountMillion, { sep: true })}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 text-xs text-brand-slate">دسته‌بندی و مبلغ دقیق جوایز ممکن است تا شروع مسابقه توسط برگزارکننده به‌روزرسانی شود.</p>
+      </div>
+
+      <h3 className="font-black text-brand-navy mt-6 mb-1">نشان‌های درون‌بازی</h3>
       <div className="grid sm:grid-cols-2 gap-3 stagger">
         {AWARDS.map((a) => (
           <div key={a.label} className="rounded-2xl border border-brand-mist p-4 flex items-start gap-3">
@@ -517,6 +556,7 @@ function RulesSection() {
           <>سقف {fa(DEFAULTS.maxPerTarget)} سکه از هر نفر روی هر ایده یا محصول، تا سرمایه بین تیم‌های بیشتری پخش شود.</>,
           <>هرگونه خرید/سرمایه‌گذاری متقابل زیاد بین دو تیم (در مجموع بیش از {fa(DEFAULTS.collusionThreshold)} سکه) به‌صورت خودکار برای بررسی برگزارکننده علامت می‌خورد؛ این تبانی مشکوک تلقی می‌شود.</>,
           "همهٔ تراکنش‌ها در دفتر کل عمومی ثبت می‌شوند و هر بازیکن می‌تواند سابقهٔ کیف پول خودش و فروش تیم‌های دیگر را ببیند.",
+          "ابزارهای هوش مصنوعی متیس و آتنا در اختیار همهٔ شرکت‌کننده‌ها قرار می‌گیرد؛ دسترسی بلافاصله بعد از تکمیل تیم‌بندی (پایان فاز ثبت‌نام) فعال می‌شود، نه از همان ابتدا.",
           "برگزارکننده می‌تواند در مواقع خاص مقادیر پیش‌فرض (مثل نرخ جریمه یا سقف سرمایه‌گذاری) را تغییر دهد؛ همین صفحه همیشه مقادیر فعلی را نشان می‌دهد.",
         ]}
       />

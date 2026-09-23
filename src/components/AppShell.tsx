@@ -9,6 +9,7 @@ import { fa, duration } from "@/lib/persian";
 import { Avatar } from "./Avatar";
 import { NotificationBell } from "./NotificationBell";
 import { ThemeToggle } from "./ThemeToggle";
+import { AskAgent } from "./AskAgent";
 
 type ShellUser = { id: string; nickname: string; isAdmin: boolean; seedWallet: number; buyWallet: number; teamName: string | null; avatarSeed: string };
 
@@ -191,6 +192,8 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
       <footer className="border-t border-brand-mist py-6 px-4 text-center text-xs text-brand-slate">
         میدان بنیان‌گذاران تپسل · روز برنامه‌نویس {fa(1405, { sep: false })}
       </footer>
+
+      <AskAgent />
     </div>
   );
 }

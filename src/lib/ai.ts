@@ -7,7 +7,9 @@ import Anthropic from "@anthropic-ai/sdk";
 export function aiClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
-  return new Anthropic({ apiKey: key });
+  // ANTHROPIC_BASE_URL اختیاری است: برای هدایت به یک گیت‌وی سازگار (مثل متیس) به‌جای api.anthropic.com مستقیم.
+  const baseURL = process.env.ANTHROPIC_BASE_URL || undefined;
+  return new Anthropic({ apiKey: key, baseURL });
 }
 
 export const AI_MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5";
@@ -30,6 +32,26 @@ export async function askText(system: string, user: string, maxTokens = 1024): P
     return text || null;
   } catch (e) {
     console.error("AI error", e);
+    return null;
+  }
+}
+
+/** گفت‌وگوی چندنوبتی (برای دستیار سؤال‌وجواب)؛ در نبود کلید یا خطا، null */
+export async function askChat(system: string, messages: { role: "user" | "assistant"; content: string }[], maxTokens = 512): Promise<string | null> {
+  const client = aiClient();
+  if (!client) return null;
+  try {
+    const res = await client.messages.create({
+      model: AI_MODEL,
+      max_tokens: maxTokens,
+      system: `${FA_SYSTEM}\n\n${system}`,
+      messages,
+    });
+    if (res.stop_reason === "refusal") return null;
+    const text = res.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("\n").trim();
+    return text || null;
+  } catch (e) {
+    console.error("AI chat error", e);
     return null;
   }
 }
