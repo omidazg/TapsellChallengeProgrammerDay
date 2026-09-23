@@ -51,3 +51,8 @@ dev.db*
 loadtest-report-*.json
 loadtest-cookies*.json
 *-cookies.json
+
+# خروجی‌های Playwright (اسکرین‌شات/trace/گزارش HTML اجراهای محلی)
+/test-results/
+/playwright-report/
+/blob-report/
