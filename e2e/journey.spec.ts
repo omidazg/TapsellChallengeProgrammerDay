@@ -8,14 +8,16 @@ import { ADMIN_EMAIL, ADMIN_PASSWORD, login, PASSWORD, registerUser, setPhaseVia
  * این تست عمداً سنگین و ترتیبی است (workers: 1 در playwright.config.ts) چون فاز
  * بازی یک وضعیت سراسری است. هر مرحله را با getByRole/getByLabel پیدا می‌کند
  * (کار a11y افزودن label به فرم‌ها این را ممکن کرده).
- *
- * نکته: طبق دستور محیط، این مجموعه در این نشست اجرا نشده (کمبود RAM برای
- * build/start)؛ فقط با `npx playwright test --list` اعتبارسنجی شده است.
  */
 
 test.describe.configure({ mode: "serial" });
 
 test("full journey: register → team → idea → phases → invest → buy → bid → results", async ({ page, browser }) => {
+  // این یک تست نیست، یک سفر هشت‌مرحله‌ای است: سه کانتکست مرورگر، دو ثبت‌نام کامل
+  // از ویزارد پنج‌مرحله‌ای، و چند بار جابه‌جایی فاز از پنل ادمین. مهلت پیش‌فرض
+  // ۳۰ ثانیه حتی به ساخت تیم‌ها هم نمی‌رسد.
+  test.setTimeout(5 * 60 * 1000);
+
   // ---------- ۱) ثبت‌نام دو تیم (تیم من + تیم رقیب برای سرمایه‌گذاری/خرید متقابل) ----------
   const founderEmail = uniqueEmail("founder");
   await registerUser(page, { email: founderEmail, nickname: "بنیان‌گذار۱" });
@@ -25,7 +27,8 @@ test("full journey: register → team → idea → phases → invest → buy →
   const teamName = `تیم E2E ${Date.now()}`;
   await page.getByLabel("اسم تیم").fill(teamName);
   await page.getByRole("button", { name: "ساخت تیم" }).click();
-  await expect(page.getByText(teamName)).toBeVisible();
+  // اسم تیم هم در h1 (سربرگ صفحه) و هم در h2 (کارت تیم) می‌آید؛ روی سربرگ اصلی تکیه می‌کنیم تا strict mode نشکند.
+  await expect(page.getByRole("heading", { name: teamName, level: 1 })).toBeVisible();
 
   // تیم رقیب، در یک کانتکست مرورگر جدا (کوکی‌های جدا)
   const rivalContext = await browser.newContext();
@@ -35,7 +38,7 @@ test("full journey: register → team → idea → phases → invest → buy →
   const rivalTeamName = `تیم رقیب E2E ${Date.now()}`;
   await rivalPage.getByLabel("اسم تیم").fill(rivalTeamName);
   await rivalPage.getByRole("button", { name: "ساخت تیم" }).click();
-  await expect(rivalPage.getByText(rivalTeamName)).toBeVisible();
+  await expect(rivalPage.getByRole("heading", { name: rivalTeamName, level: 1 })).toBeVisible();
 
   // ---------- ادمین: فاز را به «اتاق ایده» می‌برد ----------
   const adminContext = await browser.newContext();
@@ -82,14 +85,20 @@ test("full journey: register → team → idea → phases → invest → buy →
   await rivalPage.getByLabel("نام محصول").fill("بازارچهٔ دفتر");
   await rivalPage.getByLabel("تگ‌لاین").fill("خرید و فروش ساده بین همکاران");
   await rivalPage.getByLabel("توضیح محصول").fill("یک صفحهٔ آگهی داخلی برای وسایل دست‌دوم همکاران.");
-  const imageInput = rivalPage.getByPlaceholder("https://picsum.photos/seed/.../800/500");
-  for (let i = 0; i < 3; i++) {
-    await imageInput.fill(`https://picsum.photos/seed/e2e-${i}/800/500`);
-    await rivalPage.getByRole("button", { name: "افزودن تصویر" }).click();
-  }
-  await rivalPage.getByRole("button", { name: "ثبت نهایی ایده" }).click().catch(() => {});
-  // دکمهٔ ثبت نهایی در فرم ساخت محصول (نه فرم ایده): نام مشابه ندارد، جدا کلیک می‌کنیم
-  await rivalPage.getByRole("button", { name: /ثبت نهایی|تحلیل/ }).first().click().catch(() => {});
+  // چک‌لیست «ثبت نهایی» این سه را هم لازم دارد (lib/product-utils.ts → readyToSubmit)؛
+  // بدون آن‌ها دکمه با «همهٔ موارد چک‌لیست را کامل کن» رد می‌شود و محصول در بازار ظاهر نمی‌شود.
+  await rivalPage.getByLabel("لینک دمو").fill("https://example.com/demo");
+  await rivalPage.getByLabel("لینک تیزر (یوتیوب، آپارات یا mp4)").fill("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+  await rivalPage.getByLabel("نام نسخهٔ ویژه").fill("نسخهٔ طلایی");
+  // فرم ساخت حداقل سه تصویر می‌خواهد. دکمهٔ «تصویر تصادفی» دقیقاً برای همین است
+  // و از پرکردن دستی ورودی URL ساده‌تر و پایدارتر است.
+  const randomImage = rivalPage.getByRole("button", { name: "تصویر تصادفی" });
+  for (let i = 0; i < 3; i++) await randomImage.click();
+
+  await rivalPage.getByRole("button", { name: "ثبت نهایی محصول" }).click();
+  // اینجا صریح assert می‌کنیم: اگر ثبت نهایی رد شود، محصول در فاز بعد وارد بازار
+  // نمی‌شود و تست با خطای گمراه‌کنندهٔ «محصول در بازار پیدا نشد» می‌افتد.
+  await expect(rivalPage.getByText("محصول ثبت نهایی شده است.")).toBeVisible({ timeout: 30_000 });
 
   await setPhaseViaAdmin(adminPage, "روز بازار");
 
@@ -111,7 +120,14 @@ test("full journey: register → team → idea → phases → invest → buy →
   // ---------- ۹) پایان بازی و تسویه ----------
   await setPhaseViaAdmin(adminPage, "پایان بازی");
   await adminPage.goto("/admin/settlement");
-  await adminPage.getByRole("button", { name: "تسویهٔ نهایی" }).click();
+  // ورود به فاز «پایان بازی» خودش تسویه را اجرا می‌کند (lib/phase-transition.ts)،
+  // پس معمولاً دکمه همین‌جا غیرفعال است. اگر به هر دلیلی نشده بود، دستی می‌زنیم.
+  const settleButton = adminPage.getByRole("button", { name: "تسویهٔ نهایی" });
+  if (await settleButton.isEnabled()) {
+    await settleButton.click();
+    await expect(adminPage.getByText(/تسویه انجام شد|از قبل تسویه شده بود/)).toBeVisible({ timeout: 30_000 });
+  }
+  await expect(adminPage.getByText("تسویه شد")).toBeVisible();
 
   // ---------- ۱۰) نتایج ----------
   await page.goto("/results");

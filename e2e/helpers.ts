@@ -61,17 +61,30 @@ export async function registerUser(
   await page.goto("/team");
 }
 
-/** ورود با ایمیل/رمز از طریق /login */
+/**
+ * ورود با ایمیل/رمز از طریق /login.
+ * تا وقتی از /login خارج نشده‌ایم برنمی‌گردد: وگرنه یک `goto` بلافاصله بعدی با
+ * ست‌شدن کوکی نشست مسابقه می‌دهد و صفحهٔ محافظت‌شده دوباره به /login برمی‌گردد.
+ */
 export async function login(page: Page, email: string, password: string) {
   await page.goto("/login");
   await page.getByLabel("ایمیل").fill(email);
   await page.getByLabel("رمز عبور").fill(password);
   await page.getByRole("button", { name: "ورود" }).click();
+  await page.waitForURL((url) => !url.pathname.startsWith("/login"));
 }
 
 /** فاز بازی را از طریق پنل برگزارکننده (/admin) تغییر می‌دهد؛ فرض بر این است که صفحه از قبل به‌عنوان ادمین لاگین است. */
 export async function setPhaseViaAdmin(page: Page, phaseLabel: string) {
   await page.goto("/admin");
-  await page.getByLabel("فاز").selectOption({ label: phaseLabel });
+  // exact: true لازم است — کارت زمان‌بندی چند فیلد دیگر هم دارد که برچسبشان
+  // شامل «فاز» است («پیشروی خودکار فاز»، «مدت فاز ... (ساعت)») و بدون آن
+  // strict mode با هفت تطبیق می‌شکند.
+  const select = page.getByLabel("فاز", { exact: true });
+  await select.selectOption({ label: phaseLabel });
   await page.getByRole("button", { name: "اعمال" }).click();
+  // تا وقتی سرور فاز را ذخیره نکرده برنگرد؛ کانتکست‌های دیگر بلافاصله بعد از
+  // این تابع به صفحه‌های قفل‌شده با فاز می‌روند.
+  await expect(select).toHaveValue(/.+/);
+  await expect(page.getByRole("button", { name: "در حال اعمال…" })).toBeHidden();
 }
