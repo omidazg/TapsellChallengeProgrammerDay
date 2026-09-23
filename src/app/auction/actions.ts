@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { placeBid, activateSecondWind } from "@/lib/auction";
+import { rateLimit, rateLimitMessage } from "@/lib/rate-limit";
 
 const bidSchema = z.object({
   auctionId: z.string().min(1),
@@ -12,6 +13,8 @@ const bidSchema = z.object({
 
 export async function placeBidAction(auctionId: string, amount: number) {
   const user = await requireUser();
+  const limit = rateLimit("auction:bid", user.id, { limit: 60, windowMs: 60 * 1000 });
+  if (!limit.ok) return { error: rateLimitMessage(limit.retryAfterSec) };
   const parsed = bidSchema.safeParse({ auctionId, amount });
   if (!parsed.success) return { error: "مبلغ پیشنهاد نامعتبر است" };
   try {

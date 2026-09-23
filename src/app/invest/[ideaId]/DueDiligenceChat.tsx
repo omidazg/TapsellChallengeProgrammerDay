@@ -32,7 +32,7 @@ export function DueDiligenceChat({ ideaId, chats, aiOff = false }: { ideaId: str
       <h3 className="font-black text-brand-navy mb-4">چت بررسی دقیق</h3>
 
       {aiOff && <div className="mb-4"><AiUnavailable /></div>}
-      {state.aiUnavailable && <Alert kind="info">تحلیل‌گر هوش مصنوعی در دسترس نیست.</Alert>}
+      {state.aiUnavailable && <div className="mb-4"><AiUnavailable reason={state.aiReason ?? "off"} /></div>}
       {state.error && <Alert kind="error">{state.error}</Alert>}
 
       {chats.length === 0 ? (

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { hashPassword, isEmailAllowed, createSession, getSessionUserId } from "@/lib/auth";
 import { getPhase, getSettingInt } from "@/lib/phase";
 import { DEFAULTS, ROLES, POWERS } from "@/lib/constants";
+import { rateLimit, rateLimitMessage, clientIp, REGISTER_IP_RULE } from "@/lib/rate-limit";
 import { DEPARTMENTS } from "./departments";
 import { safeNext } from "./next";
 
@@ -48,6 +49,10 @@ export async function registerAction(input: RegisterInput): Promise<{ error: str
   if (phase !== "REGISTRATION") {
     return { error: "ثبت‌نام بسته شده است." };
   }
+
+  const ip = await clientIp();
+  const ipLimit = rateLimit("register:ip", ip, REGISTER_IP_RULE());
+  if (!ipLimit.ok) return { error: rateLimitMessage(ipLimit.retryAfterSec) };
 
   const parsed = registerSchema.safeParse(input);
   if (!parsed.success) {
@@ -102,7 +107,7 @@ export async function registerAction(input: RegisterInput): Promise<{ error: str
     return { error: "ثبت‌نام انجام نشد؛ دوباره تلاش کن." };
   }
 
-  await createSession(userId);
+  await createSession(userId, 0);
   // بدون next: به صفحهٔ اصلی با پرچم welcome=1 برو تا راهنمای شروع (OnboardingTour) یک‌بار نمایش داده شود.
   // اگر next وجود دارد، طبق قرارداد safeNext همان مسیر محترم شمرده می‌شود و پرچم welcome رد می‌شود.
   redirect(safeNext(input.next) ?? "/?welcome=1");

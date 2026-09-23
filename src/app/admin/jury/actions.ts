@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
+import { audit } from "@/lib/audit";
 
 export type JuryActionState = { error?: string; ok?: boolean };
 
@@ -14,7 +15,7 @@ const scoreSchema = z.object({
 });
 
 export async function saveJuryScoreAction(prevState: JuryActionState, formData: FormData): Promise<JuryActionState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const parsed = scoreSchema.safeParse({
     productId: formData.get("productId"),
     juryQuality: formData.get("juryQuality"),
@@ -22,9 +23,17 @@ export async function saveJuryScoreAction(prevState: JuryActionState, formData: 
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "نمره باید بین ۰ تا ۱۰۰ باشد" };
 
+  const before = await prisma.product.findUnique({
+    where: { id: parsed.data.productId },
+    select: { juryQuality: true, juryTeaser: true },
+  });
   await prisma.product.update({
     where: { id: parsed.data.productId },
     data: { juryQuality: parsed.data.juryQuality, juryTeaser: parsed.data.juryTeaser },
+  });
+  await audit(admin.id, "jury.score", parsed.data.productId, {
+    before,
+    after: { juryQuality: parsed.data.juryQuality, juryTeaser: parsed.data.juryTeaser },
   });
   revalidatePath("/admin/jury");
   revalidatePath("/leaderboard");

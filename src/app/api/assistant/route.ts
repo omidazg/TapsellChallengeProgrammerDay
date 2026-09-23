@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { askChat } from "@/lib/ai";
 import { buildAssistantContext } from "@/lib/assistant-context";
+import { ASSISTANT_IP_RULE, rateLimit, rateLimitMessage } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -13,28 +14,17 @@ const bodySchema = z.object({
   messages: z.array(messageSchema).min(1).max(12),
 });
 
-// محدودیت نرخ سادهٔ در-حافظه: هر IP حداکثر ۱۰ پیام در دقیقه (سرور تک‌نمونه‌ای است).
-const RATE_LIMIT = 10;
-const RATE_WINDOW_MS = 60_000;
-type RateGlobal = typeof globalThis & { __assistantRate?: Map<string, { count: number; resetAt: number }> };
-const g = globalThis as RateGlobal;
-const rateStore: Map<string, { count: number; resetAt: number }> = (g.__assistantRate ??= new Map());
-
-function isRateLimited(ip: string): boolean {
-  const now = Date.now();
-  const entry = rateStore.get(ip);
-  if (!entry || entry.resetAt <= now) {
-    rateStore.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return false;
-  }
-  entry.count += 1;
-  return entry.count > RATE_LIMIT;
-}
-
 export async function POST(req: NextRequest) {
+  // از همان محدودکنندهٔ مشترک پروژه استفاده می‌شود: در روز رویداد همهٔ
+  // شرکت‌کننده‌ها پشت یک IP (NAT سالن) هستند و سقف ۱۰ در دقیقه عملاً
+  // دستیار را برای کل سالن می‌بست.
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-  if (isRateLimited(ip)) {
-    return NextResponse.json({ error: "درخواست زیاد؛ کمی صبر کن و دوباره بپرس." }, { status: 429, headers: { "Cache-Control": "no-store" } });
+  const limited = rateLimit("assistant", ip, ASSISTANT_IP_RULE());
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: rateLimitMessage(limited.retryAfterSec) },
+      { status: 429, headers: { "Cache-Control": "no-store", "Retry-After": String(limited.retryAfterSec) } }
+    );
   }
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));

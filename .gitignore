@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but the template (no secrets, all values empty/defaults) must be tracked,
+# otherwise a fresh clone and deploy/deploy.sh have nothing to copy.
+!.env.example
 
 # vercel
 .vercel
@@ -43,3 +46,8 @@ dev.db*
 
 # local uploaded/optimized images (see src/lib/uploads.ts, UPLOAD_DIR)
 /data/uploads
+
+# خروجی‌های تست بار (کوکی‌ها = نشست معتبر؛ هرگز کامیت نشوند)
+loadtest-report-*.json
+loadtest-cookies*.json
+*-cookies.json

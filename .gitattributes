@@ -1,2 +1,16 @@
+# یکدست‌کردن پایان خط‌ها: همه‌جا LF در مخزن (هشدارهای CRLF ویندوز را حذف می‌کند)
 * text=auto eol=lf
+
+# فایل‌های دودویی دست نخورند
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff2 binary
+*.db binary
+*.gz binary
+*.xlsx binary
+
+# اسکریپت‌های شل همیشه LF (وگرنه روی سرور اجرا نمی‌شوند)
 *.sh text eol=lf

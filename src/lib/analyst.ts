@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { prisma } from "./db";
 import { askJson } from "./ai";
 
@@ -48,9 +49,41 @@ export async function runAnalyst(ideaId: string): Promise<AnalystResult | null> 
   }
 }
 
+/** محتوای مؤثر ایده برای هش کش؛ هر تغییری در این فیلدها باعث تحلیل مجدد می‌شود. */
+function ideaContentHash(idea: {
+  title: string;
+  oneLiner: string;
+  problem: string;
+  audience: string;
+  buildPlan: string;
+  fundingCap: number;
+  revenueShare: number;
+}): string {
+  const content = [idea.title, idea.oneLiner, idea.problem, idea.audience, idea.buildPlan, idea.fundingCap, idea.revenueShare].join("␟");
+  return createHash("sha256").update(content).digest("hex");
+}
+
+function analystCacheKey(ideaId: string) {
+  return `ai:analyst:${ideaId}`;
+}
+
+type AnalystCacheEntry = { hash: string; result: AnalystResult; at: string };
+
 async function runAnalystUnsafe(ideaId: string): Promise<AnalystResult | null> {
   const idea = await prisma.idea.findUnique({ where: { id: ideaId } });
   if (!idea) return null;
+
+  const hash = ideaContentHash(idea);
+  const cacheKey = analystCacheKey(ideaId);
+  const cachedRow = await prisma.setting.findUnique({ where: { key: cacheKey } });
+  if (cachedRow) {
+    try {
+      const cached = JSON.parse(cachedRow.value) as AnalystCacheEntry;
+      if (cached.hash === hash) return cached.result;
+    } catch {
+      // کش خراب؛ دوباره تولید می‌شود
+    }
+  }
 
   const user = [
     `عنوان: ${idea.title}`,
@@ -73,6 +106,8 @@ async function runAnalystUnsafe(ideaId: string): Promise<AnalystResult | null> {
   // اگر هیچ نمرهٔ معتبری برنگشت، چیزی ذخیره نمی‌کنیم.
   if (clarity === null && feasibility === null && novelty === null && !summary) return null;
 
+  const result: AnalystResult = { clarity: clarity ?? 0, feasibility: feasibility ?? 0, novelty: novelty ?? 0, summary };
+
   await prisma.idea.update({
     where: { id: ideaId },
     data: {
@@ -83,5 +118,12 @@ async function runAnalystUnsafe(ideaId: string): Promise<AnalystResult | null> {
     },
   });
 
-  return { clarity: clarity ?? 0, feasibility: feasibility ?? 0, novelty: novelty ?? 0, summary };
+  const entry: AnalystCacheEntry = { hash, result, at: new Date().toISOString() };
+  await prisma.setting.upsert({
+    where: { key: cacheKey },
+    create: { key: cacheKey, value: JSON.stringify(entry) },
+    update: { value: JSON.stringify(entry) },
+  });
+
+  return result;
 }

@@ -3,10 +3,12 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
-import { PHASES, type Phase } from "@/lib/phase";
+import { PHASES, type Phase, getPhase } from "@/lib/phase";
 import { transitionTo } from "@/lib/phase-transition";
 import { settleGame } from "@/lib/settlement";
-import { setSetting, SETTING_KEYS } from "@/lib/admin";
+import { setSetting, getSettingsMap } from "@/lib/admin";
+import { parseGameSettings, saveSettings } from "@/lib/settings-schema";
+import { audit } from "@/lib/audit";
 
 export type AdminActionState = { error?: string; ok?: boolean };
 
@@ -17,7 +19,7 @@ const phaseSchema = z.object({
 
 /** تغییر فاز بازی و زمان پایان آن */
 export async function setPhaseAction(prevState: AdminActionState, formData: FormData): Promise<AdminActionState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
 
   const parsed = phaseSchema.safeParse({
     phase: formData.get("phase"),
@@ -28,8 +30,15 @@ export async function setPhaseAction(prevState: AdminActionState, formData: Form
   const endsAt = parsed.data.endsAt ? new Date(parsed.data.endsAt) : null;
   if (parsed.data.endsAt && Number.isNaN(endsAt?.getTime())) return { error: "زمان پایان نامعتبر است" };
 
+  const before = await getPhase();
+
   // transitionTo تنها نقطهٔ ورود تغییر فاز است: اعلان می‌فرستد و در CLOSED تسویه را اجرا می‌کند.
   await transitionTo(parsed.data.phase, endsAt);
+  await audit(admin.id, "phase.set", parsed.data.phase, {
+    from: before.phase,
+    to: parsed.data.phase,
+    endsAt: endsAt ? endsAt.toISOString() : null,
+  });
   revalidatePath("/admin");
   revalidatePath("/admin/settlement");
   revalidatePath("/results");
@@ -45,9 +54,14 @@ export type SettleActionState = AdminActionState & {
 
 /** اجرای دستی تسویهٔ نهایی توسط برگزارکننده (ایدمپوتنت). */
 export async function settleNowAction(): Promise<SettleActionState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   try {
     const result = await settleGame();
+    await audit(admin.id, "settlement.run", "", {
+      alreadySettled: result.alreadySettled,
+      dividendsPaid: result.dividendsPaid,
+      teams: result.teams,
+    });
     revalidatePath("/admin/settlement");
     revalidatePath("/results");
     revalidatePath("/wallet");
@@ -64,39 +78,16 @@ export async function settleNowAction(): Promise<SettleActionState> {
   }
 }
 
-const settingsSchema = z.object({
-  seed_wallet: z.coerce.number().int().min(0),
-  buy_wallet: z.coerce.number().int().min(0),
-  max_per_target: z.coerce.number().int().min(1),
-  penalty_per_coin: z.coerce.number().min(0),
-  bid_increment: z.coerce.number().int().min(1),
-  auction_duration_sec: z.coerce.number().int().min(10),
-  market_starts_at: z
-    .string()
-    .optional()
-    .default("")
-    .refine((v) => v === "" || !Number.isNaN(new Date(v).getTime()), "زمان شروع روز بازار نامعتبر است"),
-});
-
-/** ذخیرهٔ تنظیمات قابل‌تغییر بازی */
+/** ذخیرهٔ تنظیمات قابل‌تغییر بازی (اسکیمای مشترک در lib/settings-schema.ts) */
 export async function updateSettingsAction(prevState: AdminActionState, formData: FormData): Promise<AdminActionState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
 
-  const raw: Record<string, string> = {};
-  for (const key of SETTING_KEYS) {
-    const value = formData.get(key);
-    // فیلد خالی/غایب نباید بی‌سروصدا صفر شود
-    if (typeof value !== "string" || (value.trim() === "" && key !== "market_starts_at")) {
-      return { error: "همهٔ مقادیر عددی را پر کن" };
-    }
-    raw[key] = value.trim();
-  }
-  const parsed = settingsSchema.safeParse(raw);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "ورودی نامعتبر است" };
+  const parsed = parseGameSettings(formData);
+  if (!parsed.ok) return { error: parsed.error };
 
-  await Promise.all(
-    SETTING_KEYS.map((key) => setSetting(key, String(parsed.data[key as keyof typeof parsed.data])))
-  );
+  const before = await getSettingsMap();
+  const after = await saveSettings(parsed.data, setSetting);
+  await audit(admin.id, "settings.update", "", { before, after });
   revalidatePath("/admin");
   return { ok: true };
 }

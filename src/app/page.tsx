@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db";
 import { PhaseCountdown } from "./PhaseCountdown";
 import { PhaseTimeline } from "@/components/PhaseTimeline";
 import { OnboardingTour } from "@/components/OnboardingTour";
+import { LiveFeed } from "@/components/LiveFeed";
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
   const [{ welcome }, user, { phase, endsAt }] = await Promise.all([searchParams, getCurrentUser(), getPhase()]);
@@ -67,6 +68,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ w
         </div>
 
         <PhaseTimeline phase={phase} endsAt={endsAt ? endsAt.toISOString() : null} />
+
+        <LiveFeed />
 
         {user.team ? (
           <Link href="/team" className="card p-5 flex items-center justify-between gap-3 hover:shadow-lift transition anim-rise">

@@ -24,6 +24,13 @@ export default async function AdminExportPage() {
             <div className="text-xs text-brand-slate break-words">همهٔ تراکنش‌های کیف بذر، خرید و خزانه</div>
           </div>
         </a>
+        <a href="/admin/export/xlsx" className="card p-4 sm:p-6 flex items-center gap-3 hover:shadow-lift transition">
+          <span className="text-2xl" aria-hidden>📁</span>
+          <div>
+            <div className="font-black text-brand-navy">خروجی کامل اکسل (XLSX)</div>
+            <div className="text-xs text-brand-slate break-words">تیم‌ها و امتیازها، کاربران (بدون رمز)، ایده‌ها، سرمایه‌گذاری‌ها، خریدها، پیشنهادهای حراج و دفتر کل — در یک فایل با چند شیت</div>
+          </div>
+        </a>
       </Container>
     </>
   );

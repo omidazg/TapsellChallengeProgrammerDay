@@ -4,6 +4,8 @@ import { PageHeader, Container, Stat, Coin } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { ROLES, POWERS, type RoleKey, type PowerKey } from "@/lib/constants";
 import { fa } from "@/lib/persian";
+import { computeBadges } from "@/lib/badges";
+import { BadgeGrid } from "./BadgeGrid";
 import { EditProfileForm } from "./EditProfileForm";
 import { ShareCard } from "./ShareCard";
 
@@ -13,6 +15,7 @@ export default async function ProfilePage() {
   const user = await requireUser();
   const role = user.role as RoleKey;
   const power = user.power as PowerKey;
+  const badges = await computeBadges(user.id);
 
   return (
     <>
@@ -71,6 +74,11 @@ export default async function ProfilePage() {
                 nickname={user.nickname}
                 stats={{ coffee: user.coffee, bugs: user.bugs, sleep: user.sleep, confidence: user.confidence }}
               />
+            </div>
+            <div className="card p-6 anim-rise">
+              <h3 className="mb-1 text-lg font-black text-brand-navy">نشان‌ها</h3>
+              <p className="mb-4 text-sm text-brand-slate">نشان‌های روشن را گرفته‌ای؛ نشان‌های خاکستری هنوز قفل‌اند.</p>
+              <BadgeGrid badges={badges} />
             </div>
           </div>
         </div>

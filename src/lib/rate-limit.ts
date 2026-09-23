@@ -33,7 +33,7 @@ export function rateLimit(bucket: string, key: string, rule: RateRule): RateResu
   const now = Date.now();
   prune(now);
   const id = `${bucket}:${key}`;
-  const recent = (state.store.get(id) ?? []).filter((t) => now - t < rule.windowMs);
+  const recent = (state.store.get(id) ?? []).filter((t: number) => now - t < rule.windowMs);
   if (recent.length >= rule.limit) {
     state.store.set(id, recent);
     const retryAfterSec = Math.max(1, Math.ceil((recent[0] + rule.windowMs - now) / 1000));
@@ -43,6 +43,39 @@ export function rateLimit(bucket: string, key: string, rule: RateRule): RateResu
   state.store.set(id, recent);
   return { ok: true };
 }
+
+/**
+ * فقط بررسی می‌کند، بدون ثبت برخورد.
+ * برای جاهایی که می‌خواهیم تنها تلاش‌های ناموفق شمرده شوند (مثل ورود).
+ */
+export function rateLimitPeek(bucket: string, key: string, rule: RateRule): RateResult {
+  const now = Date.now();
+  const recent = (state.store.get(`${bucket}:${key}`) ?? []).filter((t: number) => now - t < rule.windowMs);
+  if (recent.length < rule.limit) return { ok: true };
+  return { ok: false, retryAfterSec: Math.max(1, Math.ceil((recent[0] + rule.windowMs - now) / 1000)) };
+}
+
+/**
+ * سقف‌هایی که در روز رویداد همهٔ شرکت‌کننده‌ها پشت یک IP (NAT سالن) هستند.
+ * با متغیر محیطی قابل تنظیم‌اند تا در صورت نیاز بدون تغییر کد بالا بروند.
+ */
+function envInt(name: string, fallback: number): number {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+/** ورود ناموفق از یک IP؛ چون کل سالن یک IP دارد، سقف بالاست */
+export const LOGIN_IP_RULE = (): RateRule => ({ limit: envInt("LOGIN_IP_RATE", 100), windowMs: 10 * 60 * 1000 });
+/** ورود ناموفق برای یک ایمیل؛ محافظ اصلی در برابر حدس رمز */
+export const LOGIN_EMAIL_RULE = (): RateRule => ({ limit: envInt("LOGIN_EMAIL_RATE", 8), windowMs: 10 * 60 * 1000 });
+/** ثبت‌نام از یک IP؛ در روز رویداد ده‌ها نفر از یک شبکه ثبت‌نام می‌کنند */
+export const REGISTER_IP_RULE = (): RateRule => ({ limit: envInt("REGISTER_IP_RATE", 150), windowMs: 60 * 60 * 1000 });
+/**
+ * دستیار سؤال‌وجواب: کل سالن پشت یک IP است، پس سقف per-IP باید بالا باشد.
+ * محافظ اصلی در برابر هزینه، سقف بودجهٔ روزانهٔ هوش مصنوعی است (lib/ai-budget.ts)،
+ * نه این شمارنده؛ این فقط جلوی سیل ناگهانی درخواست را می‌گیرد.
+ */
+export const ASSISTANT_IP_RULE = (): RateRule => ({ limit: envInt("ASSISTANT_IP_RATE", 200), windowMs: 60 * 1000 });
 
 /** پیام فارسی استاندارد برای پاسخ ردشده */
 export function rateLimitMessage(retryAfterSec: number): string {

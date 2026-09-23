@@ -16,6 +16,9 @@
 #      building the Dockerfile locally here is unreliable) and starts
 #      everything via `docker compose up -d`.
 #   4. Curls http://SERVER/api/phase as a smoke test.
+#
+# Only deploy between event phases (see docs/runbook-event-day.md) --
+# a mid-phase deploy still has a brief restart window.
 set -euo pipefail
 
 SERVER="${SERVER:?Set SERVER=user@host, e.g. SERVER=root@89.42.199.174}"

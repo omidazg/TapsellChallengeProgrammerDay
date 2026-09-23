@@ -1,4 +1,4 @@
-import { getSessionUserId } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
 import { auctionBroadcaster } from "@/lib/auction-events";
 
 // اتصال طولانی SSE؛ هرگز کش یا پیش‌رندر نشود.
@@ -12,8 +12,9 @@ const HEARTBEAT_MS = 15_000;
  * هر ۱۵ ثانیه یک کامنت heartbeat می‌رود تا پروکسی‌ها اتصال را نبندند.
  */
 export async function GET(request: Request) {
-  const userId = await getSessionUserId().catch(() => null);
-  if (!userId) {
+  // getCurrentUser (و نه فقط شناسهٔ توکن) تا نشست‌های باطل‌شده و کاربران مسدود رد شوند
+  const user = await getCurrentUser().catch(() => null);
+  if (!user) {
     return new Response("وارد نشده‌ای", { status: 401, headers: { "Cache-Control": "no-store" } });
   }
 

@@ -1,4 +1,5 @@
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getPhase } from "@/lib/phase";
@@ -6,6 +7,8 @@ import { DEFAULTS, SCORE_WEIGHTS } from "@/lib/constants";
 import { computeScoresCached, computeAwards, getSettingFloat } from "@/lib/scoring";
 import { defaultConfig, unspentPenalty } from "@/lib/economy/engine";
 import { getSettledAt, loadSettledOutput } from "@/lib/settlement";
+import { loadTimeline } from "@/lib/timeline";
+import { TrendChart } from "@/components/TrendChart";
 import { PageHeader, Container, Stat, Locked, Empty, Alert } from "@/components/ui";
 import { fa, coins, jdatetime } from "@/lib/persian";
 
@@ -32,7 +35,7 @@ export default async function ResultsPage() {
   const settledAt = await getSettledAt();
   const settled = !!settledAt;
 
-  const [output, teams, users, penaltyPerCoin, investments, purchases, myDividendRows] = await Promise.all([
+  const [output, teams, users, penaltyPerCoin, investments, purchases, myDividendRows, timeline] = await Promise.all([
     settled ? loadSettledOutput() : computeScoresCached(),
     prisma.team.findMany({ select: { id: true, name: true } }),
     prisma.user.findMany({ select: { id: true, nickname: true } }),
@@ -40,6 +43,7 @@ export default async function ResultsPage() {
     prisma.investment.findMany({ where: { userId: user.id }, include: { idea: { include: { team: true } } } }),
     prisma.purchase.findMany({ where: { userId: user.id }, include: { product: { include: { team: true } } } }),
     prisma.ledgerEntry.findMany({ where: { userId: user.id, reason: "DIVIDEND", wallet: "BUY" } }),
+    loadTimeline(),
   ]);
 
   const teamNames = new Map(teams.map((t) => [t.id, t.name]));
@@ -84,6 +88,14 @@ export default async function ResultsPage() {
   ]);
 
   const showConfetti = settled && !!myTeam && (myTeam.rank ?? 99) <= 3;
+
+  // فهرست کامل تیم‌ها به ترتیب رتبه، برای جدول رده‌بندی و انتخاب ۶ تیم برتر نمودار روند
+  const ranked = [...output.teams].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
+  const zeroSeries = new Array(timeline.bucketEndsAt.length).fill(0);
+  const trendTeams = ranked.slice(0, 6).map((t) => {
+    const s = timeline.series.find((ts) => ts.teamId === t.teamId);
+    return { teamId: t.teamId, name: teamNames.get(t.teamId) ?? t.teamId, sales: s?.sales ?? zeroSeries, capital: s?.capital ?? zeroSeries };
+  });
 
   return (
     <>
@@ -217,6 +229,46 @@ export default async function ResultsPage() {
               </table>
             </div>
           )}
+        </section>
+
+        <section>
+          <h2 className="text-lg font-black text-brand-navy mb-3">رتبه‌بندی نهایی همهٔ تیم‌ها</h2>
+          <div className="card overflow-x-auto anim-rise">
+            <table className="w-full text-sm min-w-[560px]">
+              <caption className="sr-only">رتبه‌بندی نهایی همهٔ تیم‌ها</caption>
+              <thead>
+                <tr className="text-right text-brand-slate border-b border-brand-mist">
+                  <th scope="col" className="px-4 py-3 font-bold">رتبه</th>
+                  <th scope="col" className="px-4 py-3 font-bold">تیم</th>
+                  <th scope="col" className="px-4 py-3 font-bold">فروش خالص</th>
+                  <th scope="col" className="px-4 py-3 font-bold">سرمایهٔ خارجی</th>
+                  <th scope="col" className="px-4 py-3 font-bold">امتیاز کل</th>
+                  <th scope="col" className="px-4 py-3 font-bold">گزارش</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ranked.map((t) => (
+                  <tr key={t.teamId} className={`border-b border-brand-mist last:border-0 ${t.teamId === user.teamId ? "bg-brand-ice" : ""}`}>
+                    <td className="px-4 py-3 font-black fa-num text-brand-navy">{fa(t.rank ?? 0)}</td>
+                    <td className="px-4 py-3 font-bold text-brand-navy">{teamNames.get(t.teamId) ?? t.teamId}</td>
+                    <td className="px-4 py-3 fa-num">{fa(t.netSales)}</td>
+                    <td className="px-4 py-3 fa-num">{fa(t.externalCapital)}</td>
+                    <td className="px-4 py-3 font-black fa-num">{fa(Math.round(t.total))}</td>
+                    <td className="px-4 py-3">
+                      <Link href={`/results/${t.teamId}/report`} className="text-brand-cyan-dark hover:underline font-bold">
+                        مشاهدهٔ گزارش
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-lg font-black text-brand-navy mb-3">روند بازار</h2>
+          <TrendChart bucketEndsAt={timeline.bucketEndsAt} teams={trendTeams} />
         </section>
 
         <section>

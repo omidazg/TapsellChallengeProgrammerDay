@@ -4,22 +4,11 @@
  * همهٔ ردیف‌های ساخته‌شده در پایان پاک می‌شوند.
  */
 import "dotenv/config";
-import { prisma } from "../src/lib/db";
-import { hashPassword } from "../src/lib/auth";
-import {
-  notifyUser,
-  notifyTeam,
-  notifyAll,
-  notifyPhaseChange,
-  listNotifications,
-  unreadCount,
-  markAllRead,
-  markRead,
-  createAnnouncement,
-  getActiveAnnouncements,
-  toggleAnnouncement,
-  deleteAnnouncement,
-} from "../src/lib/notifications";
+import { createTempDb, isTempDatabaseUrl } from "./lib/temp-db";
+
+// DATABASE_URL باید پیش از import شدن src/lib/db تنظیم شود؛ اگر از قبل به یک
+// پایگاه‌دادهٔ موقت اشاره نمی‌کرد، اینجا یکی می‌سازیم تا هرگز به dev.db وصل نشویم.
+const ownTempDb = isTempDatabaseUrl(process.env.DATABASE_URL) ? null : createTempDb("notif");
 
 const TAG = "smoke-notif-" + Date.now();
 const mail = (n: string) => `${TAG}-${n}@tapsell.ir`;
@@ -36,19 +25,36 @@ function check(name: string, cond: boolean, extra = "") {
   }
 }
 
-async function makeUser(n: string) {
-  return prisma.user.create({
-    data: {
-      email: mail(n),
-      passwordHash: await hashPassword("secret123"),
-      nickname: `آزمون ${n}`,
-      role: "BUILDER",
-      power: "HYPE",
-    },
-  });
-}
-
 async function main() {
+  const { prisma } = await import("../src/lib/db");
+  const { hashPassword } = await import("../src/lib/auth");
+  const {
+    notifyUser,
+    notifyTeam,
+    notifyAll,
+    notifyPhaseChange,
+    listNotifications,
+    unreadCount,
+    markAllRead,
+    markRead,
+    createAnnouncement,
+    getActiveAnnouncements,
+    toggleAnnouncement,
+    deleteAnnouncement,
+  } = await import("../src/lib/notifications");
+
+  async function makeUser(n: string) {
+    return prisma.user.create({
+      data: {
+        email: mail(n),
+        passwordHash: await hashPassword("secret123"),
+        nickname: `آزمون ${n}`,
+        role: "BUILDER",
+        power: "HYPE",
+      },
+    });
+  }
+
   const createdTeamIds = new Set<string>();
   const createdAnnouncementIds = new Set<string>();
   let allTestStart: Date | null = null;
@@ -135,7 +141,17 @@ async function main() {
     console.log(`  کاربر باقی‌مانده: ${leftUsers} — اعلان باقی‌مانده: ${leftNotifs}`);
     console.log(`\nنتیجه: ${pass} موفق، ${fail} ناموفق`);
   }
-  process.exit(fail === 0 ? 0 : 1);
+  await prisma.$disconnect();
+  return fail;
 }
 
-main();
+main()
+  .then((fail) => {
+    ownTempDb?.cleanup();
+    process.exit(fail === 0 ? 0 : 1);
+  })
+  .catch((e) => {
+    console.error(e);
+    ownTempDb?.cleanup();
+    process.exit(1);
+  });

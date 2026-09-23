@@ -63,6 +63,29 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setOpen هر بار از setOpenAt بازساخته می‌شود اما پایدار است
   }, [open]);
 
+  // بنر «نظرسنجی پایان بازی»: فقط وقتی فاز CLOSED است و کاربر هنوز پاسخ نداده.
+  // وضعیت به‌جای صفرشدن داخل افکت، از روی user/phase محاسبه می‌شود؛ هم setState همگام
+  // داخل افکت (هشدار react-hooks) حذف می‌شود و هم بنر قبل از رسیدن پاسخ سرور پرش نمی‌کند.
+  const [surveyAnswered, setSurveyAnswered] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!user || phase !== "CLOSED") return;
+    let cancelled = false;
+    fetch("/survey/status", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d && typeof d.answered === "boolean") setSurveyAnswered(d.answered);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user, phase]);
+  const surveyNudge = !!user && phase === "CLOSED" && surveyAnswered === false;
+
+  // نمای سالن (پروژکتور) تمام‌صفحه است و روی همه‌چیز می‌افتد؛ هدر/فوتر زیر آن
+  // فقط عناصر فوکوس‌پذیر پنهان می‌سازد. بعد از همهٔ هوک‌ها برمی‌گردیم تا قاعدهٔ هوک‌ها نشکند.
+  if (path === "/hall") return <>{children}</>;
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-brand-mist">
@@ -184,6 +207,14 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
       </header>
       {/* پس‌زمینهٔ تیرهٔ منوی موبایل — بیرون از header، چون backdrop-blur عناصر fixed داخلش را محصور می‌کند */}
       {user && open && <button type="button" aria-label="بستن منو" className="lg:hidden fixed inset-0 z-30 bg-brand-navy/30" onClick={() => setOpen(false)} />}
+
+      {surveyNudge && (
+        <div className="bg-brand-ice border-b border-brand-mist text-center px-3 py-2 text-xs sm:text-sm">
+          <Link href="/survey" className="font-bold text-brand-cyan-dark hover:underline">
+            📝 نظرسنجی پایان بازی — نظرت را بگو
+          </Link>
+        </div>
+      )}
 
       <main id="main" tabIndex={-1} className="flex-1 min-w-0 outline-none">
         {children}

@@ -8,6 +8,8 @@
  * `SCHEDULER_DISABLED=1` می‌توان کامل خاموشش کرد (مثلاً در تست یا build).
  */
 
+import type { Instrumentation } from "next";
+
 const INTERVAL_MS = 30_000;
 const FIRST_RUN_DELAY_MS = 5_000;
 
@@ -34,3 +36,33 @@ export async function register() {
 
   console.log(`[scheduler] instrumentation فعال شد؛ هر ${INTERVAL_MS / 1000} ثانیه اجرا می‌شود`);
 }
+
+/**
+ * قلاب خطای نکست‌جی‌اس (Node runtime؛ از v15 پایدار است) — برای خطاهای رندر/route handler
+ * که به مرزهای خطای معمولی (error.tsx) نرسیدند یا در همان سطح رخ دادند. فقط مسیر و متد
+ * لاگ/هشدار می‌شود؛ هیچ کوکی یا هدری (که می‌تواند حاوی سشن/سکرت باشد) ثبت نمی‌شود.
+ */
+export const onRequestError: Instrumentation.onRequestError = async (error, request, context) => {
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+
+  const { log } = await import("./lib/log");
+  const { alert } = await import("./lib/alert");
+
+  const err = error instanceof Error ? error : new Error(String(error));
+  const digest = typeof error === "object" && error !== null && "digest" in error ? String((error as { digest?: unknown }).digest) : undefined;
+
+  log.error("request_error", {
+    error: err,
+    digest,
+    path: request.path,
+    method: request.method,
+    routerKind: context.routerKind,
+    routeType: context.routeType,
+    routePath: context.routePath,
+  });
+
+  void alert("request_error", `خطا در ${request.method} ${request.path}`, {
+    digest,
+    routeType: context.routeType,
+  });
+};

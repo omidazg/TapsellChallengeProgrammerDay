@@ -1,0 +1,58 @@
+# Staging stack: a separate Compose project so it never touches production
+# containers, volumes or data.
+#
+# Run with -p arena-staging (see deploy/deploy-staging.sh), from
+# /srv/arena/staging-app on the server, e.g.:
+#   cd /srv/arena/staging-app
+#   docker compose -p arena-staging -f docker-compose.staging.yml up -d
+#
+# No Caddy here on purpose -- `web` is published directly on 8080 so it
+# doesn't need port 80/443, which production's Caddy already owns.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+# Images are NOT built here: they are built in GitHub Actions and pulled,
+# exactly like the production stack (this server's network can't reliably
+# reach registry.npmjs.org). Staging therefore runs the SAME artifact as
+# production, against its own database and .env.staging.
+# Pin a specific build with IMAGE_TAG=<git sha> to stage before promoting.
+services:
+  migrate:
+    image: ${IMAGE_BASE:-ghcr.io/omidazg/founders-arena}-migrate:${IMAGE_TAG:-latest}
+    env_file:
+      - .env.staging
+    environment:
+      DATABASE_URL: file:/app/data/dev.db
+    volumes:
+      - /srv/arena/staging-data:/app/data
+    restart: "no"
+    logging: *default-logging
+
+  web:
+    image: ${IMAGE_BASE:-ghcr.io/omidazg/founders-arena}-web:${IMAGE_TAG:-latest}
+    env_file:
+      - .env.staging
+    environment:
+      DATABASE_URL: file:/app/data/dev.db
+      UPLOAD_DIR: /app/data/uploads
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      NODE_ENV: production
+    volumes:
+      - /srv/arena/staging-data:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    ports:
+      - "8080:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/phase').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging: *default-logging

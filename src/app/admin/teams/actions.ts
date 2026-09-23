@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 import { adminMoveUserToTeam, adminMergeTeams, autoComposeTeams } from "@/lib/team";
+import { audit } from "@/lib/audit";
 
 export type TeamsActionState = { error?: string; ok?: boolean };
 
@@ -14,14 +15,16 @@ const renameSchema = z.object({
 });
 
 export async function renameTeamAction(prevState: TeamsActionState, formData: FormData): Promise<TeamsActionState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const parsed = renameSchema.safeParse({ teamId: formData.get("teamId"), name: formData.get("name") });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "ورودی نامعتبر است" };
 
   const dup = await prisma.team.findFirst({ where: { name: parsed.data.name, NOT: { id: parsed.data.teamId } } });
   if (dup) return { error: "تیمی با این نام از قبل هست" };
 
+  const before = await prisma.team.findUnique({ where: { id: parsed.data.teamId }, select: { name: true } });
   await prisma.team.update({ where: { id: parsed.data.teamId }, data: { name: parsed.data.name } });
+  await audit(admin.id, "team.rename", parsed.data.teamId, { before: before?.name ?? null, after: parsed.data.name });
   revalidatePath("/admin/teams");
   return { ok: true };
 }
@@ -29,11 +32,13 @@ export async function renameTeamAction(prevState: TeamsActionState, formData: Fo
 const memberSchema = z.object({ userId: z.string().min(1) });
 
 export async function removeMemberAction(prevState: TeamsActionState, formData: FormData): Promise<TeamsActionState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const parsed = memberSchema.safeParse({ userId: formData.get("userId") });
   if (!parsed.success) return { error: "ورودی نامعتبر است" };
 
+  const before = await prisma.user.findUnique({ where: { id: parsed.data.userId }, select: { teamId: true } });
   await prisma.user.update({ where: { id: parsed.data.userId }, data: { teamId: null } });
+  await audit(admin.id, "team.remove_member", parsed.data.userId, { fromTeamId: before?.teamId ?? null });
   revalidatePath("/admin/teams");
   return { ok: true };
 }
@@ -41,7 +46,7 @@ export async function removeMemberAction(prevState: TeamsActionState, formData: 
 const teamSchema = z.object({ teamId: z.string().min(1) });
 
 export async function deleteTeamAction(prevState: TeamsActionState, formData: FormData): Promise<TeamsActionState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const parsed = teamSchema.safeParse({ teamId: formData.get("teamId") });
   if (!parsed.success) return { error: "ورودی نامعتبر است" };
 
@@ -50,6 +55,7 @@ export async function deleteTeamAction(prevState: TeamsActionState, formData: Fo
   if (team.members.length > 0) return { error: "فقط تیم خالی را می‌توان حذف کرد" };
 
   await prisma.team.delete({ where: { id: team.id } });
+  await audit(admin.id, "team.delete", team.id, { name: team.name });
   revalidatePath("/admin/teams");
   return { ok: true };
 }
@@ -58,12 +64,17 @@ const moveSchema = z.object({ userId: z.string().min(1), targetTeamId: z.string(
 
 /** انتقال یک کاربر (عضو تیمی یا بی‌تیم) به تیم دیگر؛ سقف سه‌نفره رعایت می‌شود */
 export async function moveMemberAction(prevState: TeamsActionState, formData: FormData): Promise<TeamsActionState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const parsed = moveSchema.safeParse({ userId: formData.get("userId"), targetTeamId: formData.get("targetTeamId") });
   if (!parsed.success) return { error: "ورودی نامعتبر است" };
 
+  const before = await prisma.user.findUnique({ where: { id: parsed.data.userId }, select: { teamId: true } });
   const res = await adminMoveUserToTeam(parsed.data.userId, parsed.data.targetTeamId);
   if (res.error) return { error: res.error };
+  await audit(admin.id, "team.move_member", parsed.data.userId, {
+    fromTeamId: before?.teamId ?? null,
+    toTeamId: parsed.data.targetTeamId,
+  });
   revalidatePath("/admin/teams");
   return { ok: true };
 }
@@ -75,12 +86,16 @@ const mergeSchema = z.object({
 
 /** ادغام دو تیم: اعضای تیم دوم به تیم اول منتقل می‌شوند و تیم دوم حذف می‌شود */
 export async function mergeTeamsAction(prevState: TeamsActionState, formData: FormData): Promise<TeamsActionState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const parsed = mergeSchema.safeParse({ teamAId: formData.get("teamAId"), teamBId: formData.get("teamBId") });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "ورودی نامعتبر است" };
 
   const res = await adminMergeTeams(parsed.data.teamAId, parsed.data.teamBId);
   if (res.error) return { error: res.error };
+  await audit(admin.id, "team.merge", parsed.data.teamAId, {
+    keptTeamId: parsed.data.teamAId,
+    removedTeamId: parsed.data.teamBId,
+  });
   revalidatePath("/admin/teams");
   return { ok: true };
 }
@@ -89,8 +104,13 @@ export type AutoComposeState = { error?: string; summary?: string };
 
 /** تشکیل خودکار تیم‌ها برای کاربران بی‌تیم و تکمیل تیم‌های نیمه‌کاره */
 export async function autoComposeAction(): Promise<AutoComposeState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const result = await autoComposeTeams();
+  await audit(admin.id, "team.auto_compose", "", {
+    assigned: result.assigned.length,
+    teamsCreated: result.teamsCreated,
+    remainingTeamless: result.remainingTeamless,
+  });
   revalidatePath("/admin/teams");
 
   if (result.assigned.length === 0) {

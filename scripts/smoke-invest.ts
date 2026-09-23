@@ -7,9 +7,11 @@
  * در پایان همهٔ رکوردهای ساخته‌شده پاک و فاز به REGISTRATION برمی‌گردد.
  */
 
-import { prisma } from "../src/lib/db";
-import { investCore } from "../src/lib/invest";
-import { DEFAULTS } from "../src/lib/constants";
+import { createTempDb, isTempDatabaseUrl } from "./lib/temp-db";
+
+// DATABASE_URL باید پیش از import شدن src/lib/db تنظیم شود؛ اگر از قبل به یک
+// پایگاه‌دادهٔ موقت اشاره نمی‌کرد، اینجا یکی می‌سازیم تا هرگز به dev.db وصل نشویم.
+const ownTempDb = isTempDatabaseUrl(process.env.DATABASE_URL) ? null : createTempDb("invest");
 
 const TAG = `smoke_${Date.now()}`;
 
@@ -26,15 +28,19 @@ function check(name: string, condition: boolean, detail = "") {
   }
 }
 
-async function setPhaseValue(value: string) {
-  await prisma.setting.upsert({
-    where: { key: "phase" },
-    update: { value },
-    create: { key: "phase", value },
-  });
-}
-
 async function main() {
+  const { prisma } = await import("../src/lib/db");
+  const { investCore } = await import("../src/lib/invest");
+  const { DEFAULTS } = await import("../src/lib/constants");
+
+  async function setPhaseValue(value: string) {
+    await prisma.setting.upsert({
+      where: { key: "phase" },
+      update: { value },
+      create: { key: "phase", value },
+    });
+  }
+
   const createdUserIds: string[] = [];
   const createdTeamIds: string[] = [];
   const createdIdeaIds: string[] = [];
@@ -171,14 +177,17 @@ async function main() {
   }
 
   console.log(`\nنتیجه: ${passed} PASS / ${failed} FAIL`);
-  if (failed > 0) process.exitCode = 1;
+  await prisma.$disconnect();
+  return failed;
 }
 
 main()
+  .then((failed) => {
+    ownTempDb?.cleanup();
+    process.exitCode = failed > 0 ? 1 : 0;
+  })
   .catch((e) => {
     console.error(e);
+    ownTempDb?.cleanup();
     process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
   });

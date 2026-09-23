@@ -21,14 +21,29 @@
 		X-Content-Type-Options nosniff
 		X-Frame-Options SAMEORIGIN
 		Referrer-Policy strict-origin-when-cross-origin
+		# Next.js inline scripts + the inline theme-init script in layout.tsx need
+		# 'unsafe-inline' on script-src (no nonce support in this setup). img-src
+		# lists the remotePatterns hosts from next.config.ts (also used directly
+		# by src/lib/product-utils.ts). connect-src 'self' covers the SSE stream
+		# at /api/auction/stream (same-origin fetch/EventSource).
+		# بدون default-src عمداً: تیزرهای محصول از طریق <iframe> به یوتیوب/آپارات
+		# امبد می‌شوند (src/lib/product-utils.ts) و frame-src اینجا محدود نشده؛
+		# اگر default-src 'self' اضافه شود، آن ایفریم‌ها می‌شکنند.
+		Content-Security-Policy "script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://picsum.photos https://images.unsplash.com https://tapsell.com; connect-src 'self'; font-src 'self' data:; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
 		-Server
 	}
 
 	# Server-Sent Events حراج زنده: بدون encode (فشرده‌سازی بافر می‌کند)
 	# و با flush فوری هر رویداد به کلاینت.
+	# lb_try_duration/lb_try_interval: در حین ری‌استارت web (دیپلوی)، Caddy
+	# درخواست را تا ۳۰ ثانیه نگه می‌دارد و هر ۲۵۰ میلی‌ثانیه دوباره امتحان
+	# می‌کند به‌جای برگرداندن ۵۰۲ فوری (نزدیک به بدون-داون‌تایم).
 	handle /api/auction/stream {
 		reverse_proxy web:3000 {
 			flush_interval -1
+			lb_try_duration 30s
+			lb_try_interval 250ms
 		}
 	}
 
@@ -38,6 +53,8 @@
 		reverse_proxy web:3000 {
 			health_uri /api/phase
 			health_interval 30s
+			lb_try_duration 30s
+			lb_try_interval 250ms
 		}
 	}
 }

@@ -10,6 +10,8 @@ import { PHASES, type Phase } from "./phases";
 import { transitionTo } from "./phase-transition";
 import { ensureAuctions, startNextAuction, settleIfEnded } from "./auction";
 import { closeDueSlots } from "./adslots";
+import { log } from "./log";
+import { alert } from "./alert";
 
 /** مدت پیش‌فرض هر فاز بر حسب ساعت؛ فازهای بدون مقدار (REGISTRATION، CLOSED) زمان پایان ندارند. */
 const DEFAULT_PHASE_HOURS: Partial<Record<Phase, number>> = {
@@ -37,6 +39,16 @@ function nextPhaseOf(p: Phase): Phase | null {
 /** قفل در-فرآیندی: اجراهای هم‌پوشان نادیده گرفته می‌شوند. */
 let running = false;
 
+/** زمان آخرین تیک *موفق* (برای /api/health)؛ فقط در حافظهٔ همین پردازش نگه داشته می‌شود. */
+let lastSuccessfulTickAt: number | null = null;
+
+/** لاگ ساختاریافته + هشدار throttle‌شده برای شکست یک بخش از تیک زمان‌بند؛ isolation بین بخش‌ها حفظ می‌شود. */
+function reportTickFailure(task: string, e: unknown) {
+  console.error(`[scheduler] ${task} failed`, e);
+  log.error("scheduler_task_failed", { task, error: e instanceof Error ? e : new Error(String(e)) });
+  void alert("scheduler", `اجرای بخش ${task} از زمان‌بند بازی با خطا مواجه شد`, { task });
+}
+
 export async function runScheduledTasks(): Promise<void> {
   if (running) {
     console.log("[scheduler] skip: اجرای قبلی هنوز تمام نشده است");
@@ -44,18 +56,29 @@ export async function runScheduledTasks(): Promise<void> {
   }
   running = true;
   try {
-    await autoAdvancePhase().catch((e) => console.error("[scheduler] autoAdvancePhase failed", e));
-    await cleanupOldNotifications().catch((e) => console.error("[scheduler] cleanupOldNotifications failed", e));
+    await autoAdvancePhase().catch((e) => reportTickFailure("autoAdvancePhase", e));
+    await cleanupOldNotifications().catch((e) => reportTickFailure("cleanupOldNotifications", e));
 
     const { phase } = await getPhase();
     if (phase === "AUCTION") {
-      await runAuctionTasks().catch((e) => console.error("[scheduler] runAuctionTasks failed", e));
+      await runAuctionTasks().catch((e) => reportTickFailure("runAuctionTasks", e));
     } else if (phase === "MARKET") {
-      await runMarketTasks().catch((e) => console.error("[scheduler] runMarketTasks failed", e));
+      await runMarketTasks().catch((e) => reportTickFailure("runMarketTasks", e));
     }
+    lastSuccessfulTickAt = Date.now();
+  } catch (e) {
+    // خطای غیرمنتظره بیرون از بخش‌های جداگانه (مثلاً خود getPhase) — لاگ/هشدار و سپس
+    // propagate تا رفتار قبلی (لاگ در فراخوانندهٔ instrumentation.ts) حفظ شود.
+    reportTickFailure("tick", e);
+    throw e;
   } finally {
     running = false;
   }
+}
+
+/** زمان آخرین تیک موفق زمان‌بند (ms epoch)، یا null اگر هنوز هیچ تیکی موفق نشده. */
+export function getLastSchedulerTickAt(): number | null {
+  return lastSuccessfulTickAt;
 }
 
 /** ۱.الف: پیشروی خودکار فاز وقتی زمانش تمام شده باشد. */

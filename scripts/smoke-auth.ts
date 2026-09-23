@@ -4,19 +4,11 @@
  * همهٔ ردیف‌های ساخته‌شده در پایان پاک می‌شوند.
  */
 import "dotenv/config";
-import { prisma } from "../src/lib/db";
-import { hashPassword, verifyPassword } from "../src/lib/auth";
-import { getSettingInt, setPhase, getPhase } from "../src/lib/phase";
-import { DEFAULTS } from "../src/lib/constants";
-import {
-  createTeamForUser,
-  joinMatchmaking,
-  inviteToTeam,
-  acceptInvite,
-  declineInvite,
-  leaveTeam,
-  slugify,
-} from "../src/lib/team";
+import { createTempDb, isTempDatabaseUrl } from "./lib/temp-db";
+
+// DATABASE_URL باید پیش از import شدن src/lib/db تنظیم شود؛ اگر از قبل به یک
+// پایگاه‌دادهٔ موقت اشاره نمی‌کرد، اینجا یکی می‌سازیم تا هرگز به dev.db وصل نشویم.
+const ownTempDb = isTempDatabaseUrl(process.env.DATABASE_URL) ? null : createTempDb("auth");
 
 const TAG = "smoke-" + Date.now();
 const mail = (n: string) => `${TAG}-${n}@tapsell.ir`;
@@ -33,31 +25,45 @@ function check(name: string, cond: boolean, extra = "") {
   }
 }
 
-async function makeUser(n: string, role: string, power: string) {
-  const [seedWallet, buyWallet] = await Promise.all([
-    getSettingInt("seed_wallet", DEFAULTS.seedWallet),
-    getSettingInt("buy_wallet", DEFAULTS.buyWallet),
-  ]);
-  const nickname = `آزمون ${n}`;
-  const stats = { coffee: 5, bugs: 50, sleep: 7, confidence: 100 };
-  const avatarSeed = `${role}-${power}-${stats.coffee}-${stats.bugs}-${stats.sleep}-${stats.confidence}-${nickname}`;
-  return prisma.user.create({
-    data: {
-      email: mail(n),
-      passwordHash: await hashPassword("secret123"),
-      nickname,
-      department: "بک‌اند",
-      role,
-      power,
-      ...stats,
-      avatarSeed,
-      seedWallet,
-      buyWallet,
-    },
-  });
-}
-
 async function main() {
+  const { prisma } = await import("../src/lib/db");
+  const { hashPassword, verifyPassword } = await import("../src/lib/auth");
+  const { getSettingInt, setPhase, getPhase } = await import("../src/lib/phase");
+  const { DEFAULTS } = await import("../src/lib/constants");
+  const {
+    createTeamForUser,
+    joinMatchmaking,
+    inviteToTeam,
+    acceptInvite,
+    declineInvite,
+    leaveTeam,
+    slugify,
+  } = await import("../src/lib/team");
+
+  async function makeUser(n: string, role: string, power: string) {
+    const [seedWallet, buyWallet] = await Promise.all([
+      getSettingInt("seed_wallet", DEFAULTS.seedWallet),
+      getSettingInt("buy_wallet", DEFAULTS.buyWallet),
+    ]);
+    const nickname = `آزمون ${n}`;
+    const stats = { coffee: 5, bugs: 50, sleep: 7, confidence: 100 };
+    const avatarSeed = `${role}-${power}-${stats.coffee}-${stats.bugs}-${stats.sleep}-${stats.confidence}-${nickname}`;
+    return prisma.user.create({
+      data: {
+        email: mail(n),
+        passwordHash: await hashPassword("secret123"),
+        nickname,
+        department: "بک‌اند",
+        role,
+        power,
+        ...stats,
+        avatarSeed,
+        seedWallet,
+        buyWallet,
+      },
+    });
+  }
+
   const original = await getPhase();
   const createdTeamIds = new Set<string>();
 
@@ -164,13 +170,27 @@ async function main() {
     createdTeamIds.delete(teamWithInviteId);
 
     console.log("\n# ۷ — قفل فاز");
+    // سیاست فاز (src/lib/team.ts): «ترک تیم» فقط در فاز ثبت‌نام،
+    // اما «ساخت/دعوت» تا پایان «اتاق ایده» باز می‌ماند.
     await setPhase("IDEATION", original.endsAt);
     const lvLate = await leaveTeam(u3.id);
     check("ترک تیم خارج از فاز ثبت‌نام رد می‌شود", !!lvLate.error, JSON.stringify(lvLate));
-    const mkLate = await createTeamForUser(u4.id, "تیم دیرهنگام");
-    check("ساخت تیم خارج از فاز ثبت‌نام رد می‌شود", !!mkLate.error, JSON.stringify(mkLate));
-    const invLate = await inviteToTeam(u1.id, mail("late"));
-    check("دعوت خارج از فاز ثبت‌نام رد می‌شود", !!invLate.error, JSON.stringify(invLate));
+    const mkIdeation = await createTeamForUser(u4.id, "تیم اتاق ایده");
+    check("ساخت تیم در فاز «اتاق ایده» هنوز مجاز است", !mkIdeation.error, JSON.stringify(mkIdeation));
+    const u4d = await prisma.user.findUnique({ where: { id: u4.id }, select: { teamId: true } });
+    if (u4d?.teamId) createdTeamIds.add(u4d.teamId);
+    const invIdeation = await inviteToTeam(u4.id, mail("ideation"));
+    check("دعوت در فاز «اتاق ایده» هنوز مجاز است", !invIdeation.error, JSON.stringify(invIdeation));
+
+    // دعوت‌ها از تیم تازهٔ u4 فرستاده می‌شود؛ تیم u1 پر است و
+    // خطای «تیم پر است» قبولی جعلی برای آزمون قفل فاز می‌ساخت.
+    // مرز واقعی: از «دور سرمایه‌گذاری» به بعد تشکیل تیم بسته است.
+    await setPhase("SEED_ROUND", original.endsAt);
+    const u5 = await makeUser("e", "BUILDER", "HYPE");
+    const mkLate = await createTeamForUser(u5.id, "تیم دیرهنگام");
+    check("ساخت تیم بعد از «اتاق ایده» رد می‌شود", !!mkLate.error, JSON.stringify(mkLate));
+    const invLate = await inviteToTeam(u4.id, mail("late"));
+    check("دعوت بعد از «اتاق ایده» رد می‌شود", !!invLate.error, JSON.stringify(invLate));
     await setPhase("REGISTRATION", original.endsAt);
   } finally {
     console.log("\n# پاک‌سازی");
@@ -187,7 +207,17 @@ async function main() {
     console.log(`  کاربر باقی‌مانده: ${leftUsers} — تیم باقی‌مانده: ${leftTeams} — فاز بازگردانده‌شده: ${original.phase}`);
     console.log(`\nنتیجه: ${pass} موفق، ${fail} ناموفق`);
   }
-  process.exit(fail === 0 ? 0 : 1);
+  await prisma.$disconnect();
+  return fail;
 }
 
-main();
+main()
+  .then((fail) => {
+    ownTempDb?.cleanup();
+    process.exit(fail === 0 ? 0 : 1);
+  })
+  .catch((e) => {
+    console.error(e);
+    ownTempDb?.cleanup();
+    process.exit(1);
+  });

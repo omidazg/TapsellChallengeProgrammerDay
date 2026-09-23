@@ -29,6 +29,7 @@ export default async function AdminUsersPage() {
                 nickname: u.nickname,
                 avatarSeed: u.avatarSeed,
                 isAdmin: u.isAdmin,
+                blocked: !!u.blockedAt,
                 teamName: u.team?.name ?? null,
                 seedWallet: u.seedWallet,
                 buyWallet: u.buyWallet,

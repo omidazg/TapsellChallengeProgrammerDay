@@ -16,6 +16,7 @@ import { fa, coins } from "@/lib/persian";
 import { PhaseForm } from "./PhaseForm";
 import { SettingsForm, type SettingField } from "./SettingsForm";
 import { updateSchedulerSettingsAction } from "./scheduler-actions";
+import { AiUsageCard } from "@/components/AiUsageCard";
 
 export const metadata = { title: "پنل برگزارکننده" };
 
@@ -76,6 +77,8 @@ export default async function AdminPage() {
             </Link>
           ))}
         </div>
+
+        <AiUsageCard />
 
         <PhaseForm phase={phase} endsAt={endsAt ? endsAt.toISOString() : null} phases={phaseOptions} />
         <SettingsForm fields={settingFields} />

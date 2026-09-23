@@ -71,7 +71,7 @@ async function main() {
 
   const { prisma } = await import("../src/lib/db");
   const { investCore } = await import("../src/lib/invest");
-  const { settleGame, getSettledAt } = await import("../src/lib/settlement");
+  const { settleGame, getSettledAt, loadSettledOutput } = await import("../src/lib/settlement");
   const { setPhase } = await import("../src/lib/phase");
 
   const PENALTY_PER_COIN = 1.5;
@@ -252,6 +252,54 @@ async function main() {
     }
     const scoreRows2 = await prisma.teamScore.findMany();
     check("TeamScore تکراری ساخته نشد", scoreRows2.length === 2, `=${scoreRows2.length}`);
+
+    // ---------- آیتم ۳۵: ستون‌های خام rank/selfCapital/quality/teaser ----------
+    const alphaScore = scoreRows2.find((s) => s.teamId === teamIds["alpha"])!;
+    const betaScore = scoreRows2.find((s) => s.teamId === teamIds["beta"])!;
+    check("rank آلفا و بتا هرکدام یک‌بار ۱ و ۲ است", new Set([alphaScore.rank, betaScore.rank]).size === 2 && [1, 2].includes(alphaScore.rank) && [1, 2].includes(betaScore.rank), `alpha=${alphaScore.rank} beta=${betaScore.rank}`);
+    check("selfCapital آلفا = ۱۰ (سرمایه‌گذاری خودیِ alpha2)", alphaScore.selfCapital === 10, `=${alphaScore.selfCapital}`);
+    check("selfCapital بتا = ۰ (سرمایه‌گذاری خودی نداشت)", betaScore.selfCapital === 0, `=${betaScore.selfCapital}`);
+    check("quality آلفا = ۹۰ (نمرهٔ خام داور)", alphaScore.quality === 90, `=${alphaScore.quality}`);
+    check("teaser آلفا = ۸۰ (نمرهٔ خام تیزر داور)", alphaScore.teaser === 80, `=${alphaScore.teaser}`);
+    check("quality بتا = ۷۰", betaScore.quality === 70, `=${betaScore.quality}`);
+    check("teaser بتا = ۶۰", betaScore.teaser === 60, `=${betaScore.teaser}`);
+
+    // مسیر جدید loadSettledOutput باید همین مقادیر خام را مستقیم بخواند (بدون بازسازی)
+    const outputNew = await loadSettledOutput();
+    const alphaOutNew = outputNew.teams.find((t) => t.teamId === teamIds["alpha"])!;
+    const betaOutNew = outputNew.teams.find((t) => t.teamId === teamIds["beta"])!;
+    check("loadSettledOutput (مسیر جدید): selfCapital آلفا از ستون خوانده شد", alphaOutNew.selfCapital === 10, `=${alphaOutNew.selfCapital}`);
+    check("loadSettledOutput (مسیر جدید): quality/teaser آلفا از ستون خوانده شد", alphaOutNew.quality === 90 && alphaOutNew.teaser === 80, `q=${alphaOutNew.quality} t=${alphaOutNew.teaser}`);
+    check("loadSettledOutput (مسیر جدید): rank با ستون rank یکی است", alphaOutNew.rank === alphaScore.rank && betaOutNew.rank === betaScore.rank, `alpha=${alphaOutNew.rank}/${alphaScore.rank}`);
+    check(
+      "loadSettledOutput (مسیر جدید): مجموع total با مسیر بازمحاسبه یکی است",
+      Math.abs(alphaOutNew.total - alphaScore.total) < 1e-9 && Math.abs(betaOutNew.total - betaScore.total) < 1e-9,
+      `alpha=${alphaOutNew.total}/${alphaScore.total}`
+    );
+
+    // ---------- سازگاری با سطرهای قدیمی: rank=۰ باید مسیر بازسازی قدیمی را فعال کند ----------
+    await prisma.teamScore.updateMany({ data: { rank: 0 } });
+    const outputLegacy = await loadSettledOutput();
+    const alphaOutLegacy = outputLegacy.teams.find((t) => t.teamId === teamIds["alpha"])!;
+    const betaOutLegacy = outputLegacy.teams.find((t) => t.teamId === teamIds["beta"])!;
+    check(
+      "بک‌آپشن: rank=۰ → بازسازی قدیمی فعال می‌شود (رتبه‌ها همچنان ۱ و ۲ درست)",
+      new Set([alphaOutLegacy.rank, betaOutLegacy.rank]).size === 2 && [1, 2].includes(alphaOutLegacy.rank!) && [1, 2].includes(betaOutLegacy.rank!),
+      `alpha=${alphaOutLegacy.rank} beta=${betaOutLegacy.rank}`
+    );
+    check(
+      "بک‌آپشن: selfCapital آلفا با بازسازی از Investment همان ۱۰ است",
+      alphaOutLegacy.selfCapital === 10,
+      `=${alphaOutLegacy.selfCapital}`
+    );
+    check(
+      "بک‌آپشن: total ها با مسیر جدید یکسان می‌ماند (idempotent در محاسبه)",
+      Math.abs(alphaOutLegacy.total - alphaScore.total) < 1e-9 && Math.abs(betaOutLegacy.total - betaScore.total) < 1e-9,
+      `alpha=${alphaOutLegacy.total}/${alphaScore.total}`
+    );
+    // بازگرداندن ستون rank به حالت درست (برای پاکیزگی، هرچند فرایند در حال پایان است)
+    await prisma.teamScore.update({ where: { teamId: teamIds["alpha"] }, data: { rank: alphaScore.rank } });
+    await prisma.teamScore.update({ where: { teamId: teamIds["beta"] }, data: { rank: betaScore.rank } });
   } catch (err) {
     console.error(err);
     check("اجرای بدون خطا", false, String(err));

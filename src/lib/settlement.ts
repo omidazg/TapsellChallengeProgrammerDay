@@ -110,6 +110,10 @@ export async function settleGame(): Promise<SettlementResult> {
         ptsTeaser: t.pts.teaser,
         ptsCommunity: t.pts.community,
         total: t.total,
+        rank: t.rank ?? 0,
+        selfCapital: t.selfCapital,
+        quality: t.quality,
+        teaser: t.teaser,
         computedAt: settledAt,
       };
       await tx.teamScore.upsert({
@@ -144,25 +148,36 @@ export async function settleGame(): Promise<SettlementResult> {
 /**
  * بعد از تسویهٔ نهایی، نتیجه از جدول TeamScore و دفتر کل خوانده می‌شود (نه بازمحاسبه)،
  * تا عددهای صفحه دقیقاً همانی باشد که پرداخت و ثبت شده است.
+ *
+ * از آیتم ۳۵ به بعد، rank/selfCapital/quality/teaser هم مستقیماً روی TeamScore ذخیره‌اند و
+ * دیگر لازم نیست از Investment/pts بازسازی شوند. سطرهایی که پیش از این تغییر نوشته شده‌اند
+ * rank=۰ دارند (مقدار پیش‌فرض ستون تازه)؛ برای آن‌ها به مسیر بازسازی قدیمی برمی‌گردیم.
  */
 export async function loadSettledOutput(): Promise<ScoreOutput> {
-  const [scores, dividendRows, investments] = await Promise.all([
+  const [scores, dividendRows] = await Promise.all([
     prisma.teamScore.findMany(),
     prisma.ledgerEntry.findMany({ where: { reason: "DIVIDEND", wallet: "BUY" } }),
-    prisma.investment.findMany({
-      select: { userId: true, amount: true, selfFunded: true, idea: { select: { teamId: true } } },
-    }),
   ]);
+
+  // سطر تسویه‌شدهٔ پیش از آیتم ۳۵ چون rank را نداشت، پیش‌فرض ۰ گرفته است.
+  const legacy = scores.some((s) => s.rank === 0);
 
   const selfCapital = new Map<string, number>();
   const investedByUserTeam = new Map<string, number>();
-  for (const inv of investments) {
-    const teamId = inv.idea.teamId;
-    if (inv.selfFunded) {
-      selfCapital.set(teamId, (selfCapital.get(teamId) ?? 0) + inv.amount);
-    } else {
-      const key = `${inv.userId}|${teamId}`;
-      investedByUserTeam.set(key, (investedByUserTeam.get(key) ?? 0) + inv.amount);
+  {
+    // invested هر سرمایه‌گذار روی هر تیم در TeamScore ذخیره نمی‌شود (فقط مجموع تیم)،
+    // پس برای ساختن خطوط سود همیشه از Investment خوانده می‌شود.
+    const investments = await prisma.investment.findMany({
+      select: { userId: true, amount: true, selfFunded: true, idea: { select: { teamId: true } } },
+    });
+    for (const inv of investments) {
+      const teamId = inv.idea.teamId;
+      if (inv.selfFunded) {
+        if (legacy) selfCapital.set(teamId, (selfCapital.get(teamId) ?? 0) + inv.amount);
+      } else {
+        const key = `${inv.userId}|${teamId}`;
+        investedByUserTeam.set(key, (investedByUserTeam.get(key) ?? 0) + inv.amount);
+      }
     }
   }
 
@@ -184,14 +199,15 @@ export async function loadSettledOutput(): Promise<ScoreOutput> {
     dividendsPaid: s.dividendsPaid,
     netSales: s.netSales,
     externalCapital: s.externalCapital,
-    selfCapital: selfCapital.get(s.teamId) ?? 0,
+    selfCapital: legacy ? selfCapital.get(s.teamId) ?? 0 : s.selfCapital,
     investorRoi: s.investorRoi,
     uniqueBuyers: s.uniqueBuyers,
     hearts: s.hearts,
-    // نمرهٔ خام کیفیت/تیزر در TeamScore ذخیره نمی‌شود؛ امتیاز وزنی همان ترتیب را دارد
-    // و اینجا فقط برای رتبه‌بندی جوایز به کار می‌رود.
-    quality: s.ptsQuality,
-    teaser: s.ptsTeaser,
+    // مسیر جدید: نمرهٔ خام مستقیماً از ستون‌های quality/teaser خوانده می‌شود.
+    // مسیر قدیمی (بک‌فیل): این مقدار در TeamScore نبود، امتیاز وزنی جایگزینش می‌شود
+    // (فقط برای ترتیب جوایز کافی بود).
+    quality: legacy ? s.ptsQuality : s.quality,
+    teaser: legacy ? s.ptsTeaser : s.teaser,
     unspentPenalty: s.unspentPenalty,
     pts: {
       sales: s.ptsSales,
@@ -202,13 +218,18 @@ export async function loadSettledOutput(): Promise<ScoreOutput> {
       community: s.ptsCommunity,
     },
     total: s.total,
+    rank: legacy ? undefined : s.rank,
   }));
 
-  // همان قاعدهٔ رتبه‌بندی موتور اقتصاد
-  teams.sort((a, b) => (b.total !== a.total ? b.total - a.total : b.netSales - a.netSales));
-  teams.forEach((t, i) => {
-    t.rank = i + 1;
-  });
+  if (legacy) {
+    // همان قاعدهٔ رتبه‌بندی موتور اقتصاد
+    teams.sort((a, b) => (b.total !== a.total ? b.total - a.total : b.netSales - a.netSales));
+    teams.forEach((t, i) => {
+      t.rank = i + 1;
+    });
+  } else {
+    teams.sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
+  }
 
   return { teams, dividends };
 }

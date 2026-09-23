@@ -4,17 +4,12 @@
  *   rm -f smoke-team.db && npx prisma db push --url file:./smoke-team.db --skip-generate
  *   DATABASE_URL="file:./smoke-team.db" npx tsx scripts/smoke-team.ts
  */
-import { prisma } from "../src/lib/db";
-import { setPhase, getPhase } from "../src/lib/phase";
-import { DEFAULTS } from "../src/lib/constants";
-import {
-  createTeamForUser,
-  joinBySlug,
-  adminMoveUserToTeam,
-  adminMergeTeams,
-  autoComposeTeams,
-  TEAM_FULL,
-} from "../src/lib/team";
+import { createTempDb, isTempDatabaseUrl } from "./lib/temp-db";
+
+// DATABASE_URL باید پیش از import شدن src/lib/db تنظیم شود؛ اگر از قبل به یک
+// پایگاه‌دادهٔ موقت اشاره نمی‌کرد (یعنی این اسکریپت مستقل اجرا شده)، اینجا یکی می‌سازیم
+// تا هرگز به dev.db واقعی وصل نشویم.
+const ownTempDb = isTempDatabaseUrl(process.env.DATABASE_URL) ? null : createTempDb("team");
 
 const TAG = "smoketeam-" + Date.now();
 const mail = (n: string) => `${TAG}-${n}@tapsell.ir`;
@@ -31,26 +26,38 @@ function check(name: string, cond: boolean, extra = "") {
   }
 }
 
-async function makeUser(n: string, role: string) {
-  return prisma.user.create({
-    data: {
-      email: mail(n),
-      passwordHash: "x",
-      nickname: `کاربر ${n}`,
-      role,
-      power: "HYPE",
-      coffee: 5,
-      bugs: 50,
-      sleep: 7,
-      confidence: 100,
-      avatarSeed: `seed-${n}`,
-      seedWallet: DEFAULTS.seedWallet,
-      buyWallet: DEFAULTS.buyWallet,
-    },
-  });
-}
-
 async function main() {
+  const { prisma } = await import("../src/lib/db");
+  const { setPhase, getPhase } = await import("../src/lib/phase");
+  const { DEFAULTS } = await import("../src/lib/constants");
+  const {
+    createTeamForUser,
+    joinBySlug,
+    adminMoveUserToTeam,
+    adminMergeTeams,
+    autoComposeTeams,
+    TEAM_FULL,
+  } = await import("../src/lib/team");
+
+  async function makeUser(n: string, role: string) {
+    return prisma.user.create({
+      data: {
+        email: mail(n),
+        passwordHash: "x",
+        nickname: `کاربر ${n}`,
+        role,
+        power: "HYPE",
+        coffee: 5,
+        bugs: 50,
+        sleep: 7,
+        confidence: 100,
+        avatarSeed: `seed-${n}`,
+        seedWallet: DEFAULTS.seedWallet,
+        buyWallet: DEFAULTS.buyWallet,
+      },
+    });
+  }
+
   const original = await getPhase();
   const createdTeamIds = new Set<string>();
 
@@ -236,10 +243,17 @@ async function main() {
     console.log(`  کاربر باقی‌مانده: ${leftUsers} — تیم باقی‌مانده: ${leftTeams} — فاز بازگردانده‌شده: ${original.phase}`);
     console.log(`\nنتیجه: ${pass} موفق، ${fail} ناموفق`);
   }
-  process.exit(fail === 0 ? 0 : 1);
+  await prisma.$disconnect();
+  return fail;
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+main()
+  .then((fail) => {
+    ownTempDb?.cleanup();
+    process.exit(fail === 0 ? 0 : 1);
+  })
+  .catch((e) => {
+    console.error(e);
+    ownTempDb?.cleanup();
+    process.exit(1);
+  });

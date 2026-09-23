@@ -14,7 +14,8 @@
     "db:migrate": "prisma migrate deploy",
     "smoke": "tsx scripts/run-smokes.ts",
     "e2e": "playwright test",
-    "loadtest": "tsx scripts/loadtest.ts"
+    "loadtest": "tsx scripts/loadtest.ts",
+    "prepare": "simple-git-hooks"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",
@@ -52,5 +53,11 @@
     "tsx": "^4.23.13",
     "typescript": "^5",
     "vitest": "^4.1.11"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "npx lint-staged"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": "eslint --fix"
   }
 }
