@@ -59,7 +59,18 @@ else
 fi
 
 echo "==> Pulling prebuilt images and starting containers on the server"
-"${SSH[@]}" "cd '$REMOTE_DIR' && docker compose pull migrate web && docker compose up -d && docker compose up -d --force-recreate caddy"
+# The backup service holds the sqlite file while it copies. If it happens to be
+# mid-backup when `migrate` runs, `prisma migrate deploy` fails with "database
+# is locked". Stopping it first makes each deploy deterministic; the `up -d`
+# below starts it again straight after the migration.
+"${SSH[@]}" "cd '$REMOTE_DIR' && docker compose stop backup 2>/dev/null || true"
+
+# --no-deps on the caddy step is important: caddy depends_on web depends_on
+# migrate, so without it `up -d --force-recreate caddy` re-runs the one-shot
+# migrate container -- which fails against the now-running stack and aborts the
+# whole command, leaving caddy DOWN. The migrations already ran in the previous
+# step; caddy only needs its own config reloaded.
+"${SSH[@]}" "cd '$REMOTE_DIR' && docker compose pull migrate web && docker compose up -d && docker compose up -d --no-deps --force-recreate caddy"
 
 echo "==> Recent container status"
 "${SSH[@]}" "cd '$REMOTE_DIR' && docker compose ps"
