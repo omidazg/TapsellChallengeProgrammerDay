@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ADMIN_EMAIL, ADMIN_PASSWORD, login, PASSWORD, registerUser, setPhaseViaAdmin, uniqueEmail } from "./helpers";
+import { ADMIN_EMAIL, ADMIN_PASSWORD, login, registerUser, setPhaseViaAdmin, uniqueEmail } from "./helpers";
 
 /**
  * سفر کامل یک بازیکن: ثبت‌نام → ساخت تیم → ثبت ایده → (ادمین فازها را جلو می‌برد) →
