@@ -16,7 +16,11 @@ WORKDIR /app
 # ArvanCloud's mirror instead, which that server can actually reach.
 RUN sed -i 's|http://deb.debian.org|https://mirror.arvancloud.ir|g; s|http://security.debian.org|https://mirror.arvancloud.ir/debian-security|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
     sed -i 's|http://deb.debian.org|https://mirror.arvancloud.ir|g; s|http://security.debian.org|https://mirror.arvancloud.ir/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# node:22-bookworm-slim ships without ca-certificates, so https to the mirror
+# above can't be verified yet on a fresh image; bootstrap insecurely just for
+# this step (only fetches the python3/make/g++ toolchain, not app code).
+RUN apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update && \
+    apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false install -y --no-install-recommends \
       python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
