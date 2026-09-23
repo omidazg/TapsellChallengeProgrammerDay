@@ -10,7 +10,11 @@
 #      (works even where rsync isn't available, e.g. Windows Git Bash).
 #   2. If the server has no .env yet, copies .env.example there and warns
 #      you to edit it before the app will work correctly.
-#   3. Runs `docker compose up -d --build` on the server.
+#   3. Pulls the prebuilt web/migrate images from ghcr.io (built by
+#      .github/workflows/build-images.yml on GitHub's own x86_64 runners --
+#      this server's network can't reliably reach registry.npmjs.org, so
+#      building the Dockerfile locally here is unreliable) and starts
+#      everything via `docker compose up -d`.
 #   4. Curls http://SERVER/api/phase as a smoke test.
 set -euo pipefail
 
@@ -51,8 +55,8 @@ else
   echo "    .env already present on server, leaving it untouched."
 fi
 
-echo "==> Building and starting containers on the server"
-"${SSH[@]}" "cd '$REMOTE_DIR' && docker compose up -d --build && docker compose up -d --force-recreate caddy"
+echo "==> Pulling prebuilt images and starting containers on the server"
+"${SSH[@]}" "cd '$REMOTE_DIR' && docker compose pull migrate web && docker compose up -d && docker compose up -d --force-recreate caddy"
 
 echo "==> Recent container status"
 "${SSH[@]}" "cd '$REMOTE_DIR' && docker compose ps"

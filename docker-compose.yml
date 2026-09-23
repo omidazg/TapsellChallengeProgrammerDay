@@ -1,9 +1,6 @@
 services:
   migrate:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: tools
+    image: ${IMAGE_BASE:-ghcr.io/omidazg/founders-arena}-migrate:${IMAGE_TAG:-latest}
     env_file:
       - .env
     environment:
@@ -13,10 +10,7 @@ services:
     restart: "no"
 
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runner
+    image: ${IMAGE_BASE:-ghcr.io/omidazg/founders-arena}-web:${IMAGE_TAG:-latest}
     env_file:
       - .env
     environment:
