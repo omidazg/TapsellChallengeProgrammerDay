@@ -107,11 +107,6 @@
 /* لینک اسکیپ (پرش به محتوا) — رنگ‌بندی پایه در globals.css توسط تیم دسترسی‌پذیری */
 [data-theme="dark"] .skip-link { background-color: #10202f; color: #eaf4fa; }
 
-/* لوگوی تپسل متن سرمه‌ای دارد و روی هدر تیره دیده نمی‌شود؛ در حالت تیره سفید می‌شود. */
-[data-theme="dark"] img[src*="tapsell-logo"] {
-  filter: brightness(0) invert(1);
-}
-
 /* دایرهٔ پس‌زمینهٔ تصویر hero مستقیماً از متغیر brand-ice رنگ می‌گیرد. */
 [data-theme="dark"] svg circle[fill="var(--color-brand-ice)"] {
   fill: #12324a;

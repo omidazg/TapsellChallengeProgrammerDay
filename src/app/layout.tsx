@@ -18,12 +18,12 @@ const vazir = localFont({
 });
 
 const SITE_URL = process.env.SITE_URL ?? "http://89.42.199.174";
-const SITE_TITLE = "میدان بنیان‌گذاران تپسل";
-const SITE_DESCRIPTION = "بازار استارتاپی چهارروزهٔ روز برنامه‌نویس تپسل: ایده بده، سرمایه جذب کن، بساز، بفروش.";
+const SITE_TITLE = "میدان بنیان‌گذاران";
+const SITE_DESCRIPTION = "بازار استارتاپی چهارروزهٔ روز برنامه‌نویس گروه پگاه: ایده بده، سرمایه جذب کن، بساز، بفروش.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: { default: SITE_TITLE, template: "%s · میدان بنیان‌گذاران تپسل" },
+  title: { default: SITE_TITLE, template: "%s · میدان بنیان‌گذاران" },
   description: SITE_DESCRIPTION,
   openGraph: {
     title: SITE_TITLE,

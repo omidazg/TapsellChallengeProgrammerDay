@@ -4,7 +4,7 @@ import { ImageResponse } from "next/og";
 // text rendered without it would show as tofu boxes — so this image uses only
 // Latin type (default Satori font) plus the brand mark drawn with shapes,
 // never real Persian glyphs.
-export const alt = "Tapsell Founders Arena";
+export const alt = "Founders Arena · Pegah Group";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -49,11 +49,11 @@ export default function Image() {
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div style={{ fontSize: 88, fontWeight: 900, color: "#ffffff", letterSpacing: -2, display: "flex" }}>
-              TAPSELL
+            <div style={{ fontSize: 80, fontWeight: 900, color: "#ffffff", letterSpacing: -2, display: "flex" }}>
+              FOUNDERS ARENA
             </div>
-            <div style={{ fontSize: 40, fontWeight: 700, color: "#00b8e0", letterSpacing: 4, textTransform: "uppercase", display: "flex" }}>
-              Founders Arena
+            <div style={{ fontSize: 34, fontWeight: 700, color: "#00b8e0", letterSpacing: 3, textTransform: "uppercase", display: "flex" }}>
+              Pegah Group · Programmer&apos;s Day
             </div>
           </div>
         </div>

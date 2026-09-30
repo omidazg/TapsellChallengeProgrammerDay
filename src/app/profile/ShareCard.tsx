@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import NextImage from "next/image";
 import { Avatar, avatarParts } from "@/components/Avatar";
 import { ROLES, POWERS, type RoleKey, type PowerKey } from "@/lib/constants";
 import { fa } from "@/lib/persian";
@@ -114,28 +113,14 @@ export function ShareCard({
       ctx.textAlign = "right";
     });
 
-    // لوگوی تپسل
-    try {
-      const logo = await loadImage("/brand/tapsell-logo.png");
-      const lw = 180;
-      const lh = (logo.height / logo.width) * lw;
-      // لوگوی تیره روی پس‌زمینهٔ تیره دیده نمی‌شود؛ سفیدش می‌کنیم (مثل کارت درون صفحه)
-      const off = document.createElement("canvas");
-      off.width = Math.ceil(lw);
-      off.height = Math.ceil(lh);
-      const octx = off.getContext("2d");
-      if (octx) {
-        octx.drawImage(logo, 0, 0, lw, lh);
-        octx.globalCompositeOperation = "source-in";
-        octx.fillStyle = "#ffffff";
-        octx.fillRect(0, 0, off.width, off.height);
-        ctx.drawImage(off, W - 70 - lw, H - 60 - lh, lw, lh);
-      } else {
-        ctx.drawImage(logo, W - 70 - lw, H - 60 - lh, lw, lh);
-      }
-    } catch {
-      // لوگو در دسترس نبود؛ کارت بدون لوگو صادر می‌شود
-    }
+    // امضای رویداد (به‌جای لوگوی یک پیلار؛ رویداد برای همهٔ پیلارهای گروه پگاه است)
+    ctx.textAlign = "right";
+    ctx.font = "900 26px Tahoma, sans-serif";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("میدان بنیان‌گذاران", W - 70, H - 72);
+    ctx.font = "bold 18px Tahoma, sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,0.8)";
+    ctx.fillText("روز برنامه‌نویس گروه پگاه", W - 70, H - 44);
 
     canvas.toBlob((blob) => {
       if (!blob) return;
@@ -186,13 +171,10 @@ export function ShareCard({
             </div>
           </div>
         </div>
-        <NextImage
-          src="/brand/tapsell-logo.png"
-          alt="تپسل"
-          width={90}
-          height={18}
-          className="absolute bottom-4 left-4 h-5 w-auto brightness-0 invert"
-        />
+        <div className="absolute bottom-4 left-4 text-left leading-tight">
+          <div className="text-xs font-black">میدان بنیان‌گذاران</div>
+          <div className="text-[10px] font-bold text-white/80">گروه پگاه</div>
+        </div>
       </div>
     </div>
   );
@@ -206,15 +188,4 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.arcTo(x, y + h, x, y, r);
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
-}
-
-/** لوگو هم‌منشأ است (public/brand) پس بوم را tainted نمی‌کند و toBlob کار می‌کند */
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.decoding = "sync";
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`image failed: ${src}`));
-    img.src = src;
-  });
 }

@@ -1,7 +1,7 @@
 # قراردادهای مشترک پروژه (برای همهٔ ایجنت‌ها)
 
 ## زبان و ظاهر
-- همه‌چیز فارسی و راست‌چین. هیچ متن انگلیسی در UI به‌جز نام برند «تپسل» در لوگو.
+- همه‌چیز فارسی و راست‌چین. هیچ متن انگلیسی در UI به‌جز لوگوی پیلارهای گروه پگاه (`@/lib/pillars`، `@/components/PillarLogos`).
 - اعداد را با `fa()` از `@/lib/persian` فارسی کنید؛ تاریخ با `jdate/jdatetime`؛ مدت با `duration`؛ سکه با `coins`.
 - پالت تپسل در `globals.css`: قرمز `brand-red` (اکشن اصلی)، آبی `brand-cyan` (اکشن ثانویه/تأکید)، سرمه‌ای `brand-navy` (متن)، `brand-ice/mist/sky` (پس‌زمینه‌های ملایم).
 - کلاس‌های آماده: `btn-primary`, `btn-cyan`, `btn-ghost`, `btn-navy`, `card`, `chip-*`, `input`, `label`, `anim-rise`, `anim-pop`, `stagger`, `bg-hero`, `bg-dots`.

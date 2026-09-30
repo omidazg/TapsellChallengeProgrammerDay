@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "میدان بنیان‌گذاران تپسل",
+    name: "میدان بنیان‌گذاران · گروه پگاه",
     short_name: "میدان بنیان‌گذاران",
-    description: "بازار استارتاپی چهارروزهٔ روز برنامه‌نویس تپسل: ایده بده، سرمایه جذب کن، بساز، بفروش.",
+    description: "بازار استارتاپی چهارروزهٔ روز برنامه‌نویس گروه پگاه: ایده بده، سرمایه جذب کن، بساز، بفروش.",
     start_url: "/",
     display: "standalone",
     dir: "rtl",

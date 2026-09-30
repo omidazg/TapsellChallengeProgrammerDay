@@ -55,7 +55,7 @@ export async function buildExportWorkbookBuffer(): Promise<Buffer> {
   const scoreByTeam = new Map(scores.map((s) => [s.teamId, s]));
 
   const wb = new ExcelJS.Workbook();
-  wb.creator = "میدان بنیان‌گذاران تپسل";
+  wb.creator = "میدان بنیان‌گذاران";
   wb.created = new Date();
 
   // ---------- Teams and scores ----------

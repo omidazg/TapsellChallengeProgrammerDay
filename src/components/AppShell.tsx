@@ -10,6 +10,8 @@ import { Avatar } from "./Avatar";
 import { NotificationBell } from "./NotificationBell";
 import { ThemeToggle } from "./ThemeToggle";
 import { AskAgent } from "./AskAgent";
+import { PillarStrip } from "./PillarLogos";
+import { GROUP_NAME } from "@/lib/pillars";
 
 type ShellUser = { id: string; nickname: string; isAdmin: boolean; seedWallet: number; buyWallet: number; teamName: string | null; avatarSeed: string };
 
@@ -92,8 +94,11 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
         {/* ردیف اول: لوگو + وضعیت + کاربر */}
         <div className="mx-auto max-w-7xl px-3 sm:px-4 h-14 sm:h-16 flex items-center gap-2 sm:gap-4">
           <Link href="/" className="flex items-center gap-2 sm:gap-3 shrink-0" aria-label="صفحهٔ اصلی">
-            <Image src="/brand/tapsell-logo.png" alt="تپسل" width={110} height={20} priority className="h-4 sm:h-5 w-auto" />
-            <span className="hidden md:inline text-sm font-black text-brand-navy border-r border-brand-mist pr-3 whitespace-nowrap">میدان بنیان‌گذاران</span>
+            <Image src="/brand/favicon.svg" alt="" width={32} height={32} priority unoptimized className="size-8 sm:size-9 rounded-xl" />
+            <span className="hidden sm:flex flex-col leading-tight">
+              <span className="text-sm md:text-base font-black text-brand-navy whitespace-nowrap">میدان بنیان‌گذاران</span>
+              <span className="text-[11px] font-bold text-brand-slate whitespace-nowrap">{GROUP_NAME}</span>
+            </span>
           </Link>
 
           <div className="mr-auto flex items-center gap-1.5 sm:gap-2 min-w-0">
@@ -220,8 +225,10 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
         {children}
       </main>
 
-      <footer className="border-t border-brand-mist py-6 px-4 text-center text-xs text-brand-slate">
-        میدان بنیان‌گذاران تپسل · روز برنامه‌نویس {fa(1405, { sep: false })}
+      <footer className="border-t border-brand-mist py-6 px-4 space-y-4 text-center text-xs text-brand-slate">
+        {/* صفحهٔ فرود مهمان خودش شبکهٔ کامل لوگوها را دارد */}
+        {(user || path !== "/") && <PillarStrip />}
+        <div>میدان بنیان‌گذاران {GROUP_NAME} · روز برنامه‌نویس {fa(1405, { sep: false })}</div>
       </footer>
 
       <AskAgent />

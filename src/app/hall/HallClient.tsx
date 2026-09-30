@@ -117,7 +117,7 @@ function HallHeader({
     <header className="flex items-center justify-between gap-4 px-6 py-4 border-b border-white/10 shrink-0">
       <div className="flex items-center gap-4 min-w-0">
         <span className="inline-block size-3 rounded-full bg-brand-red pulse-ring shrink-0" aria-hidden />
-        <h1 className="text-2xl sm:text-3xl font-black truncate">میدان بنیان‌گذاران تپسل</h1>
+        <h1 className="text-2xl sm:text-3xl font-black truncate">میدان بنیان‌گذاران</h1>
       </div>
       <div className="flex items-center gap-6 shrink-0">
         {phaseLabel && (

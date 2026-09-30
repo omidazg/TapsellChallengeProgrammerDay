@@ -6,7 +6,7 @@ type ChatMsg = { role: "user" | "assistant"; content: string };
 
 const GREETING: ChatMsg = {
   role: "assistant",
-  content: "سلام! من دستیار سؤال‌وجواب میدان بنیان‌گذاران تپسل‌ام. هر سؤالی دربارهٔ قوانین، زمان‌بندی یا جوایز مسابقه داری بپرس.",
+  content: "سلام! من دستیار سؤال‌وجواب میدان بنیان‌گذارانم. هر سؤالی دربارهٔ قوانین، زمان‌بندی یا جوایز مسابقه داری بپرس.",
 };
 
 export function AskAgent() {

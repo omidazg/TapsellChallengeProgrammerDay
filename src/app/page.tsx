@@ -11,6 +11,8 @@ import { PhaseCountdown } from "./PhaseCountdown";
 import { PhaseTimeline } from "@/components/PhaseTimeline";
 import { OnboardingTour } from "@/components/OnboardingTour";
 import { LiveFeed } from "@/components/LiveFeed";
+import { PillarGrid } from "@/components/PillarLogos";
+import { GROUP_NAME } from "@/lib/pillars";
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
   const [{ welcome }, user, { phase, endsAt }] = await Promise.all([searchParams, getCurrentUser(), getPhase()]);
@@ -161,12 +163,12 @@ function LoggedOutLanding({ phase, endsAt }: { phase: Phase; endsAt: string | nu
         <Container className="pt-16 pb-20 relative">
           <div className="grid lg:grid-cols-2 gap-10 items-center">
             <div className="anim-rise">
-              <span className="chip-cyan mb-4">{PHASE_LABEL[phase]} · روز برنامه‌نویس تپسل</span>
+              <span className="chip-cyan mb-4">{PHASE_LABEL[phase]} · روز برنامه‌نویس {GROUP_NAME}</span>
               <h1 className="text-4xl md:text-5xl font-black text-brand-navy leading-[1.25]">
-                میدان بنیان‌گذاران <span className="text-brand-red">تپسل</span>
+                میدان <span className="text-brand-red">بنیان‌گذاران</span>
               </h1>
               <p className="mt-4 text-lg text-brand-slate max-w-xl">
-                یک بازار استارتاپی چهارروزه: ایده بده، سرمایه جذب کن، در ۴۸ ساعت بساز، در روز بازار بفروش و در حراج زنده برنده شو.
+                یک بازار استارتاپی چهارروزه برای همهٔ پیلارهای {GROUP_NAME}: ایده بده، سرمایه جذب کن، در ۴۸ ساعت بساز، در روز بازار بفروش و در حراج زنده برنده شو.
               </p>
               {phase !== "CLOSED" && (
                 <div className="mt-6 flex items-center gap-3">
@@ -184,6 +186,14 @@ function LoggedOutLanding({ phase, endsAt }: { phase: Phase; endsAt: string | nu
           </div>
         </Container>
       </section>
+
+      <Container className="py-16 space-y-6">
+        <h2 className="text-2xl font-black text-brand-navy text-center">با حضور پیلارهای {GROUP_NAME}</h2>
+        <p className="text-center text-brand-slate max-w-2xl mx-auto">
+          میدان بنیان‌گذاران برای همهٔ پیلارهای {GROUP_NAME} برگزار می‌شود و بچه‌های همهٔ این مجموعه‌ها در آن رقابت می‌کنند.
+        </p>
+        <PillarGrid />
+      </Container>
 
       <Container className="py-16 space-y-6">
         <h2 className="text-2xl font-black text-brand-navy text-center">چهار روز، چهار مرحله</h2>
@@ -249,7 +259,7 @@ function LoggedOutLanding({ phase, endsAt }: { phase: Phase; endsAt: string | nu
 
       <Container className="pb-16">
         <p className="text-center text-xs text-brand-slate">
-          میدان بنیان‌گذاران تپسل یک بازی شبیه‌سازی کسب‌وکار برای روز برنامه‌نویس است؛ سکه‌ها واقعی نیستند.
+          میدان بنیان‌گذاران یک بازی شبیه‌سازی کسب‌وکار برای روز برنامه‌نویس {GROUP_NAME} است؛ سکه‌ها واقعی نیستند.
         </p>
       </Container>
     </>
