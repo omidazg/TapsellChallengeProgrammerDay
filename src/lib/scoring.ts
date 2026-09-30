@@ -114,7 +114,7 @@ async function buildMemberWallets(maxPerTarget: number, onlyUserId?: string): Pr
   const [users, ideas, products, investGroups, purchaseGroups] = await Promise.all([
     prisma.user.findMany({
       where: onlyUserId ? { id: onlyUserId } : undefined,
-      select: { id: true, teamId: true, seedWallet: true, buyWallet: true, power: true },
+      select: { id: true, teamId: true, seedWallet: true, buyWallet: true, power: true, shieldTeamId: true },
     }),
     prisma.idea.findMany({
       where: { submittedAt: { not: null } },
@@ -167,7 +167,8 @@ async function buildMemberWallets(maxPerTarget: number, onlyUserId?: string): Pr
       buyLeft: u.buyWallet,
       seedSpendable,
       buySpendable,
-      hasShield: u.power === "SHIELD",
+      // سپر فقط روی همان یک تیمی اثر دارد که دارنده‌اش انتخاب کرده (وگرنه بی‌اثر)
+      shieldTeamId: u.power === "SHIELD" ? u.shieldTeamId : null,
     };
   });
 }

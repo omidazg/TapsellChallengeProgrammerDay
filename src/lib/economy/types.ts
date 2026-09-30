@@ -11,7 +11,7 @@ export interface EconomyConfig {
   minRevenueShare: number;  // ۲۰
   maxRevenueShare: number;  // ۶۰
   roiSmoothing: number;     // ۲۰: ROI = dividendsPaid / (externalCapital + roiSmoothing)
-  shieldFloor: number;      // ۰٫۵: سپر، اعتبار پرتفوی هر سرمایه‌گذاری حداقل این ضریب × مبلغ
+  shieldFloor: number;      // ۰٫۵: سپر، اعتبار پرتفوی سرمایه‌گذاریِ بیمه‌شده حداقل این ضریب × مبلغ
   community: { uniqueBuyer: number; heart: number };
   weights: {
     sales: number; quality: number; capital: number; roi: number; teaser: number; community: number;
@@ -46,7 +46,11 @@ export interface MemberWallet {
    */
   seedSpendable: number;
   buySpendable: number;
-  hasShield: boolean; // قدرت سپر (بیمهٔ سرمایه؛ همیشه فعال، نیازی به فعال‌سازی نیست)
+  /**
+   * قدرت سپر (بیمهٔ یک سرمایه‌گذاری): تیمی که دارندهٔ سپر یک‌بار انتخاب کرده؛
+   * فقط سطر سود (این کاربر، همین تیم) از کف سپر بهره می‌برد. null = سپر ندارد یا انتخاب نکرده.
+   */
+  shieldTeamId: string | null;
 }
 
 export interface DividendLine {
@@ -54,7 +58,7 @@ export interface DividendLine {
   teamId: string;     // تیم سرمایه‌پذیر
   invested: number;
   dividend: number;   // سکهٔ سود (گرد به پایین) — واقعاً پرداخت می‌شود
-  portfolioCredit: number; // اعتبار در امتیاز پرتفوی: با سپر max(dividend, floor(invested × shieldFloor))، وگرنه = dividend
+  portfolioCredit: number; // اعتبار در امتیاز پرتفوی: فقط برای تیمِ انتخاب‌شدهٔ سپر max(dividend, floor(invested × shieldFloor))، وگرنه = dividend
 }
 
 export interface TeamResult {

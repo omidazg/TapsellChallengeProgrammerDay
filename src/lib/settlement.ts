@@ -9,6 +9,7 @@ import { prisma } from "./db";
 import { computeScores } from "./scoring";
 import { invalidate } from "./ttl-cache";
 import { DEFAULTS } from "./constants";
+import { shieldedCredit } from "./economy/engine";
 import type { DividendLine, ScoreOutput, TeamResult } from "./economy/types";
 
 /** کلید Setting که زمان تسویه در آن ذخیره می‌شود (ISO). */
@@ -195,21 +196,24 @@ export async function loadSettledOutput(): Promise<ScoreOutput> {
   }
 
   // portfolioCredit در دفتر کل ذخیره نمی‌شود (فقط یک مشتق امتیازی است)؛ اینجا از روی
-  // قدرت فعلی کاربر (سپر) بازسازی می‌شود — همان چیزی که scoreGame هنگام تسویه دید.
-  const dividendUserIds = [...new Set([...byUserTeam.keys()].map((k) => k.split("|")[0]))];
-  const shieldUsers = dividendUserIds.length
-    ? await prisma.user.findMany({
-        where: { id: { in: dividendUserIds }, power: "SHIELD" },
-        select: { id: true },
-      })
-    : [];
-  const shieldedUserIds = new Set(shieldUsers.map((u) => u.id));
+  // انتخاب سپر کاربر (shieldTeamId) بازسازی می‌شود — همان چیزی که scoreGame هنگام تسویه دید.
+  // انتخاب سپر یک‌بار و برگشت‌ناپذیر است (فقط پیش از روز بازار)، پس بعد از تسویه تغییر نمی‌کند.
+  const shieldUsers = await prisma.user.findMany({
+    where: { power: "SHIELD", shieldTeamId: { not: null } },
+    select: { id: true, shieldTeamId: true },
+  });
+  const shieldedKeys = new Set(shieldUsers.map((u) => `${u.id}|${u.shieldTeamId}`));
+  // جفتِ بیمه‌شده‌ای که سودش صفر شده، سطر DIVIDEND در دفتر کل ندارد؛ با سود ۰ اضافه می‌شود
+  // تا اعتبار سپرش (نصف مبلغ) مثل خروجی scoreGame در فهرست سطرهای سود بماند.
+  for (const key of shieldedKeys) {
+    if (!byUserTeam.has(key) && (investedByUserTeam.get(key) ?? 0) > 0) byUserTeam.set(key, 0);
+  }
 
   const dividends: DividendLine[] = [...byUserTeam.entries()].map(([key, dividend]) => {
     const [userId, teamId] = key.split("|");
     const invested = investedByUserTeam.get(key) ?? 0;
-    const portfolioCredit = shieldedUserIds.has(userId)
-      ? Math.max(dividend, Math.floor(invested * DEFAULTS.shieldFloor))
+    const portfolioCredit = shieldedKeys.has(key)
+      ? shieldedCredit(dividend, invested, DEFAULTS.shieldFloor)
       : dividend;
     return { userId, teamId, invested, dividend, portfolioCredit };
   });

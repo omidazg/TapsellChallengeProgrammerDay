@@ -19,6 +19,8 @@ model User {
   role         String // BUILDER | STORYTELLER | DEALMAKER
   power        String // HYPE | BARGAIN | ANGEL | SECOND_WIND | INSIDER | SHIELD
   powerUsed    Boolean  @default(false)
+  // قدرت سپر: تیمی که کاربر یک‌بار (پیش از روز بازار) سرمایه‌گذاری‌اش را روی آن بیمه کرده؛ null = هنوز انتخاب نکرده
+  shieldTeamId String?
   coffee       Int      @default(5)
   bugs         Int      @default(50)
   sleep        Int      @default(7)

@@ -1,6 +1,7 @@
 import { prisma } from "./db";
 import { getSetting } from "./phase";
 import { AD_SLOT_KINDS } from "./constants";
+import { pickSecondPriceWinner } from "./economy/bids";
 
 export type AdSlotKind = keyof typeof AD_SLOT_KINDS;
 const KINDS = Object.keys(AD_SLOT_KINDS) as AdSlotKind[];
@@ -74,16 +75,27 @@ export async function closeSlot(slotId: string) {
     if (claimed.count === 0) return null;
 
     const bids = await tx.adSlotBid.findMany({ where: { slotId } });
-    // بالاترین پیشنهاد؛ در تساوی، پیشنهادِ زودتر برنده است.
-    const sorted = [...bids].sort((a, b) => b.amount - a.amount || a.createdAt.getTime() - b.createdAt.getTime());
-    if (sorted.length === 0) {
+    if (bids.length === 0) {
       return tx.adSlot.findUnique({ where: { id: slotId } });
     }
-    const winner = sorted[0];
-    const second = sorted.length >= 2 ? sorted[1].amount : 0;
-    // قاعدهٔ قیمت دوم؛ تک‌پیشنهادی یک سکهٔ نمادین می‌دهد. هرگز بیش از پیشنهاد خودش یا خزانه.
-    const team = await tx.team.findUnique({ where: { id: winner.teamId } });
-    const pricePaid = Math.min(Math.max(second, 1), winner.amount, Math.max(0, team?.treasury ?? 0));
+    const teams = await tx.team.findMany({
+      where: { id: { in: [...new Set(bids.map((b) => b.teamId))] } },
+      select: { id: true, treasury: true },
+    });
+    const treasuryById = new Map(teams.map((t) => [t.id, t.treasury]));
+    // قاعدهٔ قیمت دوم: بالاترین پیشنهاد (در تساوی، زودتر) برنده است و min(max(دومین، ۱), پیشنهاد خودش)
+    // را می‌پردازد؛ تک‌پیشنهادی یک سکهٔ نمادین. رزرو در upsertBid تضمین می‌کند خزانه کافی است؛
+    // اگر به هر دلیل نبود، آن پیشنهاد نامعتبر است و نفر بعدی (با قیمت دومِ از نو حساب‌شده) برنده می‌شود —
+    // هرگز کمتر از قیمت قاعده گرفته نمی‌شود.
+    const picked = pickSecondPriceWinner(
+      bids.map((b) => ({ ...b, bidderId: b.teamId })),
+      (teamId) => treasuryById.get(teamId) ?? null
+    );
+    if (!picked) {
+      return tx.adSlot.findUnique({ where: { id: slotId } });
+    }
+    const winner = picked.bid;
+    const pricePaid = picked.price;
 
     if (pricePaid > 0) {
       await tx.team.update({ where: { id: winner.teamId }, data: { treasury: { decrement: pricePaid } } });

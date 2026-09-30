@@ -18,6 +18,7 @@ import { PhaseForm } from "./PhaseForm";
 import { SettingsForm, type SettingField } from "./SettingsForm";
 import { updateSchedulerSettingsAction } from "./scheduler-actions";
 import { AiUsageCard } from "@/components/AiUsageCard";
+import { areEconomySettingsLocked, isLockedSettingKey } from "@/lib/settings-lock";
 
 export const metadata = { title: "پنل برگزارکننده" };
 
@@ -47,11 +48,14 @@ export default async function AdminPage() {
   ]);
 
   const phaseOptions = PHASES.map((p) => ({ value: p, label: PHASE_LABEL[p] }));
+  // پس از شروع بازی (خروج از REGISTRATION) کلیدهای اقتصادی قفل و فقط‌خواندنی‌اند.
+  const economyLocked = areEconomySettingsLocked(phase);
   const settingFields: SettingField[] = SETTING_KEYS.map((key) => ({
     key,
     label: SETTING_LABELS[key],
     value: key === "market_starts_at" ? toLocalInputValue(settings[key]) : settings[key],
     kind: key === "market_starts_at" ? "datetime" : "number",
+    locked: economyLocked && isLockedSettingKey(key),
   }));
   const schedulerFields: SettingField[] = SCHEDULER_SETTING_KEYS.map((key) => ({
     key,

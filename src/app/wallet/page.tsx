@@ -2,8 +2,11 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { DEFAULTS, POWERS } from "@/lib/constants";
 import { LEDGER_REASON_LABEL, WALLET_LABEL, getSettingFloat, personalPenalty } from "@/lib/scoring";
-import { PageHeader, Container, Stat, Empty } from "@/components/ui";
+import { PageHeader, Container, Stat, Empty, Alert } from "@/components/ui";
 import { fa, coins, jdatetime } from "@/lib/persian";
+import { getPhase, phaseAtLeast, PHASE_LABEL } from "@/lib/phase";
+import { shieldCandidates, shieldMaxCredit, shieldPhaseAllowed } from "@/lib/shield";
+import { ShieldPicker } from "./ShieldPicker";
 
 export const metadata = { title: "کیف پول" };
 
@@ -21,7 +24,8 @@ export default async function WalletPage() {
   ]);
 
   const leftover = user.seedWallet + user.buyWallet;
-  const hasShield = user.power === "SHIELD"; // سپر همیشه فعال است؛ نیازی به فعال‌سازی نیست
+  const hasShield = user.power === "SHIELD"; // سپر یک‌بار و دستی روی یک سرمایه‌گذاری انتخاب می‌شود
+  const shield = hasShield ? await loadShieldState(user.id, user.shieldTeamId) : null;
   // «الان»: همان محاسبهٔ امتیازدهی پایانی روی وضعیت فعلی (فقط سکه‌ای که واقعاً قابل‌خرج است).
   // «حداکثر»: اگر هیچ‌کدام از سکه‌ها خرج نشود؛ پیش از روز بازار که هنوز محصولی ثبت نشده،
   // عدد «الان» گمراه‌کننده صفر است، پس هر دو را نشان می‌دهیم.
@@ -55,15 +59,39 @@ export default async function WalletPage() {
               بازار پر از محصول شود، جریمه تا {fa(round1(maxPenalty))} امتیاز می‌رسد.
             </div>
           </div>
-          {hasShield && (
-            <div className="mt-4 pt-4 border-t border-brand-mist">
-              <p className="text-sm text-brand-navy">
-                {POWERS.SHIELD.emoji} قدرت تو «{POWERS.SHIELD.label}» است و همیشه فعال است، بدون نیاز به هیچ کاری از طرف تو:{" "}
-                {POWERS.SHIELD.desc}
-              </p>
-            </div>
-          )}
         </div>
+
+        {shield && (
+          <div className="card p-6 anim-rise space-y-3">
+            <h2 className="text-lg font-black text-brand-navy">
+              {POWERS.SHIELD.emoji} قدرت «{POWERS.SHIELD.label}»
+            </h2>
+            <p className="text-sm text-brand-slate">{POWERS.SHIELD.desc}</p>
+            {shield.chosen ? (
+              <Alert kind="ok">
+                سپر روی سرمایه‌گذاری‌ات در «{shield.chosen.teamName}» ({coins(shield.chosen.invested)}) نشسته است. اگر سود این
+                سرمایه‌گذاری کمتر از {coins(shieldMaxCredit(shield.chosen.invested))} شود، در امتیاز پرتفوی تیمت همین{" "}
+                {coins(shieldMaxCredit(shield.chosen.invested))} حساب می‌شود. این انتخاب نهایی است و قابل تغییر نیست.
+              </Alert>
+            ) : shield.open ? (
+              <>
+                <p className="text-sm text-brand-navy">
+                  تا پیش از شروع «{PHASE_LABEL.MARKET}» یکی از سرمایه‌گذاری‌هایت را انتخاب کن. فقط یک‌بار می‌توانی انتخاب کنی
+                  و بعد از آن قابل تغییر نیست.
+                </p>
+                <ShieldPicker
+                  candidates={shield.candidates.map((c) => ({ ...c, maxCredit: shieldMaxCredit(c.invested) }))}
+                />
+              </>
+            ) : (
+              <Alert kind="info">
+                {shield.tooEarly
+                  ? `انتخاب سپر از «${PHASE_LABEL.SEED_ROUND}» باز می‌شود و تا پیش از «${PHASE_LABEL.MARKET}» فرصت داری.`
+                  : `مهلت انتخاب سپر (تا پیش از «${PHASE_LABEL.MARKET}») تمام شده و سپری انتخاب نکردی؛ این قدرت بی‌اثر ماند.`}
+              </Alert>
+            )}
+          </div>
+        )}
 
         <section>
           <h2 className="text-lg font-black text-brand-navy mb-3">دفتر کل تراکنش‌های من</h2>
@@ -79,6 +107,36 @@ export default async function WalletPage() {
       </Container>
     </>
   );
+}
+
+/**
+ * وضعیت قدرت سپر برای کیف پول: یا هدف انتخاب‌شده، یا (در فاز مجاز) فهرست سرمایه‌گذاری‌های
+ * واجد شرایط، یا دلیل بسته بودن انتخاب.
+ */
+async function loadShieldState(userId: string, shieldTeamId: string | null) {
+  if (shieldTeamId) {
+    const [team, agg] = await Promise.all([
+      prisma.team.findUnique({ where: { id: shieldTeamId }, select: { name: true } }),
+      prisma.investment.aggregate({
+        where: { userId, selfFunded: false, idea: { teamId: shieldTeamId } },
+        _sum: { amount: true },
+      }),
+    ]);
+    return {
+      chosen: { teamName: team?.name ?? "", invested: agg._sum.amount ?? 0 },
+      open: false,
+      tooEarly: false,
+      candidates: [],
+    };
+  }
+  const { phase } = await getPhase();
+  const open = shieldPhaseAllowed(phase);
+  return {
+    chosen: null,
+    open,
+    tooEarly: !phaseAtLeast(phase, "SEED_ROUND"),
+    candidates: open ? await shieldCandidates(userId) : [],
+  };
 }
 
 function LedgerTable({ entries }: { entries: { id: string; wallet: string; delta: number; reason: string; createdAt: Date }[] }) {

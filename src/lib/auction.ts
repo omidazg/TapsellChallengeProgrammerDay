@@ -8,6 +8,9 @@ import { cached } from "./ttl-cache";
 import { publishAuctionChange, AUCTION_CACHE_PREFIX } from "./auction-events";
 // اقتصاد خالص: nextMinBid و shouldExtendAuction از موتور اقتصاد می‌آیند.
 import { nextMinBid, shouldExtendAuction } from "./economy/engine";
+import { pickFirstPriceWinner } from "./economy/bids";
+import { reservedBuyCoins } from "./reservations";
+export { reservedBuyCoins } from "./reservations";
 
 /** تمدید قدرت «نفس دوم» بر حسب ثانیه. */
 const SECOND_WIND_EXTEND_SEC = 120;
@@ -126,24 +129,34 @@ async function settleCore(id: string) {
     const auction = await tx.auction.findUnique({ where: { id } });
     if (!auction) return false;
 
-    // بالاترین پیشنهاد؛ در تساوی، پیشنهاد زودتر برنده است.
-    const highest = await tx.bid.findFirst({
+    // همهٔ پیشنهادها به ترتیب اولویت (مبلغ نزولی، در تساوی زودتر)؛ از هر کاربر فقط بالاترین پیشنهادش.
+    const bids = await tx.bid.findMany({
       where: { auctionId: id },
       orderBy: [{ amount: "desc" }, { createdAt: "asc" }],
     });
-    if (!highest) return true; // بدون پیشنهاد: پایان بدون برنده
+    if (bids.length === 0) return true; // بدون پیشنهاد: پایان بدون برنده
 
-    const winner = await tx.user.findUnique({ where: { id: highest.userId } });
-    if (!winner) return true;
+    const bidderIds = [...new Set(bids.map((b) => b.userId))];
+    const users = await tx.user.findMany({ where: { id: { in: bidderIds } }, select: { id: true, buyWallet: true } });
+    const walletById = new Map(users.map((u) => [u.id, u.buyWallet]));
 
-    // سکه‌ها در زمان پیشنهاد بلوکه نمی‌شوند؛ پس در لحظهٔ تسویه ممکن است
-    // موجودی کمتر از مبلغ برنده باشد (مثلاً خرید هم‌زمان در بازار).
-    // در این حالت قیمت نهایی به موجودی موجود محدود می‌شود تا کیف منفی نشود.
-    const finalPrice = Math.max(0, Math.min(winner.buyWallet, highest.amount));
+    // برنده اولین پیشنهادی است که صاحبش هنوز *کل* مبلغ را دارد و دقیقاً همان را می‌پردازد.
+    // پیشنهادِ بدون پشتوانه نامعتبر است و کنار می‌رود — هرگز کمتر از مبلغ پیشنهاد گرفته نمی‌شود.
+    const picked = pickFirstPriceWinner(
+      bids.map((b) => ({ ...b, bidderId: b.userId })),
+      (userId) => walletById.get(userId) ?? null
+    );
+    if (!picked) return true; // هیچ پیشنهاد معتبری نماند: پایان بدون برنده
 
-    if (finalPrice > 0) {
-      await tx.user.update({ where: { id: winner.id }, data: { buyWallet: { decrement: finalPrice } } });
-    }
+    const winner = { id: picked.bid.userId };
+    const finalPrice = picked.price;
+
+    // نگهبان: کسر فقط اگر موجودی هنوز کافی است (کیف هرگز منفی نمی‌شود).
+    const charged = await tx.user.updateMany({
+      where: { id: winner.id, buyWallet: { gte: finalPrice } },
+      data: { buyWallet: { decrement: finalPrice } },
+    });
+    if (charged.count === 0) throw new Error("موجودی برندهٔ حراج در لحظهٔ تسویه تغییر کرد");
     await tx.purchase.create({
       data: { productId: auction.productId, userId: winner.id, amount: finalPrice, discount: 0 },
     });
@@ -215,8 +228,12 @@ export async function placeBid(auctionId: string, userId: string, amount: number
     const min = nextMinBid(highest?.amount ?? null, auction.startPrice, increment);
     if (amount < min) throw new Error(`پیشنهاد باید حداقل ${fa(min)} سکه باشد`);
 
-    // سکه بلوکه نمی‌شود؛ فقط کفایت موجودی در لحظهٔ پیشنهاد بررسی می‌شود.
-    if (user.buyWallet < amount) throw new Error("موجودی کیف خرید کافی نیست");
+    // پیشنهاد باید از همان ابتدا معتبر باشد: سقفش موجودی «قابل‌خرج» است، یعنی کیف خرید منهای
+    // سکه‌هایی که جای دیگر رزرو شده (پیشتازی در حراج زندهٔ دیگر). پیشتازی در همین حراج کنار
+    // گذاشته می‌شود، چون بالا بردن پیشنهاد خود رزرو قبلی خودت را جایگزین می‌کند.
+    // سکه‌ها تا پایان حراج برای بالاترین پیشنهاددهنده رزرو می‌مانند (بازار آن‌ها را خرج‌پذیر نمی‌بیند).
+    const spendable = user.buyWallet - (await reservedBuyCoins(tx, userId, auctionId));
+    if (spendable < amount) throw new Error("موجودی قابل‌خرج کیف خرید کافی نیست");
 
     await tx.bid.create({ data: { auctionId, userId, amount } });
 

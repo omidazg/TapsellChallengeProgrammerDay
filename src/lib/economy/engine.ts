@@ -33,14 +33,16 @@ export function defaultConfig(): EconomyConfig {
  * سود سهام هر تیم را بر اساس سرمایه‌گذاران خارجی (غیر selfFunded) محاسبه می‌کند.
  * dividend هر سرمایه‌گذار = floor(grossSales * revenueShare/100 * invested/externalCapital)
  *
- * portfolioCredit اعتبار امتیاز پرتفوی است: برابر dividend، مگر برای سرمایه‌گذارانی
- * که قدرت «سپر» دارند — برای آن‌ها حداقل floor(invested × shieldFloor) تضمین می‌شود.
+ * portfolioCredit اعتبار امتیاز پرتفوی است: برابر dividend، مگر برای تنها سرمایه‌گذاری‌ای
+ * که دارندهٔ «سپر» یک‌بار بیمه‌اش کرده (shieldTargets: userId → teamId) — فقط برای همان
+ * جفت (کاربر، تیم) حداقل floor(invested × shieldFloor) تضمین می‌شود.
  * این فقط روی امتیاز اثر دارد؛ سکهٔ واقعی پرداختی (dividend) هرگز تغییر نمی‌کند.
+ * هر سرمایه‌گذار خارجی (حتی با سود صفر) یک سطر می‌گیرد، پس جفتِ بیمه‌شده با سود صفر هم اعتبارش را می‌گیرد.
  */
 export function computeDividends(
   team: TeamInput,
   shieldFloor: number,
-  shieldedUserIds: ReadonlySet<string>
+  shieldTargets: ReadonlyMap<string, string>
 ): DividendLine[] {
   const grossSales = sum(team.sales.map((s) => s.amount));
   const externalInvestments = team.investments.filter((i) => !i.selfFunded);
@@ -59,11 +61,18 @@ export function computeDividends(
 
   return [...byUser.entries()].map(([userId, invested]) => {
     const dividend = Math.floor((pool * invested) / externalCapital);
-    const portfolioCredit = shieldedUserIds.has(userId)
-      ? Math.max(dividend, Math.floor(invested * shieldFloor))
-      : dividend;
+    const portfolioCredit =
+      shieldTargets.get(userId) === team.teamId ? shieldedCredit(dividend, invested, shieldFloor) : dividend;
     return { userId, teamId: team.teamId, invested, dividend, portfolioCredit };
   });
+}
+
+/**
+ * اعتبار پرتفوی سرمایه‌گذاریِ بیمه‌شده با سپر: max(dividend, floor(invested × shieldFloor)).
+ * (بازپرداخت مجازی؛ فقط در امتیاز پرتفوی حساب می‌شود.) تسویه هم برای بازسازی از همین استفاده می‌کند.
+ */
+export function shieldedCredit(dividend: number, invested: number, shieldFloor: number): number {
+  return Math.max(dividend, Math.floor(invested * shieldFloor));
 }
 
 /**
@@ -210,13 +219,15 @@ export function scoreGame(
   wallets: MemberWallet[]
 ): ScoreOutput {
   const walletByUser = new Map(wallets.map((w) => [w.userId, w]));
-  const shieldedUserIds = new Set(wallets.filter((w) => w.hasShield).map((w) => w.userId));
+  // سپر: هر دارنده حداکثر یک تیم هدف دارد (userId → teamId)
+  const shieldTargets = new Map<string, string>();
+  for (const w of wallets) if (w.shieldTeamId) shieldTargets.set(w.userId, w.shieldTeamId);
 
   const allDividends: DividendLine[] = [];
   const basePartials: BasePartial[] = [];
 
   for (const team of teams) {
-    const dividends = computeDividends(team, config.shieldFloor, shieldedUserIds);
+    const dividends = computeDividends(team, config.shieldFloor, shieldTargets);
     allDividends.push(...dividends);
 
     const grossSales = sum(team.sales.map((s) => s.amount));

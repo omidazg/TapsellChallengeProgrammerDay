@@ -6,8 +6,9 @@ import { requireAdmin } from "@/lib/auth";
 import { PHASES, type Phase, getPhase } from "@/lib/phase";
 import { transitionTo } from "@/lib/phase-transition";
 import { settleGame } from "@/lib/settlement";
-import { setSetting, getSettingsMap } from "@/lib/admin";
+import { setSetting, getSettingsMap, SETTING_LABELS } from "@/lib/admin";
 import { parseGameSettings, saveSettings } from "@/lib/settings-schema";
+import { lockedSettingChanges, withoutLockedKeys } from "@/lib/settings-lock";
 import { audit } from "@/lib/audit";
 
 export type AdminActionState = { error?: string; ok?: boolean };
@@ -85,8 +86,18 @@ export async function updateSettingsAction(prevState: AdminActionState, formData
   const parsed = parseGameSettings(formData);
   if (!parsed.ok) return { error: parsed.error };
 
-  const before = await getSettingsMap();
-  const after = await saveSettings(parsed.data, setSetting);
+  const [before, { phase }] = await Promise.all([getSettingsMap(), getPhase()]);
+
+  // قوانین اقتصادی باید پیش از شروع بازی ثابت و شفاف باشند: پس از REGISTRATION
+  // هیچ کلید اقتصادی تغییر نمی‌کند و در صورت تلاش، هیچ چیزی ذخیره نمی‌شود.
+  const lockedChanges = lockedSettingChanges(phase, before, parsed.data);
+  if (lockedChanges.length > 0) {
+    const labels = lockedChanges.map((key) => SETTING_LABELS[key]).join("، ");
+    return { error: `مقادیر اقتصادی بازی پس از شروع بازی قفل‌اند و قابل تغییر نیستند: ${labels}` };
+  }
+
+  // کلیدهای قفل‌شده (که بدون تغییر ارسال شده‌اند) دوباره نوشته نمی‌شوند؛ فقط کلیدهای عملیاتی ذخیره می‌شوند.
+  const after = await saveSettings(withoutLockedKeys(phase, parsed.data), setSetting);
   await audit(admin.id, "settings.update", "", { before, after });
   revalidatePath("/admin");
   return { ok: true };

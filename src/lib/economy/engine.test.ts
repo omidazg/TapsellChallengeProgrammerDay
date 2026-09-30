@@ -36,12 +36,12 @@ function wallet(overrides: Partial<MemberWallet> & { userId: string; teamId: str
     buyLeft: 0,
     seedSpendable: 0,
     buySpendable: 0,
-    hasShield: false,
+    shieldTeamId: null,
     ...overrides,
   };
 }
 
-const NO_SHIELD = new Set<string>();
+const NO_SHIELD = new Map<string, string>();
 
 describe("computeDividends", () => {
   it("distributes pro-rata with floor rounding", () => {
@@ -109,17 +109,53 @@ describe("computeDividends", () => {
     expect(computeDividends(team, 0.5, NO_SHIELD)).toEqual([]);
   });
 
-  describe("shield floor on portfolioCredit", () => {
+  describe("shield floor on portfolioCredit (only the one chosen team)", () => {
     it("raises portfolioCredit to floor(invested * shieldFloor) when dividend is lower", () => {
       const team = baseTeam({
         revenueShare: 10, // پول کوچک، سود واقعی کم می‌شود
         investments: [{ userId: "shielded", amount: 100, selfFunded: false }],
         sales: [{ userId: "x", amount: 10 }], // pool = 1, dividend = floor(1*100/100) = 1
       });
-      const shielded = new Set(["shielded"]);
+      const shielded = new Map([["shielded", "t1"]]);
       const lines = computeDividends(team, 0.5, shielded);
       expect(lines[0].dividend).toBe(1); // سکهٔ واقعی پرداختی تغییر نکرده
       expect(lines[0].portfolioCredit).toBe(50); // floor(100 * 0.5) > dividend
+    });
+
+    it("caps the virtual refund at half the invested amount (40 invested, 6 dividend → 20)", () => {
+      const team = baseTeam({
+        revenueShare: 60,
+        investments: [{ userId: "shielded", amount: 40, selfFunded: false }],
+        sales: [{ userId: "x", amount: 10 }], // pool = 6, dividend = floor(6*40/40) = 6
+      });
+      const lines = computeDividends(team, 0.5, new Map([["shielded", "t1"]]));
+      expect(lines[0].dividend).toBe(6);
+      expect(lines[0].portfolioCredit).toBe(20); // max(6, floor(40*0.5)) = 20
+    });
+
+    it("still credits the shielded pair when its dividend is zero (no sales at all)", () => {
+      const team = baseTeam({
+        revenueShare: 30,
+        investments: [{ userId: "shielded", amount: 30, selfFunded: false }],
+        sales: [], // سود صفر؛ سطر سود همچنان ساخته می‌شود
+      });
+      const lines = computeDividends(team, 0.5, new Map([["shielded", "t1"]]));
+      expect(lines).toHaveLength(1);
+      expect(lines[0].dividend).toBe(0);
+      expect(lines[0].portfolioCredit).toBe(15); // floor(30*0.5)
+    });
+
+    it("does not apply to the holder's investments in other (non-chosen) teams", () => {
+      const team = baseTeam({
+        teamId: "t1",
+        revenueShare: 10,
+        investments: [{ userId: "shielded", amount: 100, selfFunded: false }],
+        sales: [{ userId: "x", amount: 10 }], // dividend = 1
+      });
+      // سپر روی تیم دیگری (t2) نشسته، پس این سرمایه‌گذاری بیمه نیست
+      const lines = computeDividends(team, 0.5, new Map([["shielded", "t2"]]));
+      expect(lines[0].dividend).toBe(1);
+      expect(lines[0].portfolioCredit).toBe(1);
     });
 
     it("keeps portfolioCredit = dividend when dividend already exceeds the shield floor", () => {
@@ -128,10 +164,25 @@ describe("computeDividends", () => {
         investments: [{ userId: "shielded", amount: 40, selfFunded: false }],
         sales: [{ userId: "x", amount: 100 }], // pool=100, dividend = floor(100*40/40) = 100
       });
-      const shielded = new Set(["shielded"]);
+      const shielded = new Map([["shielded", "t1"]]);
       const lines = computeDividends(team, 0.5, shielded);
       expect(lines[0].dividend).toBe(100);
       expect(lines[0].portfolioCredit).toBe(100); // max(100, floor(40*0.5)=20) = 100
+    });
+
+    it("only benefits the shield holder, not other investors in the same team", () => {
+      const team = baseTeam({
+        revenueShare: 10,
+        investments: [
+          { userId: "shielded", amount: 50, selfFunded: false },
+          { userId: "plain", amount: 50, selfFunded: false },
+        ],
+        sales: [{ userId: "x", amount: 10 }], // pool = 1 → هر کدام floor(0.5) = 0
+      });
+      const lines = computeDividends(team, 0.5, new Map([["shielded", "t1"]]));
+      const byUser = Object.fromEntries(lines.map((l) => [l.userId, l]));
+      expect(byUser.shielded.portfolioCredit).toBe(25);
+      expect(byUser.plain.portfolioCredit).toBe(0);
     });
 
     it("does not affect investors without the shield", () => {
@@ -239,12 +290,12 @@ describe("unspentPenalty (فقط روی سکهٔ خرج‌شدنی)", () => {
     expect(unspentPenalty(config, wallets)).toBe(0);
   });
 
-  it("no longer exempts a flat 10 coins for shield (hasShield no longer affects penalty)", () => {
+  it("no longer exempts a flat 10 coins for shield (shield no longer affects penalty)", () => {
     const withShield: MemberWallet[] = [
-      wallet({ userId: "u1", teamId: "t1", seedLeft: 10, seedSpendable: 10, buyLeft: 20, buySpendable: 20, hasShield: true }),
+      wallet({ userId: "u1", teamId: "t1", seedLeft: 10, seedSpendable: 10, buyLeft: 20, buySpendable: 20, shieldTeamId: "t2" }),
     ];
     const withoutShield: MemberWallet[] = [
-      wallet({ userId: "u1", teamId: "t1", seedLeft: 10, seedSpendable: 10, buyLeft: 20, buySpendable: 20, hasShield: false }),
+      wallet({ userId: "u1", teamId: "t1", seedLeft: 10, seedSpendable: 10, buyLeft: 20, buySpendable: 20, shieldTeamId: null }),
     ];
     expect(unspentPenalty(config, withShield)).toBe(unspentPenalty(config, withoutShield));
     expect(unspentPenalty(config, withShield)).toBe(1.5 * 30);
@@ -356,7 +407,37 @@ describe("portfolio (پرتفوی سرمایه‌گذاری اعضا در تیم
     expect(b.portfolio).toBe(50); // تیم سرمایه‌گذار پرتفوی می‌گیرد
   });
 
-  it("uses portfolioCredit (shield floor), not the raw dividend, for shielded investors", () => {
+  it("uses portfolioCredit (shield floor) only for the one team the holder chose", () => {
+    const config = defaultConfig();
+    // b1 (عضو تیم B) روی A و C سرمایه‌گذاری کرده و سپر را روی A گذاشته
+    const teamA = baseTeam({
+      teamId: "A",
+      memberIds: ["a1"],
+      revenueShare: 10,
+      investments: [{ userId: "b1", amount: 100, selfFunded: false }],
+      sales: [{ userId: "x", amount: 10 }], // pool=1, dividend=1
+    });
+    const teamC = baseTeam({
+      teamId: "C",
+      memberIds: ["c1"],
+      revenueShare: 10,
+      investments: [{ userId: "b1", amount: 40, selfFunded: false }],
+      sales: [{ userId: "x", amount: 10 }], // pool=1, dividend=1
+    });
+    const teamB = baseTeam({ teamId: "B", memberIds: ["b1"], investments: [], sales: [] });
+    const wallets: MemberWallet[] = [
+      wallet({ userId: "a1", teamId: "A" }),
+      wallet({ userId: "c1", teamId: "C" }),
+      wallet({ userId: "b1", teamId: "B", shieldTeamId: "A" }),
+    ];
+    const out = scoreGame(config, [teamA, teamB, teamC], wallets);
+    const b = out.teams.find((t) => t.teamId === "B")!;
+    // A: max(1, floor(100*0.5)) = 50 ؛ C: بیمه نیست → dividend خام = ۱
+    expect(b.portfolio).toBe(51);
+    expect(out.dividends.find((d) => d.teamId === "C")!.portfolioCredit).toBe(1);
+  });
+
+  it("has no effect when the shield holder never chose a target", () => {
     const config = defaultConfig();
     const teamA = baseTeam({
       teamId: "A",
@@ -368,12 +449,29 @@ describe("portfolio (پرتفوی سرمایه‌گذاری اعضا در تیم
     const teamB = baseTeam({ teamId: "B", memberIds: ["b1"], investments: [], sales: [] });
     const wallets: MemberWallet[] = [
       wallet({ userId: "a1", teamId: "A" }),
-      wallet({ userId: "b1", teamId: "B", hasShield: true }),
+      wallet({ userId: "b1", teamId: "B", shieldTeamId: null }),
     ];
     const out = scoreGame(config, [teamA, teamB], wallets);
-    const b = out.teams.find((t) => t.teamId === "B")!;
-    // portfolioCredit = max(1, floor(100*0.5)) = 50 (نه dividend خام = ۱)
-    expect(b.portfolio).toBe(50);
+    expect(out.teams.find((t) => t.teamId === "B")!.portfolio).toBe(1);
+  });
+
+  it("credits a shielded pair with zero dividend in the investor team's portfolio", () => {
+    const config = defaultConfig();
+    const teamA = baseTeam({
+      teamId: "A",
+      memberIds: ["a1"],
+      revenueShare: 30,
+      investments: [{ userId: "b1", amount: 40, selfFunded: false }],
+      sales: [], // هیچ فروشی نداشت، سود صفر
+    });
+    const teamB = baseTeam({ teamId: "B", memberIds: ["b1"], investments: [], sales: [] });
+    const wallets: MemberWallet[] = [
+      wallet({ userId: "a1", teamId: "A" }),
+      wallet({ userId: "b1", teamId: "B", shieldTeamId: "A" }),
+    ];
+    const out = scoreGame(config, [teamA, teamB], wallets);
+    expect(out.teams.find((t) => t.teamId === "A")!.dividendsPaid).toBe(0); // سکهٔ واقعی جابه‌جا نمی‌شود
+    expect(out.teams.find((t) => t.teamId === "B")!.portfolio).toBe(20);
   });
 
   it("investing in your own team never contributes to portfolio (selfFunded is excluded upstream)", () => {

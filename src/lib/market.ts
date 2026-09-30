@@ -2,6 +2,7 @@ import { prisma } from "./db";
 import { coverUrl, parseImages } from "./product";
 import { getPhase, getSettingInt } from "./phase";
 import { DEFAULTS } from "./constants";
+import { reservedBuyCoins } from "./reservations";
 // اعتبارسنجی خرید و توابع خالص محاسبه مستقیماً از موتور اقتصاد می‌آیند تا یک منبع حقیقت واحد بماند.
 import { validatePurchase, bargainDiscountFor, effectivePurchaseCap } from "./economy/engine";
 export { validatePurchase, bargainDiscountFor, effectivePurchaseCap } from "./economy/engine";
@@ -142,14 +143,16 @@ export async function purchaseProduct(userId: string, productId: string): Promis
       const isBargain = freshUser.power === "BARGAIN";
       const discount = isBargain ? bargainDiscountFor(product.price, DEFAULTS.bargainDiscount) : 0;
       const paid = product.price - discount;
+      // سکه‌های رزروشده برای پیشتازی در حراج زنده خرج‌پذیر نیستند (فازها امروز هم‌پوشانی ندارند؛ دفاعی است).
+      const spendable = freshUser.buyWallet - (await reservedBuyCoins(tx, userId));
 
       // validatePurchase یک amount واحد را هم برای کفایت کیف و هم برای سقف بررسی می‌کند؛ اینجا
-      // با اضافه‌کردن d به walletLeft، چک کفایت کیف معادل «paid > walletLeft واقعی» می‌شود،
+      // با اضافه‌کردن d به walletLeft، چک کفایت کیف معادل «paid > موجودی قابل‌خرج واقعی» می‌شود،
       // درحالی‌که amount=قیمت کامل باعث می‌شود چک سقف بر مبنای قیمت کامل انجام شود.
       const validation = validatePurchase({
         amount: product.price,
         alreadyOnTarget,
-        walletLeft: freshUser.buyWallet + discount,
+        walletLeft: spendable + discount,
         maxPerTarget: cap,
         isOwnTeam,
       });

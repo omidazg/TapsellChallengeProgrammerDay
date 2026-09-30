@@ -14,7 +14,8 @@
  *     (Notification) و پاسخ‌های نظرسنجی پایان بازی (SurveyResponse).
  *   - تیم‌ها و دعوت‌نامه‌ها (TeamInvite) هم پاک می‌شوند مگر --keep-teams.
  *   - کیف پول و آمار کاربران (coffee/bugs/sleep/confidence/seedWallet/
- *     buyWallet) به مقدار پیش‌فرض schema و powerUsed=false برمی‌گردد.
+ *     buyWallet) به مقدار پیش‌فرض schema و powerUsed=false (و هدف سپر
+ *     shieldTeamId=null) برمی‌گردد.
  *   - کاربران، ادمین‌ها، Setting‌ها و Announcement‌ها دست‌نخورده می‌مانند
  *     (Announcement فقط با --wipe-announcements پاک می‌شود).
  *   - فاز بازی به REGISTRATION برمی‌گردد (phase_ends_at پاک می‌شود).
@@ -133,6 +134,7 @@ async function main() {
         seedWallet: 100,
         buyWallet: 100,
         powerUsed: false,
+        shieldTeamId: null,
       },
     });
 

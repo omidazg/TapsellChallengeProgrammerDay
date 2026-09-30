@@ -58,6 +58,7 @@ async function main() {
     currentOrNextAuctionId,
     shuffleOrder,
     clampAuctionDuration,
+    reservedBuyCoins,
   } = await import("../src/lib/auction");
   const { ensureAdSlots, upsertBid, closeSlot } = await import("../src/lib/adslots");
   const { DEFAULTS } = await import("../src/lib/constants");
@@ -194,7 +195,7 @@ async function main() {
     await expectError("placeBid: افزایش کمتر از bid_increment رد می‌شود", () => placeBid(liveId, bidder.id, start + 1), "حداقل");
     await placeBid(liveId, bidder.id, start + inc); // بالا بردن پیشنهاد خود مجاز است
     eq("placeBid: بالا بردن پیشنهاد خود پذیرفته شد", await prisma.bid.count({ where: { auctionId: liveId } }), 2);
-    await expectError("placeBid: بیش از موجودی کیف خرید رد می‌شود", () => placeBid(liveId, bidder.id, 500), "کیف خرید");
+    await expectError("placeBid: بیش از موجودی کیف خرید رد می‌شود", () => placeBid(liveId, bidder.id, 500), "قابل‌خرج");
 
     // ---------- ضد-اسنایپ ----------
     const beforeSnipe = await prisma.auction.update({
@@ -295,6 +296,76 @@ async function main() {
       await setPhase("AUCTION", null);
     }
 
+    // ---------- رزرو سکه و تسویهٔ بدون تخفیف: پیشنهاد بدون پشتوانه کنار می‌رود ----------
+    {
+      // دو حراج هم‌زمان زنده (فقط برای تست رزرو «جای دیگر»؛ در بازی واقعی یکی‌یکی زنده می‌شوند).
+      const teamD = await prisma.team.create({ data: { name: "تیم ت", slug: "smoke-d", treasury: 0 } });
+      const teamE = await prisma.team.create({ data: { name: "تیم ث", slug: "smoke-e", treasury: 0 } });
+      const teamX = await prisma.team.create({ data: { name: "تیم خریداران", slug: "smoke-x", treasury: 0 } });
+      const productD = await prisma.product.create({
+        data: { teamId: teamD.id, name: "محصول ت", specialName: "ویژهٔ ت", specialStart: 10, submittedAt: new Date() },
+      });
+      const productE = await prisma.product.create({
+        data: { teamId: teamE.id, name: "محصول ث", specialName: "ویژهٔ ث", specialStart: 10, submittedAt: new Date() },
+      });
+      const x1 = await prisma.user.create({
+        data: { email: "smoke-x1@test.local", passwordHash: "x", nickname: "خریدار‌یک", role: "DEALMAKER", power: "SHIELD", teamId: teamX.id, buyWallet: 100 },
+      });
+      const x2 = await prisma.user.create({
+        data: { email: "smoke-x2@test.local", passwordHash: "x", nickname: "خریدار‌دو", role: "DEALMAKER", power: "SHIELD", teamId: teamX.id, buyWallet: 100 },
+      });
+      await ensureAuctions();
+      const aD = await prisma.auction.findUniqueOrThrow({ where: { productId: productD.id } });
+      const aE = await prisma.auction.findUniqueOrThrow({ where: { productId: productE.id } });
+      const liveUntil = new Date(Date.now() + 600_000);
+      for (const a of [aD, aE]) {
+        await prisma.auction.update({ where: { id: a.id }, data: { status: "LIVE", startsAt: new Date(), endsAt: liveUntil } });
+      }
+
+      await placeBid(aD.id, x2.id, 10);
+      await placeBid(aD.id, x1.id, 10 + inc);
+      // بالا بردن پیشنهاد خود: رزرو قبلی خودت جایگزین می‌شود، دوباره شمرده نمی‌شود.
+      await placeBid(aD.id, x1.id, 10 + 2 * inc);
+      const leadD = 10 + 2 * inc;
+      eq("رزرو: سکهٔ پیشتاز حراج زنده رزرو است", await prisma.$transaction((tx) => reservedBuyCoins(tx, x1.id)), leadD);
+      eq("رزرو: حراج جاری کنار گذاشته می‌شود", await prisma.$transaction((tx) => reservedBuyCoins(tx, x1.id, aD.id)), 0);
+      eq("رزرو: پیشنهاددهندهٔ شکسته‌شده رزروی ندارد", await prisma.$transaction((tx) => reservedBuyCoins(tx, x2.id)), 0);
+
+      const spendable = 100 - leadD;
+      await expectError(
+        "placeBid: بیش از موجودی قابل‌خرج (کیف منهای رزرو در حراج دیگر) رد می‌شود",
+        () => placeBid(aE.id, x1.id, spendable + 1),
+        "قابل‌خرج"
+      );
+      await placeBid(aE.id, x1.id, spendable);
+      eq("placeBid: پیشنهاد برابر موجودی قابل‌خرج پذیرفته می‌شود", await prisma.bid.count({ where: { auctionId: aE.id } }), 1);
+      await expectError(
+        "placeBid: بالا بردن پیشنهاد وقتی بقیهٔ کیف جای دیگر رزرو است رد می‌شود",
+        () => placeBid(aD.id, x1.id, leadD + inc),
+        "قابل‌خرج"
+      );
+
+      // موجودی پیشتاز به‌طور خارجی افت می‌کند (شبیه‌سازی): پیشنهادش در تسویه نامعتبر است.
+      await prisma.user.update({ where: { id: x1.id }, data: { buyWallet: 5 } });
+      await prisma.auction.update({ where: { id: aD.id }, data: { endsAt: new Date(Date.now() - 1000) } });
+      eq("تسویهٔ بدون پشتوانه: تسویه شد", await settleIfEnded(aD.id), true);
+      const settledD = await prisma.auction.findUniqueOrThrow({ where: { id: aD.id } });
+      eq("تسویهٔ بدون پشتوانه: پیشتاز بی‌پول کنار رفت و نفر معتبر بعدی برنده شد", settledD.winnerId, x2.id);
+      eq("تسویهٔ بدون پشتوانه: برنده دقیقاً پیشنهاد خودش را می‌پردازد", settledD.finalPrice, 10);
+      eq("تسویهٔ بدون پشتوانه: کیف برنده به‌اندازهٔ کل پیشنهادش کم شد", (await prisma.user.findUniqueOrThrow({ where: { id: x2.id } })).buyWallet, 90);
+      eq("تسویهٔ بدون پشتوانه: از پیشتاز بی‌پول چیزی کم نشد", (await prisma.user.findUniqueOrThrow({ where: { id: x1.id } })).buyWallet, 5);
+      const purchasesD = await prisma.purchase.findMany({ where: { productId: productD.id } });
+      eq("تسویهٔ بدون پشتوانه: یک Purchase با مبلغ کامل پیشنهاد", `${purchasesD.length}/${purchasesD[0]?.userId === x2.id}/${purchasesD[0]?.amount}`, "1/true/10");
+
+      // تنها پیشنهاد، بدون پشتوانه: پایان بدون برنده (نه فروش ارزان‌تر).
+      await prisma.auction.update({ where: { id: aE.id }, data: { endsAt: new Date(Date.now() - 1000) } });
+      eq("تسویهٔ بدون پیشنهاد معتبر: تسویه شد", await settleIfEnded(aE.id), true);
+      const settledE = await prisma.auction.findUniqueOrThrow({ where: { id: aE.id } });
+      eq("تسویهٔ بدون پیشنهاد معتبر: بدون برنده", `${settledE.status}/${settledE.winnerId}/${settledE.finalPrice}`, "ENDED/null/null");
+      eq("تسویهٔ بدون پیشنهاد معتبر: بدون Purchase", await prisma.purchase.count({ where: { productId: productE.id } }), 0);
+      eq("تسویهٔ بدون پیشنهاد معتبر: کیف دست‌نخورده", (await prisma.user.findUniqueOrThrow({ where: { id: x1.id } })).buyWallet, 5);
+    }
+
     // ---------- جایگاه‌های تبلیغاتی ----------
     const marketStart = new Date(Date.now() + 24 * 60 * 60 * 1000); // فردا، تا due نشوند
     marketStart.setMinutes(0, 0, 0);
@@ -341,6 +412,24 @@ async function main() {
     await expectError("upsertBid: مبلغ صفر/منفی رد می‌شود", () => upsertBid(s5.id, teamB.id, 0), "دست‌کم یک سکه");
     await expectError("upsertBid: مبلغ اعشاری رد می‌شود", () => upsertBid(s5.id, teamB.id, 2.5), "عدد صحیح");
     await expectError("upsertBid: جایگاه بسته‌شده رد می‌شود", () => upsertBid(s1!.id, teamB.id, 5), "بسته");
+
+    // دفاعی: اگر خزانهٔ برنده به قیمت دوم نرسد، ارزان‌تر نمی‌پردازد؛ پیشنهادش نامعتبر است و
+    // نفر بعدی با قیمت دومِ از نو حساب‌شده برنده می‌شود.
+    {
+      const s6 = slots[5]!;
+      const tP = await prisma.team.create({ data: { name: "تیم ج", slug: "smoke-ad-p", treasury: 100 } });
+      const tQ = await prisma.team.create({ data: { name: "تیم چ", slug: "smoke-ad-q", treasury: 100 } });
+      const tR = await prisma.team.create({ data: { name: "تیم ح", slug: "smoke-ad-r", treasury: 100 } });
+      await upsertBid(s6.id, tP.id, 30);
+      await upsertBid(s6.id, tQ.id, 20);
+      await upsertBid(s6.id, tR.id, 10);
+      await prisma.team.update({ where: { id: tP.id }, data: { treasury: 15 } }); // کمتر از قیمت دوم (۲۰)
+      const closed6 = await closeSlot(s6.id);
+      eq("closeSlot: برندهٔ بی‌پشتوانه کنار می‌رود و نفر بعدی برنده می‌شود", closed6?.winnerTeamId, tQ.id);
+      eq("closeSlot: قیمت دوم در میان پیشنهادهای باقی‌مانده از نو حساب می‌شود", closed6?.pricePaid, 10);
+      eq("closeSlot: از تیم کنارگذاشته‌شده چیزی کم نمی‌شود", (await prisma.team.findUniqueOrThrow({ where: { id: tP.id } })).treasury, 15);
+      eq("closeSlot: خزانهٔ برندهٔ جدید به‌اندازهٔ قیمت کامل کم شد", (await prisma.team.findUniqueOrThrow({ where: { id: tQ.id } })).treasury, 90);
+    }
   } finally {
     // ---------- پاکسازی ----------
     try {

@@ -8,7 +8,8 @@
  *
  * مدل جدید (پرتفوی/سلیقه/سپر/چانه‌زنی/بدون سرمایه‌گذاری خودی) اینجا هم شبیه‌سازی می‌شود:
  * هر تیم یک قیمت محصول ثابت دارد، هر کاربر یک قدرت تصادفی (از ۶ قدرت بازی) می‌گیرد،
- * و seedSpendable/buySpendable/hasShield دقیقاً با همان فرمول src/lib/scoring.ts محاسبه می‌شوند.
+ * و seedSpendable/buySpendable دقیقاً با همان فرمول src/lib/scoring.ts محاسبه می‌شوند؛
+ * دارندهٔ سپر بزرگ‌ترین سرمایه‌گذاری‌اش را به‌عنوان تنها هدف سپر (shieldTeamId) برمی‌گزیند.
  */
 
 import { bargainDiscountFor, defaultConfig, effectivePurchaseCap, maxSpendable, scoreGame } from "../src/lib/economy/engine";
@@ -183,10 +184,17 @@ function runOnce(seed: number): RunOutcome {
       // seedSpendable/buySpendable: همان فرمول src/lib/scoring.ts، برای هر هدف دیگر
       let seedSpendable = 0;
       const buyUnits: { cost: number; count: number }[] = [];
+      // سپر: دارنده پیش از بازار (بی‌خبر از فروش) بزرگ‌ترین سرمایه‌گذاری‌اش را بیمه می‌کند
+      let shieldTeamId: string | null = null;
+      let shieldInvested = 0;
       for (const otherTeam of teamIds) {
         if (otherTeam === teamId) continue;
         const invested = investedByUserTeam.get(`${userId}|${otherTeam}`) ?? 0;
         seedSpendable += Math.max(0, MAX_PER_TARGET - invested);
+        if (power === "SHIELD" && invested > shieldInvested) {
+          shieldTeamId = otherTeam;
+          shieldInvested = invested;
+        }
 
         const price = priceByTeam.get(otherTeam)!;
         const purchased = purchasedByUserTeam.get(`${userId}|${otherTeam}`) ?? 0;
@@ -204,7 +212,7 @@ function runOnce(seed: number): RunOutcome {
         buyLeft: w.buyLeft,
         seedSpendable,
         buySpendable,
-        hasShield: power === "SHIELD",
+        shieldTeamId,
       };
     })
   );
