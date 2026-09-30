@@ -66,7 +66,7 @@ async function main() {
   const { settleGame } = await import("../src/lib/settlement");
   const { setPhase } = await import("../src/lib/phase");
   const { loadTimeline } = await import("../src/lib/timeline");
-  const { buildExportWorkbookBuffer } = await import("../src/app/admin/export/xlsx/route");
+  const { buildExportWorkbookBuffer } = await import("../src/app/admin/export/xlsx/workbook");
   const ExcelJS = (await import("exceljs")).default;
 
   try {
