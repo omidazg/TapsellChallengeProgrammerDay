@@ -1,4 +1,4 @@
-{
+const project = {
   id: 'founders-arena',
   year: '2026',
   tags: ['AI', 'LLM', 'Gamification', 'Web'],
@@ -14,4 +14,5 @@
   image: 'assets/projects/founders-arena.webp',
   video: 'assets/projects/founders-arena.mp4',
   links: []
-}
+};
+export default project;
