@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getPhase, phaseIndex, PHASE_LABEL } from "@/lib/phase";
 import { prisma } from "@/lib/db";
@@ -30,7 +31,15 @@ export default async function IdeaPage() {
   if (phaseIndex(phase) < phaseIndex("IDEATION")) {
     return (
       <>
-        <PageHeader eyebrow={`از فاز «${PHASE_LABEL.IDEATION}» باز می‌شود`} title="اتاق ایده" />
+        <PageHeader
+          eyebrow={`از فاز «${PHASE_LABEL.IDEATION}» باز می‌شود`}
+          title="اتاق ایده"
+          action={
+            <Link href="/" className="btn-ghost">
+              الان چه کنم؟
+            </Link>
+          }
+        />
         <Container>
           <Locked title="هنوز زود است" desc="اتاق ایده از فاز «اتاق ایده» باز می‌شود." />
         </Container>
@@ -48,6 +57,7 @@ export default async function IdeaPage() {
         <PageHeader eyebrow="فاز فعلی" title="اتاق ایده" desc="ایدهٔ تیمت را بنویس و پیش از پایان فاز ثبت نهایی کن تا سرمایه‌گذاران آن را ببینند." />
         <Container className="max-w-3xl">
           <IdeaForm
+            draftKey={`${user.teamId}:${idea?.id ?? "new"}`}
             initial={
               idea
                 ? {

@@ -1,91 +1,137 @@
-/* حالت تیره (اختیاری، پیش‌فرض روشن است)
+/* حالت تیره
    ─────────────────────────────────────────────────────────────────────────
    فعال‌سازی با `data-theme="dark"` روی <html> (توسط ThemeToggle.tsx، با یک
-   اسکریپت پیش از رندر در layout.tsx برای جلوگیری از فلاش نور).
+   اسکریپت پیش از رندر در layout.tsx برای جلوگیری از فلاش نور). بدون انتخاب
+   ذخیره‌شده، پوسته از prefers-color-scheme سیستم پیروی می‌کند.
+
+   توکن‌های معنایی (--surface، --text، --border، --danger، …) در globals.css برای
+   حالت روشن تعریف شده‌اند و اینجا برای حالت تیره بازتعریف می‌شوند. همهٔ
+   بازنویسی‌های زیر فقط از همین توکن‌ها می‌خوانند؛ برای تغییر رنگ تیره کافی است
+   توکن را عوض کنید، نه ده‌ها قاعده را.
 
    نکتهٔ مهم: --color-brand-navy در دو نقش کاملاً متفاوت استفاده می‌شود:
    ۱) به‌عنوان رنگ متن روی پس‌زمینه‌های روشن (.text-brand-navy)
    ۲) به‌عنوان پس‌زمینهٔ همیشه-تیرهٔ دکمه/پیل فعال با متن سفید (.bg-brand-navy، .btn-navy)
    بنابراین به‌جای override کردن خودِ متغیر تم (که نقش ۲ را خراب می‌کند)،
    کلاس‌های تولیدشدهٔ Tailwind را هدف‌گذاری هدفمند می‌کنیم. .bg-brand-navy و
-   .btn-navy دست‌نخورده می‌مانند چون همان‌جا هم در حالت تیره درست کار می‌کنند. */
+   .btn-navy دست‌نخورده می‌مانند چون همان‌جا هم در حالت تیره درست کار می‌کنند.
 
+   این فایل بیرون از @layer است، پس بر utilityهای Tailwind غلبه می‌کند؛ اما کلاس‌های
+   !important (مثل !text-brand-red) در لایهٔ utilities‌اند و important لایه‌دار بر important
+   بی‌لایه می‌چربد — برای آن‌ها بلوک @layer base انتهای همین فایل هست. در کد تازه برای
+   رنگ‌های وابسته به پوسته از ! استفاده نکنید. */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
 :root[data-theme="dark"] {
   color-scheme: dark;
 }
 
 [data-theme="dark"] {
-  /* پس‌زمینه و متن پایه */
   --bg: #0b1620;
-  --bg-soft: #142434;
-  --ink: #eaf4fa;
-  --muted: #9fb8c9;
-  --line: #23425c;
   --surface: #10202f;
+  --surface-2: #142a3d;
+  --surface-3: #16324a;
+  --surface-4: #1c3a54;
+  --input-bg: #0f1f2e;
+  --text: #eaf4fa;
+  --text-muted: #9fb8c9;
+  --border: #23425c;
+  --accent: #5fd1ec;
+  --accent-strong: #5fd1ec;
+  /* #e10126 روی زمینهٔ تیره فقط ~۳٫۴:۱ بود؛ این مقدار روی --surface حدود ۶:۱ است */
+  --danger: #ff6b81;
+  --danger-soft: rgba(225, 1, 38, 0.14);
+  --danger-border: rgba(225, 1, 38, 0.3);
+  --ok: #7be3ba;
+  --ok-soft: rgba(73, 186, 134, 0.16);
+  --warn: #ffcf7a;
+  --warn-soft: rgba(245, 165, 36, 0.16);
+
+  /* نام‌های مستعار قدیمی باید دوباره روی همین عنصر حل شوند */
+  --bg-soft: var(--surface-2);
+  --ink: var(--text);
+  --muted: var(--text-muted);
+  --line: var(--border);
 }
 
 [data-theme="dark"] body {
   background: var(--bg);
-  color: var(--ink);
+  color: var(--text);
 }
 
 /* سطوح و متن‌های اصلی --------------------------------------------------- */
-[data-theme="dark"] .bg-white { background-color: #10202f; }
-[data-theme="dark"] .bg-white\/90 { background-color: rgb(16 32 47 / 90%); }
+[data-theme="dark"] .bg-white { background-color: var(--surface); }
+[data-theme="dark"] .bg-white\/90 { background-color: color-mix(in srgb, var(--surface) 90%, transparent); }
 
-[data-theme="dark"] .text-brand-navy { color: #eaf4fa; }
-[data-theme="dark"] .text-brand-navy\/90 { color: rgb(234 244 250 / 90%); }
+[data-theme="dark"] .text-brand-navy { color: var(--text); }
+[data-theme="dark"] .text-brand-navy\/90 { color: color-mix(in srgb, var(--text) 90%, transparent); }
+[data-theme="dark"] .text-brand-navy\/70 { color: color-mix(in srgb, var(--text) 70%, transparent); }
 
-[data-theme="dark"] .text-brand-slate { color: #9fb8c9; }
-[data-theme="dark"] .text-brand-slate\/70 { color: rgb(159 184 201 / 70%); }
+[data-theme="dark"] .text-brand-slate { color: var(--text-muted); }
+[data-theme="dark"] .text-brand-slate\/70 { color: color-mix(in srgb, var(--text-muted) 70%, transparent); }
 
-[data-theme="dark"] .border-brand-mist { border-color: #23425c; }
-[data-theme="dark"] .border-brand-slate\/30 { border-color: rgb(159 184 201 / 30%); }
+[data-theme="dark"] .border-brand-mist { border-color: var(--border); }
+[data-theme="dark"] .border-brand-slate\/30 { border-color: color-mix(in srgb, var(--text-muted) 30%, transparent); }
+[data-theme="dark"] .border-slate-200 { border-color: var(--border); }
 
-[data-theme="dark"] .bg-brand-ice { background-color: #142a3d; }
-[data-theme="dark"] .bg-brand-ice\/60 { background-color: rgb(20 42 61 / 60%); }
-[data-theme="dark"] .bg-brand-sky { background-color: #16324a; }
-[data-theme="dark"] .bg-brand-mist { background-color: #1c3a54; }
+[data-theme="dark"] .bg-brand-ice { background-color: var(--surface-2); }
+[data-theme="dark"] .bg-brand-ice\/60 { background-color: color-mix(in srgb, var(--surface-2) 60%, transparent); }
+[data-theme="dark"] .bg-brand-sky { background-color: var(--surface-3); }
+[data-theme="dark"] .bg-brand-mist { background-color: var(--surface-4); }
+[data-theme="dark"] .bg-slate-100 { background-color: var(--surface-3); }
 
-[data-theme="dark"] .text-brand-cyan-dark { color: #5fd1ec; }
+[data-theme="dark"] .text-brand-cyan-dark { color: var(--accent); }
+[data-theme="dark"] .text-brand-cyan-deep { color: var(--accent-strong); }
+
+/* قرمز برند به‌عنوان متن (لینک برگزارکننده، خطاها، قیمت‌ها) — دکمه‌های bg-brand-red دست‌نخورده‌اند */
+[data-theme="dark"] .text-brand-red { color: var(--danger); }
 
 /* کارت‌ها، ورودی‌ها، دکمه‌های خنثی -------------------------------------- */
 [data-theme="dark"] .card {
-  background-color: #10202f;
-  border-color: #23425c;
+  background-color: var(--surface);
+  border-color: var(--border);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 30px -12px rgba(0, 0, 0, 0.55);
 }
 
+/* کارت با زمینهٔ نرم (مثل Locked در ui.tsx): در روشن utility بر .card می‌چربد، در تیره هم باید */
+[data-theme="dark"] .card.bg-brand-ice { background-color: var(--surface-2); }
+
 [data-theme="dark"] .input {
-  background-color: #0f1f2e;
-  border-color: #23425c;
-  color: #eaf4fa;
+  background-color: var(--input-bg);
+  border-color: var(--border);
+  color: var(--text);
 }
-[data-theme="dark"] .input::placeholder { color: rgb(159 184 201 / 70%); }
+[data-theme="dark"] .input::placeholder { color: color-mix(in srgb, var(--text-muted) 70%, transparent); }
 
 /* کلاس‌های کامپوننتی که با @apply ساخته شده‌اند، کلاس utility (مثل .text-brand-navy) را روی
    عنصر ندارند، پس override‌های بالا به آن‌ها نمی‌رسد و باید مستقیم هدف گرفته شوند.
    بدون این، برچسب همهٔ فرم‌ها (.label) در حالت تیره سرمه‌ای روی زمینهٔ تیره می‌ماند. */
-[data-theme="dark"] .label { color: #eaf4fa; }
+[data-theme="dark"] .label { color: var(--text); }
 
 [data-theme="dark"] .btn-ghost {
   background-color: transparent;
-  color: #eaf4fa;
-  border-color: #23425c;
+  color: var(--text);
+  border-color: var(--border);
 }
-[data-theme="dark"] .btn-ghost:hover { background-color: #16324a; }
+[data-theme="dark"] .btn-ghost:hover { background-color: var(--surface-3); }
+/* btn-ghost با رنگ متن/حاشیهٔ قرمز (مثل «خروج از حساب»): بعد از قاعدهٔ بالا تا بر آن غلبه کند */
+[data-theme="dark"] .btn-ghost.text-brand-red { color: var(--danger); }
+[data-theme="dark"] .btn-ghost.border-red-100 { border-color: var(--danger-border); }
+[data-theme="dark"] .btn-ghost.hover\:bg-red-50:hover { background-color: var(--danger-soft); }
 
-[data-theme="dark"] .hover\:bg-brand-ice:hover { background-color: #16324a; }
-[data-theme="dark"] .hover\:bg-brand-mist:hover { background-color: #1c3a54; }
-[data-theme="dark"] .hover\:text-brand-navy:hover { color: #eaf4fa; }
-[data-theme="dark"] .hover\:text-brand-cyan-dark:hover { color: #5fd1ec; }
-[data-theme="dark"] .hover\:bg-red-50:hover { background-color: rgba(225, 1, 38, 0.14); }
-[data-theme="dark"] .group:hover .group-hover\:bg-brand-mist { background-color: #1c3a54; }
+[data-theme="dark"] .hover\:bg-brand-ice:hover { background-color: var(--surface-3); }
+[data-theme="dark"] .hover\:bg-brand-mist:hover { background-color: var(--surface-4); }
+[data-theme="dark"] .hover\:text-brand-navy:hover { color: var(--text); }
+[data-theme="dark"] .hover\:text-brand-cyan-dark:hover { color: var(--accent); }
+[data-theme="dark"] .hover\:bg-red-50:hover { background-color: var(--danger-soft); }
+[data-theme="dark"] .group:hover .group-hover\:bg-brand-mist { background-color: var(--surface-4); }
 
 /* حاشیه‌ها و جداکننده‌های نیمه‌شفاف */
 [data-theme="dark"] .border-brand-mist\/60,
-[data-theme="dark"] .border-brand-mist\/70 { border-color: rgb(35 66 92 / 70%); }
-[data-theme="dark"] .divide-brand-mist > :not(:last-child) { border-color: #23425c; }
+[data-theme="dark"] .border-brand-mist\/70 { border-color: color-mix(in srgb, var(--border) 70%, transparent); }
+[data-theme="dark"] .divide-brand-mist > :not(:last-child) { border-color: var(--border); }
 
 /* پیل/تب فعال (bg-brand-navy) روی سطح تیره تقریباً نامرئی بود */
 [data-theme="dark"] .bg-brand-navy[aria-current="page"] { background-color: #1f5a80; }
@@ -94,39 +140,59 @@
 
 /* چیپ‌ها و نشان‌های وضعیت ------------------------------------------------ */
 [data-theme="dark"] .chip-red { background-color: rgba(225, 1, 38, 0.16); color: #ff9fb1; }
-[data-theme="dark"] .chip-gold { background-color: rgba(245, 165, 36, 0.18); color: #ffcf7a; }
-[data-theme="dark"] .chip-ok { background-color: rgba(73, 186, 134, 0.18); color: #7be3ba; }
+[data-theme="dark"] .chip-gold { background-color: rgba(245, 165, 36, 0.18); color: var(--warn); }
+[data-theme="dark"] .chip-ok { background-color: rgba(73, 186, 134, 0.18); color: var(--ok); }
 /* chip-cyan و chip-navy با @apply ساخته شده‌اند و override کلاس‌های .bg-brand-* به آن‌ها نمی‌رسد */
-[data-theme="dark"] .chip-cyan { background-color: #1c3a54; color: #5fd1ec; }
-[data-theme="dark"] .chip-navy { background-color: #16324a; color: #eaf4fa; }
+[data-theme="dark"] .chip-cyan { background-color: var(--surface-4); color: var(--accent); }
+/* چیپ‌های معیار امتیاز صفحهٔ اصلی: روی زمینهٔ تیره حاشیهٔ ظریف می‌گیرند تا از زمینه جدا شوند */
+[data-theme="dark"] .chip-navy { background-color: var(--surface-3); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
 
-[data-theme="dark"] .bg-red-50 { background-color: rgba(225, 1, 38, 0.14); }
-[data-theme="dark"] .bg-emerald-50 { background-color: rgba(73, 186, 134, 0.16); }
-[data-theme="dark"] .bg-amber-50 { background-color: rgba(245, 165, 36, 0.16); }
+[data-theme="dark"] .bg-red-50 { background-color: var(--danger-soft); }
+[data-theme="dark"] .bg-emerald-50 { background-color: var(--ok-soft); }
+[data-theme="dark"] .bg-amber-50 { background-color: var(--warn-soft); }
 [data-theme="dark"] .bg-red-50\/60 { background-color: rgba(225, 1, 38, 0.1); }
-[data-theme="dark"] .border-red-100 { border-color: rgba(225, 1, 38, 0.3); }
+[data-theme="dark"] .border-red-100 { border-color: var(--danger-border); }
 [data-theme="dark"] .border-emerald-100 { border-color: rgba(73, 186, 134, 0.3); }
 [data-theme="dark"] .border-amber-200,
 [data-theme="dark"] .border-amber-300 { border-color: rgba(245, 165, 36, 0.35); }
 [data-theme="dark"] .text-emerald-600,
 [data-theme="dark"] .text-emerald-700,
-[data-theme="dark"] .text-emerald-800 { color: #7be3ba; }
+[data-theme="dark"] .text-emerald-800 { color: var(--ok); }
 [data-theme="dark"] .text-amber-600,
-[data-theme="dark"] .text-amber-700 { color: #ffcf7a; }
+[data-theme="dark"] .text-amber-700 { color: var(--warn); }
 
 /* پس‌زمینه‌های تزئینی صفحهٔ اصلی ----------------------------------------- */
 [data-theme="dark"] .bg-hero {
   background:
     radial-gradient(1200px 500px at 80% -10%, rgba(0, 184, 224, 0.12) 0%, transparent 60%),
     radial-gradient(800px 400px at 10% 110%, rgba(225, 1, 38, 0.12) 0%, transparent 60%),
-    #0b1620;
+    var(--bg);
 }
 [data-theme="dark"] .bg-dots { background-image: radial-gradient(rgba(0, 184, 224, 0.14) 1px, transparent 1px); }
 
 /* لینک اسکیپ (پرش به محتوا) — رنگ‌بندی پایه در globals.css توسط تیم دسترسی‌پذیری */
-[data-theme="dark"] .skip-link { background-color: #10202f; color: #eaf4fa; }
+[data-theme="dark"] .skip-link { background-color: var(--surface); color: var(--text); }
 
 /* دایرهٔ پس‌زمینهٔ تصویر hero مستقیماً از متغیر brand-ice رنگ می‌گیرد. */
 [data-theme="dark"] svg circle[fill="var(--color-brand-ice)"] {
   fill: #12324a;
+}
+
+/* نوار لوگوی پیلارها در فوتر (AppShell → .footer-pillars): کاشی سفید عمداً در PillarLogos
+   ثابت است، ولی در فوتر تیره یک نوار سفید پهن می‌ساخت. لوگوها پس‌زمینهٔ شفاف دارند، پس
+   نوار را برمی‌داریم و لوگوها را تک‌رنگ روشن (معکوس خاکستری) می‌کنیم. */
+[data-theme="dark"] .footer-pillars ul { background-color: transparent; }
+[data-theme="dark"] .footer-pillars img {
+  filter: grayscale(1) invert(1) contrast(1.6);
+  opacity: 0.7;
+}
+[data-theme="dark"] .footer-pillars img:hover { opacity: 1; }
+
+/* نسخه‌های !important کلاس‌های رنگی (در بخش مدیریت) -----------------------
+   برای important، لایهٔ زودتر (base) بر لایهٔ utilities غلبه می‌کند؛ قاعدهٔ بی‌لایه نمی‌توانست. */
+@layer base {
+  [data-theme="dark"] .\!text-brand-red { color: var(--danger) !important; }
+  [data-theme="dark"] .\!text-brand-slate { color: var(--text-muted) !important; }
+  [data-theme="dark"] .\!bg-brand-ice { background-color: var(--surface-2) !important; }
+  [data-theme="dark"] .\!border-red-100 { border-color: var(--danger-border) !important; }
 }

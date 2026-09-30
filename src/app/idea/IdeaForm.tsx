@@ -1,11 +1,14 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import Image from "next/image";
 import { fa } from "@/lib/persian";
 import { Alert } from "@/components/ui";
-import { uploadImageFile, isLocalUploadUrl } from "@/lib/product-utils";
+import { ImageUploadField } from "@/components/ImageUploadField";
+import { useDraftAutosave, type DraftValues } from "@/hooks/useDraftAutosave";
+import { isLocalUploadUrl, imageUrlError } from "@/lib/product-utils";
+import { DraftBanner } from "../build/DraftBanner";
 import { saveIdeaAction, unsubmitIdeaAction, type IdeaActionState } from "./actions";
 
 type IdeaInput = {
@@ -24,58 +27,8 @@ function randomCover() {
   return `https://picsum.photos/seed/${seed}/800/500`;
 }
 
-function CoverUploader({ onUploaded }: { onUploaded: (url: string) => void }) {
-  const [status, setStatus] = useState<"idle" | "uploading" | "error">("idle");
-  const [message, setMessage] = useState("");
-
-  async function handleFiles(files: FileList | null) {
-    const file = files?.[0];
-    if (!file) return;
-    setStatus("uploading");
-    setMessage("در حال آپلود تصویر…");
-    try {
-      const { url } = await uploadImageFile(file);
-      onUploaded(url);
-      setStatus("idle");
-      setMessage("تصویر آپلود شد.");
-    } catch (e) {
-      setStatus("error");
-      setMessage(e instanceof Error ? e.message : "آپلود با خطا مواجه شد");
-    }
-  }
-
-  return (
-    <div>
-      <div
-        className="rounded-2xl border-2 border-dashed border-brand-mist p-3 text-center transition hover:border-brand-cyan"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          e.preventDefault();
-          handleFiles(e.dataTransfer.files);
-        }}
-      >
-        <label htmlFor="coverFile" className="btn-cyan inline-block cursor-pointer">
-          {status === "uploading" ? "در حال آپلود…" : "آپلود تصویر از رایانه"}
-        </label>
-        <input
-          id="coverFile"
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
-          className="sr-only"
-          disabled={status === "uploading"}
-          onChange={(e) => {
-            handleFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
-        <p className="mt-1 text-xs text-brand-slate">یا فایل را همین‌جا رها کن</p>
-      </div>
-      <p role="status" aria-live="polite" className={`mt-1 text-xs ${status === "error" ? "text-brand-red" : "text-brand-slate"}`}>
-        {message}
-      </p>
-    </div>
-  );
-}
+/** فیلدهایی که پیش‌نویس محلی‌شان ذخیره می‌شود */
+const DRAFT_FIELDS = ["title", "oneLiner", "problem", "audience", "buildPlan", "coverUrl", "fundingCap", "revenueShare"] as const;
 
 function SubmitButtons() {
   const status = useFormStatus();
@@ -92,15 +45,56 @@ function SubmitButtons() {
   );
 }
 
-export function IdeaForm({ initial }: { initial: IdeaInput | null }) {
-  const [state, formAction] = useActionState<IdeaActionState, FormData>(saveIdeaAction, {});
+export function IdeaForm({
+  initial,
+  draftKey,
+}: {
+  initial: IdeaInput | null;
+  /** کلید پیش‌نویس محلی (بر پایهٔ تیم و شناسهٔ ایده) */
+  draftKey: string;
+}) {
+  const formRef = useRef<HTMLFormElement>(null);
   const [coverUrl, setCoverUrl] = useState(initial?.coverUrl ?? "");
   const [revenueShare, setRevenueShare] = useState(initial?.revenueShare ?? 30);
+
+  // مقادیر فعلی سرور، به همان شکلی که در FormData ظاهر می‌شوند
+  const baseline: DraftValues = {
+    title: [initial?.title ?? ""],
+    oneLiner: [initial?.oneLiner ?? ""],
+    problem: [initial?.problem ?? ""],
+    audience: [initial?.audience ?? ""],
+    buildPlan: [initial?.buildPlan ?? ""],
+    coverUrl: [initial?.coverUrl ?? ""],
+    fundingCap: [String(initial?.fundingCap ?? 200)],
+    revenueShare: [String(initial?.revenueShare ?? 30)],
+  };
+  const draft = useDraftAutosave({
+    key: `idea:${draftKey}`,
+    formRef,
+    fields: DRAFT_FIELDS,
+    baseline,
+    controlled: {
+      coverUrl: (vals) => setCoverUrl(vals[0] ?? ""),
+      revenueShare: (vals) => {
+        const n = Number(vals[0]);
+        if (Number.isFinite(n)) setRevenueShare(Math.min(60, Math.max(20, Math.round(n))));
+      },
+    },
+  });
+
+  const [state, formAction] = useActionState<IdeaActionState, FormData>(async (prev, formData) => {
+    const result = await saveIdeaAction(prev, formData);
+    // پس از ذخیره/ثبت موفق، پیش‌نویس محلی دیگر لازم نیست
+    if (result.ok) draft.clear();
+    return result;
+  }, {});
   // پس از خطا، مقادیر ارسالی برمی‌گردند تا ری‌ست خودکار فرم نوشته‌ها را پاک نکند
   const v = state.values ?? {};
+  const coverError = imageUrlError(coverUrl);
 
   return (
-    <form action={formAction} className="card p-6 space-y-5 anim-rise">
+    <form ref={formRef} action={formAction} className="card p-6 space-y-5 anim-rise">
+      {draft.found && <DraftBanner savedAt={draft.found.savedAt} onRestore={draft.restore} onDismiss={draft.dismiss} />}
       {state.error && <Alert kind="error">{state.error}</Alert>}
       {state.ok && <Alert kind="ok">ذخیره شد.</Alert>}
 
@@ -133,13 +127,15 @@ export function IdeaForm({ initial }: { initial: IdeaInput | null }) {
       <div>
         <label className="label" htmlFor="coverUrl">تصویر جلد</label>
         <div className="space-y-3">
-          <CoverUploader onUploaded={(url) => setCoverUrl(url)} />
+          <ImageUploadField id="coverFile" onUploaded={(url) => setCoverUrl(url)} />
           <div className="flex flex-col sm:flex-row flex-wrap gap-3 items-stretch sm:items-start">
             <input
               id="coverUrl"
               name="coverUrl"
               value={coverUrl}
               onChange={(e) => setCoverUrl(e.target.value)}
+              aria-invalid={coverError ? true : undefined}
+              aria-describedby={coverError ? "coverUrlError" : undefined}
               className="input flex-1 min-w-0 sm:min-w-[220px]"
               placeholder="https://picsum.photos/seed/.../800/500 یا از دکمهٔ بالا آپلود کن"
             />
@@ -147,9 +143,14 @@ export function IdeaForm({ initial }: { initial: IdeaInput | null }) {
               تصویر تصادفی
             </button>
           </div>
+          {coverError && (
+            <p id="coverUrlError" className="text-xs text-brand-red">
+              {coverError}
+            </p>
+          )}
         </div>
         {/* پیش‌نمایش: تصاویر آپلودی محلی با next/image بهینه می‌شوند؛ نشانی‌های دلخواه کاربر با تگ ساده (چون میزبانشان ممکن است مجاز next/image نباشد) */}
-        {coverUrl && (
+        {coverUrl && !coverError && (
           <div className="mt-3 relative w-full max-w-md aspect-[8/5] rounded-2xl overflow-hidden border border-brand-mist anim-pop bg-brand-sky">
             {isLocalUploadUrl(coverUrl) ? (
               <Image src={coverUrl} alt="پیش‌نمایش جلد" fill sizes="800px" className="object-cover" />

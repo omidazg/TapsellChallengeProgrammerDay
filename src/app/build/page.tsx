@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getPhase, phaseIndex, PHASE_LABEL } from "@/lib/phase";
 import { prisma } from "@/lib/db";
@@ -28,7 +29,15 @@ export default async function BuildPage() {
   if (phaseIndex(phase) < phaseIndex("IDEATION")) {
     return (
       <>
-        <PageHeader eyebrow={`از فاز «${PHASE_LABEL.IDEATION}» باز می‌شود`} title="مرکز ساخت" />
+        <PageHeader
+          eyebrow={`از فاز «${PHASE_LABEL.IDEATION}» باز می‌شود`}
+          title="مرکز ساخت"
+          action={
+            <Link href="/" className="btn-ghost">
+              الان چه کنم؟
+            </Link>
+          }
+        />
         <Container>
           <Locked title="هنوز زود است" desc="مرکز ساخت از فاز «اتاق ایده» باز می‌شود." />
         </Container>
@@ -86,6 +95,7 @@ export default async function BuildPage() {
         </div>
         <div className="order-1 lg:order-2">
         <BuildForm
+          draftKey={`${user.teamId}:${product?.id ?? "new"}`}
           editable={editable}
           lockNote={phaseEditable ? null : undefined}
           submitted={!!product?.submittedAt}

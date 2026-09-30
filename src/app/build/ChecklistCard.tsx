@@ -4,6 +4,7 @@ import type { ChecklistItem } from "@/lib/product";
 import { checklistProgress } from "@/lib/product";
 import { Alert } from "@/components/ui";
 import { UnsubmitButton } from "./UnsubmitButton";
+import { ChecklistLink } from "./ChecklistLink";
 
 function ProgressRing({ value }: { value: number }) {
   const size = 92;
@@ -63,10 +64,16 @@ export function ChecklistCard({
 
       <ul className="space-y-2 stagger">
         {checklist.map((item) => (
-          <li key={item.key} className="flex items-center gap-2 text-sm">
-            <span className={item.done ? "text-ok" : "text-brand-slate"} aria-hidden>{item.done ? "✅" : "⬜"}</span>
-            <span className={item.done ? "text-brand-navy font-medium" : "text-brand-slate"}>{item.label}</span>
-            <span className="sr-only">{item.done ? "(انجام شده)" : "(انجام نشده)"}</span>
+          <li key={item.key}>
+            {/* کلیک روی هر مورد به فیلد مربوط در فرم اسکرول و فوکوس می‌کند */}
+            <ChecklistLink
+              fieldId={item.fieldId}
+              className="-mx-2 flex items-center gap-2 rounded-xl px-2 py-1 text-sm transition hover:bg-brand-ice focus-visible:bg-brand-ice"
+            >
+              <span className={item.done ? "text-ok" : "text-brand-slate"} aria-hidden>{item.done ? "✅" : "⬜"}</span>
+              <span className={item.done ? "text-brand-navy font-medium" : "text-brand-slate underline decoration-dotted underline-offset-4"}>{item.label}</span>
+              <span className="sr-only">{item.done ? "(انجام شده)" : "(انجام نشده)"}</span>
+            </ChecklistLink>
           </li>
         ))}
       </ul>

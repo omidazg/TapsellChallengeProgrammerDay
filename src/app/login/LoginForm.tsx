@@ -3,14 +3,28 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { Alert } from "@/components/ui";
+import { PasswordInput } from "@/components/PasswordInput";
 import { fa } from "@/lib/persian";
 import { loginAction, requestLoginOtpAction, verifyLoginOtpAction, type LoginResult } from "./actions";
 
 type Mode = "email" | "phone";
 type Access = LoginResult["access"];
 
-export function LoginForm({ next, smsEnabled }: { next?: string | null; smsEnabled: boolean }) {
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** لینک ثبت‌نام/درخواست دسترسی با ایمیل تایپ‌شده تا کاربر دوباره تایپش نکند */
+function withEmail(path: string, email: string, next?: string | null) {
+  const q = new URLSearchParams();
+  if (next) q.set("next", next);
+  if (EMAIL_RE.test(email)) q.set("email", email);
+  return q.size ? `${path}?${q}` : path;
+}
+
+export function LoginForm({ next, smsEnabled, initialEmail = "" }: { next?: string | null; smsEnabled: boolean; initialEmail?: string }) {
   const [mode, setMode] = useState<Mode>("email");
+  // ایمیل این‌جا نگه داشته می‌شود تا لینک‌های پایین فرم هم آن را با خود ببرند
+  const [email, setEmail] = useState(initialEmail);
+  const typed = email.trim();
 
   return (
     <div className="card p-6 md:p-8 anim-rise">
@@ -24,16 +38,16 @@ export function LoginForm({ next, smsEnabled }: { next?: string | null; smsEnabl
           </TabButton>
         </div>
       )}
-      {mode === "email" ? <EmailLogin next={next} /> : <PhoneLogin next={next} />}
+      {mode === "email" ? <EmailLogin next={next} email={email} setEmail={setEmail} /> : <PhoneLogin next={next} />}
       <p className="mt-6 text-center text-sm text-brand-slate">
         هنوز حساب نساخته‌ای؟{" "}
-        <Link href={next ? `/register?next=${encodeURIComponent(next)}` : "/register"} className="font-bold text-brand-cyan-dark">
+        <Link href={withEmail("/register", typed, next)} className="font-bold text-brand-cyan-dark">
           ثبت‌نام کن
         </Link>
       </p>
       <p className="mt-2 text-center text-sm text-brand-slate">
         در لیست سفید نیستی؟{" "}
-        <Link href="/access-request" className="font-bold text-brand-cyan-dark">
+        <Link href={withEmail("/access-request", typed)} className="font-bold text-brand-cyan-dark">
           درخواست دسترسی بده
         </Link>
       </p>
@@ -69,16 +83,22 @@ function AccessHint({ access, next, email, phone }: { access: Access; next?: str
   }
   if (access === "NO_ACCOUNT") {
     return (
-      <Link href={next ? `/register?next=${encodeURIComponent(next)}` : "/register"} className="btn-cyan mt-3 w-full">
+      <Link href={withEmail("/register", email ?? "", next)} className="btn-cyan mt-3 w-full">
         ثبت‌نام
+      </Link>
+    );
+  }
+  if (access === "PENDING" && email) {
+    return (
+      <Link href={`${withEmail("/access-request", email)}#access-status`} className="btn-ghost mt-3 w-full">
+        پیگیری وضعیت درخواست
       </Link>
     );
   }
   return null;
 }
 
-function EmailLogin({ next }: { next?: string | null }) {
-  const [email, setEmail] = useState("");
+function EmailLogin({ next, email, setEmail }: { next?: string | null; email: string; setEmail: (v: string) => void }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [access, setAccess] = useState<Access>(undefined);
@@ -123,12 +143,9 @@ function EmailLogin({ next }: { next?: string | null }) {
       </div>
       <div>
         <label className="label" htmlFor="password">رمز عبور</label>
-        <input
+        <PasswordInput
           id="password"
-          type="password"
-          dir="ltr"
           autoComplete="current-password"
-          className="input"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required

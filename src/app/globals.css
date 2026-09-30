@@ -26,16 +26,52 @@
   --shadow-lift: 0 18px 40px -16px rgba(0, 45, 71, 0.35);
 }
 
+/* توکن‌های معنایی رنگ (حالت روشن). مقادیر دقیقاً همان رنگ‌های پالت‌اند تا ظاهر روشن تغییر نکند؛
+   theme.css همین نام‌ها را برای حالت تیره بازتعریف می‌کند و همهٔ بازنویسی‌های تیره از آن‌ها می‌خوانند.
+   کلاس یا کامپوننت تازه‌ای که باید در هر دو پوسته درست باشد، به‌جای رنگ ثابت از این متغیرها استفاده کند
+   (مثلاً bg-(--surface) یا text-(--text-muted) در Tailwind 4). */
 :root {
-  --bg: #ffffff;
-  --bg-soft: #f3fbff;
-  --ink: #002d47;
-  --muted: #4c6a7d;
-  --line: #d7effc;
-  --surface: #ffffff;
+  --bg: #ffffff;             /* زمینهٔ صفحه */
+  --surface: #ffffff;        /* کارت، منو، هدر (bg-white) */
+  --surface-2: #f3fbff;      /* سطح نرم (bg-brand-ice) */
+  --surface-3: #eaf4fa;      /* سطح نرم‌تر/هاور (bg-brand-sky) */
+  --surface-4: #d7effc;      /* سطح پررنگ‌تر (bg-brand-mist) */
+  --input-bg: #ffffff;
+  --text: #002d47;           /* متن اصلی (text-brand-navy) */
+  --text-muted: #4c6a7d;     /* متن کم‌رنگ (text-brand-slate) */
+  --border: #d7effc;         /* خط و حاشیه (border-brand-mist) */
+  --accent: #007895;         /* لینک/تأکید فیروزه‌ای (text-brand-cyan-dark) */
+  --accent-strong: #006c86;  /* text-brand-cyan-deep */
+  --danger: #e10126;         /* متن قرمز برند (text-brand-red) */
+  --danger-soft: #fef2f2;    /* bg-red-50 */
+  --danger-border: #ffe2e2;  /* border-red-100 */
+  --ok: #047857;             /* text-emerald-700 */
+  --ok-soft: #ecfdf5;        /* bg-emerald-50 */
+  --warn: #b45309;           /* text-amber-700 */
+  --warn-soft: #fffbeb;      /* bg-amber-50 */
+
+  /* نام‌های قدیمی (در TrendChart و ChecklistCard استفاده شده‌اند) — نام مستعار توکن‌های بالا */
+  --bg-soft: var(--surface-2);
+  --ink: var(--text);
+  --muted: var(--text-muted);
+  --line: var(--border);
+
+  /* ارتفاع نوار زبانه‌های پایین موبایل (NavBottomBar)؛ وقتی نوار نیست صفر است.
+     عناصر شناور پایین صفحه با calc(var(--bottom-nav-h) + …) یا کلاس .above-bottom-nav از آن فاصله بگیرند. */
+  --bottom-nav-h: 0px;
 }
 
-html { direction: rtl; scroll-behavior: smooth; }
+/* نوار پایین فقط زیر lg (همان جایی که منوی همبرگری هست) و فقط وقتی در صفحه رندر شده دیده می‌شود */
+@media (width < 64rem) {
+  :root:has(.nav-bottom-bar) {
+    --bottom-nav-h: calc(4rem + 1px + env(safe-area-inset-bottom, 0px));
+  }
+}
+@media print {
+  :root:has(.nav-bottom-bar) { --bottom-nav-h: 0px; }
+}
+
+html { direction: rtl; scroll-behavior: smooth; scroll-padding-bottom: var(--bottom-nav-h); }
 body {
   background: var(--bg);
   color: var(--ink);
@@ -85,6 +121,70 @@ body {
   font-weight: 700;
   font-size: 0.875rem;
   box-shadow: var(--shadow-lift);
+}
+
+/* با viewport-fit=cover (layout.tsx) محتوا در افقیِ گوشی‌های ناچ‌دار زیر ناچ نمی‌رود */
+@supports (padding: env(safe-area-inset-left)) {
+  body { padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+}
+
+/* ── نوار زبانه‌های پایین موبایل (NavBottomBar.tsx) ─────────────────────── */
+.nav-bottom-bar {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+.nav-bottom-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.125rem;
+  height: 4rem;          /* هدف لمسی ۶۴px (≥۴۴px) */
+  min-width: 44px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  transition: color .15s;
+}
+.nav-bottom-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.75rem;
+  min-width: 3rem;
+  border-radius: 999px;
+  font-size: 1.125rem;
+  line-height: 1;
+  transition: background-color .15s;
+}
+/* وقتی کیبورد مجازی باز است (فوکوس روی فیلد متنی) نوار کنار می‌رود تا روی فیلد نیفتد */
+@media (pointer: coarse) {
+  :root:has(:is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"]), textarea, [contenteditable="true"]):focus) .nav-bottom-bar {
+    display: none;
+  }
+}
+/* عنصر شناور پایین صفحه (position: fixed + bottom-*) را هم‌اندازهٔ نوار پایین بالا می‌برد؛
+   روی دسکتاپ یا بدون نوار، --bottom-nav-h صفر است و اثری ندارد. */
+.above-bottom-nav { margin-bottom: var(--bottom-nav-h); }
+
+/* نقطهٔ «زنده» کنار آیتم منوی فاز جاری */
+.nav-live-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--color-brand-red);
+  box-shadow: 0 0 0 2px var(--surface);
+  animation: nav-live 1.6s ease-out infinite;
+}
+@keyframes nav-live {
+  0% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 2px rgba(225, 1, 38, .5); }
+  100% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 9px rgba(225, 1, 38, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-live-dot { animation: none; }
 }
 
 /* اعداد فارسی در همه‌جا */

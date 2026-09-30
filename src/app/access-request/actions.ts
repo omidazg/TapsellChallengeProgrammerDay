@@ -3,8 +3,9 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getSessionUserId } from "@/lib/auth";
-import { rateLimit, rateLimitMessage, clientIp, ACCESS_REQUEST_IP_RULE } from "@/lib/rate-limit";
-import { canRegister } from "@/lib/whitelist";
+import { rateLimit, rateLimitMessage, clientIp, ACCESS_REQUEST_IP_RULE, ACCESS_STATUS_IP_RULE } from "@/lib/rate-limit";
+import { accessState, canRegister, normalizeEmail } from "@/lib/whitelist";
+import { getPhase } from "@/lib/phase";
 import { normalizePhone } from "@/lib/phone";
 
 type AccessRequestFields = { email: string; firstName: string; lastName: string; position: string; unit: string; phone: string };
@@ -16,6 +17,8 @@ type AccessRequestFields = { email: string; firstName: string; lastName: string;
 export type AccessRequestState = {
   error?: string;
   ok?: "CREATED" | "UPDATED" | "ALLOWED" | "HAS_ACCOUNT";
+  /** ایمیل نرمال‌شده پس از موفقیت؛ برای لینک ثبت‌نام و پرکردن جعبهٔ پیگیری */
+  email?: string;
   values?: AccessRequestFields;
 };
 
@@ -70,7 +73,7 @@ export async function submitAccessRequestAction(_prev: AccessRequestState, formD
 
   const user = await prisma.user.findFirst({ where: { OR: [{ email: data.email }, { phone: data.phone }] }, select: { id: true } });
   if (user) return { ok: "HAS_ACCOUNT" };
-  if (await canRegister(data.email)) return { ok: "ALLOWED" };
+  if (await canRegister(data.email)) return { ok: "ALLOWED", email: data.email };
 
   // یک درخواست برای هر ایمیل: ارسال دوباره اطلاعات را تازه می‌کند و درخواست ردشده را به صف برمی‌گرداند
   const existing = await prisma.accessRequest.findUnique({ where: { email: data.email }, select: { id: true } });
@@ -79,5 +82,28 @@ export async function submitAccessRequestAction(_prev: AccessRequestState, formD
     update: { ...data, status: "PENDING", reviewedById: null, reviewedAt: null },
     create: data,
   });
-  return { ok: existing ? "UPDATED" : "CREATED" };
+  return { ok: existing ? "UPDATED" : "CREATED", email: data.email };
+}
+
+export type AccessStatus = "PENDING" | "ALLOWED" | "REJECTED" | "NONE" | "HAS_ACCOUNT";
+export type AccessStatusResult = { status: AccessStatus; registrationOpen: boolean } | { error: string };
+
+/**
+ * پیگیری وضعیت درخواست دسترسی با ایمیل. فقط وضعیت برمی‌گردد، نه هیچ دادهٔ شخصی
+ * (نام، شماره، سمت و…). همان اطلاعاتی است که صفحهٔ ورود هم با ایمیل می‌دهد، ولی سقف IP
+ * جداگانه دارد تا ابزار شمارش ایمیل‌ها نشود.
+ */
+export async function checkAccessStatusAction(rawEmail: string): Promise<AccessStatusResult> {
+  const parsed = z.string().trim().toLowerCase().max(120).email().safeParse(String(rawEmail ?? ""));
+  if (!parsed.success) return { error: FIELD_ERRORS.email };
+
+  const limit = rateLimit("access-status:ip", await clientIp(), ACCESS_STATUS_IP_RULE());
+  if (!limit.ok) return { error: rateLimitMessage(limit.retryAfterSec) };
+
+  const email = normalizeEmail(parsed.data);
+  const { phase } = await getPhase();
+  const registrationOpen = phase === "REGISTRATION";
+  const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+  if (user) return { status: "HAS_ACCOUNT", registrationOpen };
+  return { status: await accessState(email), registrationOpen };
 }

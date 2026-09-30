@@ -6,39 +6,30 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { PHASE_LABEL, type Phase } from "@/lib/phases";
 import { fa, duration } from "@/lib/persian";
+import { isActive, navFor, navState, type NavItem } from "./NavConfig";
+import { NavBottomBar, NavPhaseMark } from "./NavBottomBar";
 import { Avatar } from "./Avatar";
 import { NotificationBell } from "./NotificationBell";
 import { ThemeToggle } from "./ThemeToggle";
 import { AskAgent } from "./AskAgent";
+import { PushPrompt } from "./PushPrompt";
 import { PillarStrip } from "./PillarLogos";
 import { GROUP_NAME } from "@/lib/pillars";
 
 type ShellUser = { id: string; nickname: string; isAdmin: boolean; seedWallet: number; buyWallet: number; teamName: string | null; avatarSeed: string };
 
-const NAV: { href: string; label: string; icon: string }[] = [
-  { href: "/team", label: "اتاق تیم", icon: "👥" },
-  { href: "/idea", label: "اتاق ایده", icon: "💡" },
-  { href: "/invest", label: "سرمایه‌گذاری", icon: "🌱" },
-  { href: "/build", label: "مرکز ساخت", icon: "🛠️" },
-  { href: "/market", label: "بازار", icon: "🛒" },
-  { href: "/auction", label: "حراج زنده", icon: "🔨" },
-  { href: "/adslots", label: "جایگاه تبلیغاتی", icon: "📣" },
-  { href: "/leaderboard", label: "جدول", icon: "🏆" },
-  { href: "/guide", label: "راهنما", icon: "📖" },
+// فهرست مقصدها، فاز بازشدن و فاز «زنده»ٔ هر آیتم در NavConfig.ts است (مشترک با نوار پایین موبایل).
+const EXTRA_MOBILE: NavItem[] = [
+  { href: "/wallet", label: "کیف پول", icon: "💰" },
+  { href: "/profile", label: "پروفایل", icon: "🙂" },
 ];
-
-// بعد از پایان بازی، صفحهٔ نتایج مهم‌ترین مقصد است و باید از منو در دسترس باشد
-function navFor(phase: Phase) {
-  return phase === "CLOSED" ? [...NAV, { href: "/results", label: "نتایج", icon: "🏁" }] : NAV;
-}
-
-function isActive(path: string, href: string) {
-  return path === href || path.startsWith(href + "/");
-}
+const ADMIN_ITEM: NavItem = { href: "/admin", label: "برگزارکننده", icon: "🎛️" };
 
 export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUser | null; phase: Phase; phaseEndsAt: string | null; children: React.ReactNode }) {
   const path = usePathname();
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  // دکمه‌ای که منو را باز کرده (همبرگر هدر یا «بیشتر» نوار پایین) تا فوکوس با Escape به همان برگردد
+  const menuOpenerRef = useRef<HTMLButtonElement | null>(null);
   // منو فقط در مسیری که باز شده باز می‌ماند؛ با تغییر مسیر خودبه‌خود بسته می‌شود (بدون effect)
   const [openAt, setOpenAt] = useState<string | null>(null);
   const open = openAt === path;
@@ -62,7 +53,7 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setOpen(false);
-        menuButtonRef.current?.focus();
+        (menuOpenerRef.current ?? menuButtonRef.current)?.focus();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -94,7 +85,8 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
   if (path === "/hall") return <>{children}</>;
 
   return (
-    <div className="min-h-screen flex flex-col">
+    // pb با --bottom-nav-h: فوتر و انتهای محتوا زیر نوار پایین موبایل پنهان نمی‌شوند (روی دسکتاپ صفر است)
+    <div className="min-h-screen flex flex-col pb-[var(--bottom-nav-h,0px)]">
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-brand-mist">
         {/* ردیف اول: لوگو + وضعیت + کاربر */}
         <div className="mx-auto max-w-7xl px-3 sm:px-4 h-14 sm:h-16 flex items-center gap-2 sm:gap-4">
@@ -130,7 +122,10 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
                   ref={menuButtonRef}
                   type="button"
                   className="lg:hidden inline-flex items-center justify-center size-10 rounded-full border border-brand-mist text-brand-navy hover:bg-brand-ice shrink-0"
-                  onClick={() => setOpen((o) => !o)}
+                  onClick={() => {
+                    menuOpenerRef.current = menuButtonRef.current;
+                    setOpen((o) => !o);
+                  }}
                   aria-label={open ? "بستن منو" : "باز کردن منو"}
                   aria-expanded={open}
                   aria-controls="mobile-nav"
@@ -153,16 +148,22 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
         {user && (
           <nav className="hidden lg:block border-t border-brand-mist/70" aria-label="ناوبری اصلی">
             <div className="mx-auto max-w-7xl px-4 h-11 flex items-center gap-1 overflow-x-auto no-scrollbar">
-              {navFor(phase).map((n) => (
-                <Link
-                  key={n.href}
-                  href={n.href}
-                  aria-current={isActive(path, n.href) ? "page" : undefined}
-                  className={`rounded-pill px-3.5 py-1.5 text-sm font-bold whitespace-nowrap transition ${isActive(path, n.href) ? "bg-brand-navy text-white" : "text-brand-navy hover:bg-brand-ice"}`}
-                >
-                  {n.label}
-                </Link>
-              ))}
+              {navFor(phase).map((n) => {
+                const active = isActive(path, n.href);
+                const { live, locked, lockHint } = navState(n, phase);
+                return (
+                  <Link
+                    key={n.href}
+                    href={n.href}
+                    title={lockHint ?? (live ? "فاز جاری" : undefined)}
+                    aria-current={active ? "page" : undefined}
+                    className={`inline-flex items-center gap-1.5 rounded-pill px-3.5 py-1.5 text-sm font-bold whitespace-nowrap transition ${active ? "bg-brand-navy text-white" : "text-brand-navy hover:bg-brand-ice"} ${locked && !active ? "opacity-60 hover:opacity-100" : ""}`}
+                  >
+                    {n.label}
+                    <NavPhaseMark live={live} lockHint={lockHint} />
+                  </Link>
+                );
+              })}
               {user.isAdmin && (
                 <Link
                   href="/admin"
@@ -181,21 +182,29 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
           <div id="mobile-nav" hidden={!open} className="lg:hidden">
             <nav
               aria-label="منوی موبایل"
-              className="absolute inset-x-0 z-40 border-t border-brand-mist bg-white px-3 py-3 shadow-lift max-h-[calc(100dvh-3.5rem)] overflow-y-auto"
+              className="absolute inset-x-0 z-40 border-t border-brand-mist bg-white px-3 py-3 shadow-lift max-h-[calc(100dvh-3.5rem-var(--bottom-nav-h,0px))] overflow-y-auto overscroll-contain"
             >
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {[...navFor(phase), { href: "/wallet", label: "کیف پول", icon: "💰" }, { href: "/profile", label: "پروفایل", icon: "🙂" }, ...(user.isAdmin ? [{ href: "/admin", label: "برگزارکننده", icon: "🎛️" }] : [])].map((n) => (
-                  <Link
-                    key={n.href}
-                    href={n.href}
-                    onClick={() => setOpen(false)}
-                    aria-current={isActive(path, n.href) ? "page" : undefined}
-                    className={`flex items-center gap-2 rounded-2xl px-3 py-3 text-sm font-bold min-h-12 ${isActive(path, n.href) ? "bg-brand-navy text-white" : n.href === "/admin" ? "bg-red-50 text-brand-red" : "bg-brand-ice text-brand-navy"}`}
-                  >
-                    <span aria-hidden>{n.icon}</span>
-                    <span className="truncate">{n.label}</span>
-                  </Link>
-                ))}
+                {[...navFor(phase), ...EXTRA_MOBILE, ...(user.isAdmin ? [ADMIN_ITEM] : [])].map((n) => {
+                  const active = isActive(path, n.href);
+                  const { live, locked, lockHint } = navState(n, phase);
+                  return (
+                    <Link
+                      key={n.href}
+                      href={n.href}
+                      onClick={() => setOpen(false)}
+                      title={lockHint ?? undefined}
+                      aria-current={active ? "page" : undefined}
+                      className={`flex items-center gap-2 rounded-2xl px-3 py-3 text-sm font-bold min-h-12 ${active ? "bg-brand-navy text-white" : n.href === "/admin" ? "bg-red-50 text-brand-red" : "bg-brand-ice text-brand-navy"} ${locked && !active ? "opacity-60" : ""}`}
+                    >
+                      <span aria-hidden>{n.icon}</span>
+                      <span className="truncate">{n.label}</span>
+                      <span className="mr-auto inline-flex items-center">
+                        <NavPhaseMark live={live} lockHint={lockHint} />
+                      </span>
+                    </Link>
+                  );
+                })}
               </div>
               <div className="md:hidden mt-3 flex items-center justify-between rounded-2xl border border-brand-mist px-4 py-2.5 text-xs font-bold text-brand-navy">
                 <span>🌱 کیف بذر: {fa(user.seedWallet)}</span>
@@ -212,7 +221,9 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
                 <ThemeToggle />
               </div>
               <form action="/logout" method="post" className="mt-3">
-                <button type="submit" className="btn-ghost w-full !text-brand-red !border-red-100 hover:bg-red-50">🚪 خروج از حساب</button>
+                {/* بدون !important: utilityها خودشان بر btn-ghost (لایهٔ components) غلبه می‌کنند و
+                    این‌طور بازنویسی حالت تیرهٔ theme.css (رنگ قرمز روشن‌تر) هم به آن می‌رسد */}
+                <button type="submit" className="btn-ghost w-full text-brand-red border-red-100 hover:bg-red-50">🚪 خروج از حساب</button>
               </form>
             </nav>
           </div>
@@ -234,12 +245,31 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
       </main>
 
       <footer className="border-t border-brand-mist py-6 px-4 space-y-4 text-center text-xs text-brand-slate">
-        {/* صفحهٔ فرود مهمان خودش شبکهٔ کامل لوگوها را دارد */}
-        {(user || path !== "/") && <PillarStrip />}
+        {/* صفحهٔ فرود مهمان خودش شبکهٔ کامل لوگوها را دارد.
+            footer-pillars: در حالت تیره نوار سفید پشت لوگوها برداشته و لوگوها تک‌رنگ روشن می‌شوند (theme.css) */}
+        {(user || path !== "/") && (
+          <div className="footer-pillars">
+            <PillarStrip />
+          </div>
+        )}
         <div>میدان بنیان‌گذاران {GROUP_NAME} · روز برنامه‌نویس {fa(1405, { sep: false })}</div>
       </footer>
 
       <AskAgent loggedIn={!!user} />
+      <PushPrompt loggedIn={!!user} />
+
+      {/* نوار زبانه‌های پایین موبایل — مثل منوی اصلی فقط برای کاربر واردشده */}
+      {user && (
+        <NavBottomBar
+          path={path}
+          phase={phase}
+          menuOpen={open}
+          onMore={(button) => {
+            menuOpenerRef.current = button;
+            setOpen((o) => !o);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -262,7 +292,24 @@ function PhasePill({ phase, endsAt }: { phase: Phase; endsAt: string | null }) {
     <span className="chip-cyan !py-1.5 max-w-[46vw] sm:max-w-none" title={remaining !== null ? `پایان در ${duration(remaining)}` : ""}>
       <span className="inline-block size-1.5 rounded-full bg-brand-cyan-dark pulse-ring shrink-0" aria-hidden />
       <span className="truncate">{PHASE_LABEL[phase]}</span>
-      {remaining !== null && remaining > 0 && <span className="hidden sm:inline text-brand-slate font-medium">· {duration(remaining)}</span>}
+      {remaining !== null && remaining > 0 && (
+        <>
+          {/* موبایل: نسخهٔ فشرده («۲س ۱۵د»)؛ صفحه‌خوان همان متن کامل را می‌خواند */}
+          <span aria-hidden className="sm:hidden shrink-0 text-brand-slate font-medium fa-num">· {compactDuration(remaining)}</span>
+          <span className="sr-only sm:not-sr-only sm:inline text-brand-slate font-medium">· {duration(remaining)}</span>
+        </>
+      )}
     </span>
   );
+}
+
+/** زمان باقی‌ماندهٔ فشرده برای موبایل: «۱روز ۳س» / «۲س ۱۵د» / «۱۲د» */
+function compactDuration(ms: number) {
+  const s = Math.floor(ms / 1000);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d) return h ? `${fa(d)}روز ${fa(h)}س` : `${fa(d)}روز`;
+  if (h) return m ? `${fa(h)}س ${fa(m)}د` : `${fa(h)}س`;
+  return `${fa(Math.max(1, m))}د`;
 }

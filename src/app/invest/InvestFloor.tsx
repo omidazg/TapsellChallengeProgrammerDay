@@ -3,6 +3,7 @@ import { Avatar } from "@/components/Avatar";
 import { fa, coins } from "@/lib/persian";
 import { analystAvg, type FloorFilter, type IdeaCardData } from "@/lib/idea";
 import { Cover } from "@/app/idea/Cover";
+import { thumbUrl } from "@/lib/thumb";
 
 const FILTERS: { key: FloorFilter; label: string }[] = [
   { key: "all", label: "همه" },
@@ -59,7 +60,7 @@ export function InvestFloor({
                 className="card overflow-hidden hover:-translate-y-0.5 hover:shadow-lift transition flex flex-col"
               >
                 <div className="relative w-full aspect-[8/5] bg-brand-sky">
-                  <Cover src={idea.coverUrl} alt={idea.title} sizes="360px" />
+                  <Cover src={thumbUrl(idea.coverUrl)} alt={idea.title} sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 400px" />
                   {isOwn && <span className="absolute top-3 right-3 chip bg-white/90 text-brand-red">تیم خودت</span>}
                 </div>
                 <div className="p-4 flex flex-col gap-3 flex-1">

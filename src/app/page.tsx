@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
-import { getPhase, PHASE_LABEL, PHASE_DESC, type Phase } from "@/lib/phase";
+import { getPhase, phaseIndex, PHASE_LABEL, PHASE_DESC, type Phase } from "@/lib/phase";
 import { ROLES, POWERS, SCORE_WEIGHTS } from "@/lib/constants";
 import { SCORE_CATEGORY_ORDER, SCORE_CATEGORY_LABELS } from "@/lib/score-labels";
-import { fa, coins } from "@/lib/persian";
+import { fa, coins, duration } from "@/lib/persian";
+import { smsEnabled } from "@/lib/sms";
+import { leaderThreshold } from "@/lib/leader";
 import { Container, Stat } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { prisma } from "@/lib/db";
@@ -28,11 +30,34 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ w
     return <LoggedOutLanding phase={phase} endsAt={endsAt ? endsAt.toISOString() : null} values={values} />;
   }
 
-  const [idea, teamSize] = await Promise.all([
-    user.teamId ? prisma.idea.findUnique({ where: { teamId: user.teamId }, select: { submittedAt: true } }) : null,
-    user.teamId ? prisma.user.count({ where: { teamId: user.teamId } }) : 0,
+  // فقط داده‌های سبکی که برای تشخیص «کار بعدی» لازم است
+  const teamId = user.teamId;
+  const [idea, product, members, myVote] = await Promise.all([
+    teamId && phase === "IDEATION"
+      ? prisma.idea.findUnique({ where: { teamId }, select: { submittedAt: true } })
+      : null,
+    teamId && phase === "BUILD"
+      ? prisma.product.findUnique({ where: { teamId }, select: { submittedAt: true } })
+      : null,
+    teamId ? prisma.user.findMany({ where: { teamId }, select: { id: true, role: true } }) : [],
+    teamId
+      ? prisma.teamLeaderVote.findUnique({ where: { voterId: user.id }, select: { teamId: true, candidateId: true } })
+      : null,
   ]);
-  const cta = nextAction({ ...user, teamSize }, phase, !!idea?.submittedAt);
+  // سرپرستی که دیگر عضو نیست حساب نمی‌شود (همان منطق getLeaderState)
+  const storedLeader = user.team?.leaderId ?? null;
+  const leaderId = storedLeader && members.some((m) => m.id === storedLeader) ? storedLeader : null;
+  const cta = nextAction({
+    phase,
+    endsAt,
+    user,
+    leaderId,
+    members,
+    hasVoted: !!myVote && myVote.teamId === teamId && members.some((m) => m.id === myVote.candidateId),
+    ideaSubmitted: !!idea?.submittedAt,
+    productSubmitted: !!product?.submittedAt,
+    needsPhone: smsEnabled() && !user.phone,
+  });
 
   return (
       <Container className="pt-10 space-y-8">
@@ -63,10 +88,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ w
           <div className="card p-6 flex flex-col justify-between bg-brand-navy text-white">
             <div>
               <div className="text-xs font-bold text-brand-mist mb-1">کار بعدی تو</div>
-              <div className="text-xl font-black">{cta.label}</div>
+              <div className="text-lg sm:text-xl font-black leading-8">{cta.title}</div>
             </div>
             <Link href={cta.href} className="btn-primary mt-4 self-start">
-              {cta.label} ←
+              {cta.action} ←
             </Link>
           </div>
         </div>
@@ -102,35 +127,106 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ w
   );
 }
 
-type CurrentUser = { teamId: string | null; seedWallet: number; buyWallet: number; teamSize?: number };
+const TEAM_FULL = 3;
 
-function nextAction(user: CurrentUser, phase: Phase, hasIdea: boolean): { href: string; label: string } {
-  if (phase === "CLOSED") return { href: "/results", label: "نتایج را ببین" };
-  if (!user.teamId) return { href: "/team", label: "تیم بساز یا به یکی بپیوند" };
+type NextActionInput = {
+  phase: Phase;
+  endsAt: Date | null;
+  user: { id: string; teamId: string | null; seedWallet: number; buyWallet: number };
+  leaderId: string | null;
+  members: { id: string; role: string }[];
+  hasVoted: boolean;
+  ideaSubmitted: boolean;
+  productSubmitted: boolean;
+  needsPhone: boolean;
+};
+
+/** «تا پایان دور ۲ ساعت و ۱۰ دقیقه مانده»؛ اگر زمان پایان مشخص نیست یا گذشته، خالی */
+function timeLeft(endsAt: Date | null, what: string) {
+  if (!endsAt) return "";
+  const ms = endsAt.getTime() - Date.now();
+  return ms > 0 ? ` و تا پایان ${what} ${duration(ms)} مانده` : "";
+}
+
+/**
+ * مهم‌ترین قدم بعدی کاربر بر اساس وضعیت واقعی و فاز جاری.
+ * title دلیل را با عدد می‌گوید؛ action فعل کوتاه دکمه است و هرگز title را تکرار نمی‌کند.
+ */
+function nextAction(input: NextActionInput): { href: string; title: string; action: string } {
+  const { phase, endsAt, user, leaderId, members, hasVoted, ideaSubmitted, productSubmitted, needsPhone } = input;
+  if (phase === "CLOSED") return { href: "/results", title: "بازی تمام شد و سودها پرداخت شده‌اند.", action: "نتایج را ببین" };
+
+  const formingOpen = phaseIndex(phase) <= phaseIndex("IDEATION");
+  if (!user.teamId) {
+    return formingOpen
+      ? { href: "/team", title: `هنوز عضو هیچ تیمی نیستی${timeLeft(endsAt, "این فاز")}.`, action: "تیم بساز یا بپیوند" }
+      : { href: "/team", title: "عضو هیچ تیمی نیستی و تشکیل تیم بسته شده؛ با برگزارکننده هماهنگ کن.", action: "سر بزن" };
+  }
+
+  const size = members.length;
+  if (formingOpen && size < TEAM_FULL) {
+    const missing = TEAM_FULL - size;
+    return {
+      href: "/team",
+      title: `تیمت ${fa(size)} از ${fa(TEAM_FULL)} نفر است؛ ${fa(missing)} هم‌تیمی دیگر لازم داری.`,
+      action: "دعوت کن",
+    };
+  }
+
+  if (!leaderId && size >= 2 && !hasVoted) {
+    return {
+      href: "/team#leader",
+      title: `تیمت هنوز سرپرست ندارد و رأی تو ثبت نشده؛ ${fa(leaderThreshold(size))} رأی از ${fa(size)} لازم است.`,
+      action: "رأی بده",
+    };
+  }
+
+  const canManage = leaderId === user.id || (!leaderId && size <= 1);
 
   switch (phase) {
-    case "REGISTRATION":
-      return (user.teamSize ?? 3) < 3
-        ? { href: "/team", label: "هم‌تیمی دعوت کن؛ تیمت هنوز کامل نیست" }
-        : { href: "/profile", label: "شخصیتت را کامل کن" };
+    case "REGISTRATION": {
+      const roles = new Set(members.map((m) => m.role));
+      const missingRoles = (Object.keys(ROLES) as (keyof typeof ROLES)[]).filter((r) => !roles.has(r));
+      if (missingRoles.length > 0) {
+        return {
+          href: "/team/settings",
+          title: `نقش ${missingRoles.map((r) => `${ROLES[r].emoji} ${ROLES[r].label}`).join("، ")} در تیمت خالی است؛ پیش از شروع بازی هماهنگ کنید.`,
+          action: "نقش‌ها را تنظیم کن",
+        };
+      }
+      if (needsPhone) {
+        return { href: "/profile#phone", title: "شمارهٔ موبایلت ثبت نشده؛ با آن بدون رمز و با کد پیامکی وارد می‌شوی.", action: "ثبت کن" };
+      }
+      return { href: "/profile", title: `تیمت کامل است${timeLeft(endsAt, "ثبت‌نام")}؛ حالا شخصیت و آمارت را کامل کن.`, action: "ویرایش کن" };
+    }
     case "IDEATION":
-      return hasIdea
-        ? { href: "/idea", label: "ایده‌ات را بازبینی کن" }
-        : { href: "/idea", label: "ایده‌ات را ثبت کن" };
+      if (ideaSubmitted) {
+        return { href: "/idea", title: `ایدهٔ تیمت ثبت شده${timeLeft(endsAt, "اتاق ایده")}.`, action: "بازبینی کن" };
+      }
+      return canManage
+        ? { href: "/idea", title: `ایدهٔ تیمت هنوز ثبت نشده${timeLeft(endsAt, "اتاق ایده")}.`, action: "ایده را ثبت کن" }
+        : { href: "/idea", title: `سرپرست هنوز ایدهٔ تیم را ثبت نکرده${timeLeft(endsAt, "اتاق ایده")}.`, action: "پیش‌نویس را ببین" };
     case "SEED_ROUND":
       return user.seedWallet > 0
-        ? { href: "/invest", label: "روی یک ایده سرمایه‌گذاری کن" }
-        : { href: "/leaderboard", label: "کیف بذرت تمام شد؛ جدول را ببین" };
+        ? { href: "/invest", title: `${coins(user.seedWallet)} بذر خرج‌نشده داری${timeLeft(endsAt, "دور")}.`, action: "سرمایه‌گذاری کن" }
+        : { href: "/leaderboard", title: "کیف بذرت را کامل خرج کرده‌ای؛ حالا ببین ایده‌ها چطور پیش می‌روند.", action: "جدول را ببین" };
     case "BUILD":
-      return { href: "/build", label: "محصولت را در مرکز ساخت کامل کن" };
+      if (productSubmitted) {
+        return { href: "/build", title: `محصول تیمت ثبت شده${timeLeft(endsAt, "ساخت")}.`, action: "بهترش کن" };
+      }
+      return canManage
+        ? { href: "/build", title: `محصول تیمت هنوز ثبت نشده${timeLeft(endsAt, "ساخت")}.`, action: "بساز" }
+        : { href: "/build", title: `سرپرست هنوز محصول تیم را ثبت نکرده${timeLeft(endsAt, "ساخت")}.`, action: "کمک کن" };
     case "MARKET":
       return user.buyWallet > 0
-        ? { href: "/market", label: "از بازار خرید کن" }
-        : { href: "/adslots", label: "کیف خریدت تمام شد؛ جایگاه تبلیغاتی بگیر" };
+        ? { href: "/market", title: `${coins(user.buyWallet)} خرید خرج‌نشده داری${timeLeft(endsAt, "روز بازار")}.`, action: "خرید کن" }
+        : { href: "/adslots", title: "کیف خریدت را کامل خرج کرده‌ای؛ جایگاه‌های تبلیغاتی تیم‌ها را دنبال کن.", action: "سر بزن" };
     case "AUCTION":
-      return { href: "/auction", label: "به حراج زنده بپیوند" };
+      return user.buyWallet > 0
+        ? { href: "/auction", title: `حراج زنده در جریان است و ${coins(user.buyWallet)} در کیف خریدت داری.`, action: "پیشنهاد بده" }
+        : { href: "/auction", title: `حراج زنده در جریان است${timeLeft(endsAt, "حراج")}.`, action: "تماشا کن" };
     default:
-      return { href: "/team", label: "به اتاق تیم سر بزن" };
+      return { href: "/team", title: "اتاق تیم منتظر توست.", action: "سر بزن" };
   }
 }
 

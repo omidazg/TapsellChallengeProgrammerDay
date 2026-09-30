@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore, useTransition } from "react";
+import { useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { Avatar } from "@/components/Avatar";
 import { Alert, Locked } from "@/components/ui";
@@ -23,6 +23,57 @@ function useJoinLink(slug: string) {
     () => ""
   );
   return `${origin}/join/${slug}`;
+}
+
+/** آیا مرورگر اشتراک‌گذاری بومی دارد؟ روی سرور و در hydration false تا رندر یکسان بماند */
+function useCanShare() {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () => typeof navigator.share === "function",
+    () => false
+  );
+}
+
+function joinInputId(slug: string) {
+  return `join-link-${slug}`;
+}
+
+/** کپی و اشتراک‌گذاری لینک پیوستن؛ اگر کپی نشد، کادر لینک انتخاب می‌شود تا دستی کپی شود */
+function useInviteLink(slug: string, teamName: string) {
+  const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const canShare = useCanShare();
+
+  async function copy() {
+    const ok = await copyText(`${window.location.origin}/join/${slug}`);
+    if (ok) {
+      setFailed(false);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } else {
+      setFailed(true);
+      const el = document.getElementById(joinInputId(slug)) as HTMLInputElement | null;
+      if (el) {
+        el.focus();
+        el.select();
+      }
+    }
+  }
+
+  async function share() {
+    try {
+      await navigator.share({
+        title: `دعوت به تیم ${teamName}`,
+        text: `به تیم «${teamName}» در میدان بنیان‌گذاران بپیوند:`,
+        url: `${window.location.origin}/join/${slug}`,
+      });
+    } catch (e) {
+      // بستن پنجرهٔ اشتراک توسط کاربر خطا نیست؛ خطای واقعی → کپی
+      if ((e as { name?: string })?.name !== "AbortError") await copy();
+    }
+  }
+
+  return { copied, failed, canShare, copy, share };
 }
 
 export function TeamPanel({
@@ -63,9 +114,10 @@ export function TeamPanel({
             <Link href="/team/settings" className="btn-cyan">
               ⚙️ {leader.leaderId === currentUserId || team.members.length <= 1 ? "تنظیمات تیم" : "نقش و قدرت اعضا"}
             </Link>
-            {registrationOpen && <LeaveButton lastMember={team.members.length <= 1} />}
           </div>
         </div>
+
+        {leader.votingOpen && <LeaderBanner voted={!!leader.votes[currentUserId]} />}
 
         {incomplete && (
           <IncompleteTeamCard team={team} missingRoles={missingRoles} formingOpen={formingOpen} />
@@ -96,9 +148,13 @@ export function TeamPanel({
               );
             })}
             {Array.from({ length: TEAM_FULL - team.members.length }).map((_, i) => (
-              <div key={`empty-${i}`} className="card flex items-center justify-center border-dashed p-4 text-sm text-brand-slate">
-                جای خالی
-              </div>
+              <EmptySlot
+                key={`empty-${i}`}
+                role={missingRoles[i] ?? null}
+                slug={team.slug}
+                teamName={team.name}
+                canInvite={formingOpen && !full}
+              />
             ))}
           </div>
         </div>
@@ -111,6 +167,8 @@ export function TeamPanel({
             desc="فاز اتاق ایده به پایان رسیده؛ برای تغییر ترکیب تیم با برگزارکننده هماهنگ کن."
           />
         )}
+
+        {registrationOpen && <LeaveButton lastMember={team.members.length <= 1} />}
       </div>
 
       <div className="space-y-4">
@@ -176,34 +234,17 @@ function IncompleteTeamCard({
 
       {formingOpen && !full && (
         <div className="mt-3">
-          <CopyJoinLink slug={team.slug} />
+          <CopyJoinLink slug={team.slug} teamName={team.name} />
         </div>
       )}
     </div>
   );
 }
 
-function CopyJoinLink({ slug }: { slug: string }) {
-  const [copied, setCopied] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const inputId = useMemo(() => `join-link-${slug}`, [slug]);
+function CopyJoinLink({ slug, teamName }: { slug: string; teamName: string }) {
+  const inputId = joinInputId(slug);
   const url = useJoinLink(slug);
-
-  async function copy() {
-    const ok = await copyText(`${window.location.origin}/join/${slug}`);
-    if (ok) {
-      setFailed(false);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } else {
-      setFailed(true);
-      const el = document.getElementById(inputId) as HTMLInputElement | null;
-      if (el) {
-        el.focus();
-        el.select();
-      }
-    }
-  }
+  const { copied, failed, canShare, copy, share } = useInviteLink(slug, teamName);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -219,10 +260,70 @@ function CopyJoinLink({ slug }: { slug: string }) {
       <button type="button" onClick={copy} className="btn-cyan !py-1.5 !px-3 text-sm shrink-0" aria-live="polite">
         {copied ? "کپی شد ✓" : "کپی لینک دعوت"}
       </button>
+      {canShare && (
+        <button type="button" onClick={share} className="btn-ghost !py-1.5 !px-3 text-sm shrink-0">
+          <span aria-hidden>📤</span> اشتراک‌گذاری
+        </button>
+      )}
       {failed && (
         <p className="w-full text-xs text-brand-navy/70">کپی خودکار ممکن نشد؛ لینک انتخاب شده، با Ctrl+C کپی کنید.</p>
       )}
     </div>
+  );
+}
+
+/** جای خالی عضو: نقشی که تیم کم دارد و دعوت همان‌جا */
+function EmptySlot({
+  role,
+  slug,
+  teamName,
+  canInvite,
+}: {
+  role: RoleCoverage | null;
+  slug: string;
+  teamName: string;
+  canInvite: boolean;
+}) {
+  const { copied, canShare, copy, share } = useInviteLink(slug, teamName);
+
+  return (
+    <div className="card flex flex-col items-center justify-center gap-2 border-2 border-dashed border-brand-mist p-4 text-center">
+      <div className="text-2xl" aria-hidden>{role ? role.emoji : "➕"}</div>
+      <div className="text-sm font-bold text-brand-navy">
+        {role ? `جای ${role.label} خالی است` : "جای یک هم‌تیمی خالی است"}
+      </div>
+      {canInvite && (
+        <div className="flex flex-wrap justify-center gap-1.5">
+          <button type="button" onClick={copy} className="btn-cyan !px-2.5 !py-1.5 !text-xs" aria-live="polite">
+            {copied ? "کپی شد ✓" : "کپی لینک دعوت"}
+          </button>
+          {canShare ? (
+            <button type="button" onClick={share} className="btn-ghost !px-2.5 !py-1.5 !text-xs">
+              <span aria-hidden>📤</span> اشتراک‌گذاری
+            </button>
+          ) : (
+            <a href="#invite" className="btn-ghost !px-2.5 !py-1.5 !text-xs">
+              دعوت با ایمیل
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** در موبایل کارت سرپرست زیر فهرست اعضاست؛ این بنر تا وقتی سرپرست انتخاب نشده به آن اشاره می‌کند */
+function LeaderBanner({ voted }: { voted: boolean }) {
+  return (
+    <a
+      href="#leader"
+      className="card flex items-center justify-between gap-3 border-2 border-gold/60 bg-amber-50 p-4 text-sm font-bold text-brand-navy lg:hidden"
+    >
+      <span>
+        <span aria-hidden>👑</span> هنوز سرپرست ندارید — {voted ? "رأی تو ثبت شده؛ نتیجه را ببین" : "رأی بده"}
+      </span>
+      <span className="shrink-0 text-brand-cyan-dark" aria-hidden>↓</span>
+    </a>
   );
 }
 
@@ -252,13 +353,18 @@ function LeaveButton({ lastMember }: { lastMember: boolean }) {
   }
 
   return (
-    <div>
+    <div className="border-t border-brand-mist pt-4 text-left">
       {error && (
-        <div className="mb-2">
+        <div className="mb-2 text-right">
           <Alert kind="error">{error}</Alert>
         </div>
       )}
-      <button type="button" onClick={leave} disabled={pending} className="btn-ghost !text-brand-red">
+      <button
+        type="button"
+        onClick={leave}
+        disabled={pending}
+        className="text-xs font-bold text-brand-red underline-offset-4 hover:underline disabled:opacity-50"
+      >
         {pending ? "در حال خروج…" : "ترک تیم"}
       </button>
     </div>
@@ -295,7 +401,7 @@ function InviteForm({
   }
 
   return (
-    <div className="card p-5 anim-rise">
+    <div className="card p-5 anim-rise scroll-mt-24" id="invite">
       <h3 className="mb-3 font-black text-brand-navy">دعوت هم‌تیمی</h3>
       {full ? (
         <Alert kind="info">تیم پر است؛ ظرفیت هر تیم سه نفر است.</Alert>

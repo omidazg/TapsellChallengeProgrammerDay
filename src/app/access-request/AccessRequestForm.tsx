@@ -1,38 +1,69 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { Alert } from "@/components/ui";
 import { DEPARTMENTS } from "@/app/register/departments";
 import { submitAccessRequestAction, type AccessRequestState } from "./actions";
+import { AccessStatusBox } from "./AccessStatusBox";
 
 export function AccessRequestForm({ email, phone }: { email: string; phone: string }) {
   const [state, formAction, pending] = useActionState<AccessRequestState, FormData>(submitAccessRequestAction, {});
 
+  return (
+    <div className="space-y-4">
+      <RequestCard state={state} formAction={formAction} pending={pending} email={email} phone={phone} />
+      {/* پس از ثبت درخواست دوباره ساخته می‌شود تا ایمیل ارسال‌شده از پیش در آن باشد */}
+      <AccessStatusBox key={state.email ?? ""} defaultEmail={state.email ?? email} />
+    </div>
+  );
+}
+
+function RequestCard({
+  state,
+  formAction,
+  pending,
+  email,
+  phone,
+}: {
+  state: AccessRequestState;
+  formAction: (fd: FormData) => void;
+  pending: boolean;
+  email: string;
+  phone: string;
+}) {
+  // فرم پس از موفقیت جایش را به پیام می‌دهد؛ فوکوس را به پیام ببر تا گم نشود
+  const doneRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (state.ok) doneRef.current?.focus();
+  }, [state.ok]);
+
   if (state.ok === "HAS_ACCOUNT") {
     return (
-      <div className="card p-6 md:p-8 anim-rise space-y-4">
-        <Alert kind="info">با این ایمیل از قبل حساب ساخته شده؛ کافی است وارد شوی.</Alert>
+      <div ref={doneRef} tabIndex={-1} className="card p-6 md:p-8 anim-rise space-y-4 focus:outline-none">
+        <Alert kind="info">با این ایمیل یا شماره از قبل حساب ساخته شده؛ کافی است وارد شوی.</Alert>
         <Link href="/login" className="btn-primary w-full">ورود</Link>
       </div>
     );
   }
   if (state.ok === "ALLOWED") {
     return (
-      <div className="card p-6 md:p-8 anim-rise space-y-4">
+      <div ref={doneRef} tabIndex={-1} className="card p-6 md:p-8 anim-rise space-y-4 focus:outline-none">
         <Alert kind="ok">این ایمیل در لیست سفید هست و نیازی به درخواست ندارد؛ ثبت‌نام کن.</Alert>
-        <Link href="/register" className="btn-primary w-full">ثبت‌نام</Link>
+        <Link href={state.email ? `/register?email=${encodeURIComponent(state.email)}` : "/register"} className="btn-primary w-full">
+          ثبت‌نام
+        </Link>
       </div>
     );
   }
   if (state.ok === "CREATED" || state.ok === "UPDATED") {
     return (
-      <div className="card p-6 md:p-8 anim-rise space-y-4">
+      <div ref={doneRef} tabIndex={-1} className="card p-6 md:p-8 anim-rise space-y-4 focus:outline-none">
         <Alert kind="ok">
           {state.ok === "CREATED" ? "درخواستت ثبت شد." : "درخواستت به‌روز شد و دوباره در صف بررسی قرار گرفت."} بعد از تأیید برگزارکننده،
-          از صفحهٔ ثبت‌نام با همین ایمیل حسابت را بساز. برای دیدن وضعیت، کافی است در صفحهٔ ورود ایمیلت را وارد کنی.
+          از صفحهٔ ثبت‌نام با همین ایمیل حسابت را بساز. وضعیت درخواستت را هر وقت خواستی در بخش «پیگیری وضعیت درخواست» همین صفحه ببین.
         </Alert>
-        <Link href="/login" className="btn-ghost w-full">بازگشت به ورود</Link>
+        <a href="#access-status" className="btn-ghost w-full">پیگیری وضعیت درخواست</a>
       </div>
     );
   }

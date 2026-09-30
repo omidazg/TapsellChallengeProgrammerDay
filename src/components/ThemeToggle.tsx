@@ -32,11 +32,14 @@ function apply(mode: Mode) {
  * دکمهٔ تعویض پوسته: روشن → تیره → خودکار (سیستم) → روشن.
  * انتخاب در localStorage ذخیره می‌شود؛ یک اسکریپت پیش از رندر در layout.tsx
  * همان مقدار را قبل از رنگ‌آمیزی صفحه اعمال می‌کند تا فلاش نور رخ ندهد.
+ * بدون انتخاب ذخیره‌شده، پیش‌فرض «خودکار (سیستم)» است (prefers-color-scheme).
  */
 export function ThemeToggle({ className = "inline-flex" }: { className?: string }) {
   // مقدار اولیه باید با رندر سرور یکسان باشد تا خطای hydration رخ ندهد؛
-  // مقدار واقعی را در افکت زیر از localStorage می‌خوانیم.
-  const [mode, setMode] = useState<Mode>("light");
+  // مقدار واقعی را در افکت زیر از localStorage می‌خوانیم. تا آن لحظه null است و
+  // هیچ پوسته‌ای اعمال نمی‌شود — وگرنه همان فریم اول پوستهٔ درستِ اسکریپت layout را
+  // با مقدار پیش‌فرض بازنویسی می‌کرد و یک فلاش کوتاه می‌داد.
+  const [mode, setMode] = useState<Mode | null>(null);
 
   useEffect(() => {
     let stored: string | null = null;
@@ -46,10 +49,11 @@ export function ThemeToggle({ className = "inline-flex" }: { className?: string 
       // localStorage در بعضی مرورگرها/حالت‌های خصوصی ممکن است در دسترس نباشد
     }
     // این effect عمداً فقط یک‌بار پس از mount مقدار واقعی localStorage را با
-    // state سمت سرور (که همیشه "light" است) همگام می‌کند؛ چون localStorage
+    // state سمت سرور (که همیشه null است) همگام می‌کند؛ چون localStorage
     // در سرور در دسترس نیست، این همگام‌سازی نمی‌تواند در حین رندر انجام شود.
+    // نبودِ مقدار ذخیره‌شده یعنی «سیستم» (هم‌خوان با اسکریپت پیش از رندر در layout.tsx).
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (isMode(stored)) setMode(stored);
+    setMode(isMode(stored) ? stored : "system");
 
     const onSync = (e: Event) => {
       const next = (e as CustomEvent<unknown>).detail;
@@ -67,6 +71,7 @@ export function ThemeToggle({ className = "inline-flex" }: { className?: string 
   }, []);
 
   useEffect(() => {
+    if (mode === null) return;
     apply(mode);
     if (mode !== "system") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -76,7 +81,7 @@ export function ThemeToggle({ className = "inline-flex" }: { className?: string 
   }, [mode]);
 
   const cycle = useCallback(() => {
-    const next = NEXT[mode];
+    const next = NEXT[mode ?? "system"];
     setMode(next);
     try {
       window.localStorage.setItem(STORAGE_KEY, next);
@@ -86,16 +91,17 @@ export function ThemeToggle({ className = "inline-flex" }: { className?: string 
     window.dispatchEvent(new CustomEvent(SYNC_EVENT, { detail: next }));
   }, [mode]);
 
+  const shown = mode ?? "system";
   return (
     <button
       type="button"
       onClick={cycle}
-      aria-label={`تغییر پوسته (فعلی: ${LABEL[mode]})`}
-      title={`پوسته: ${LABEL[mode]}`}
+      aria-label={`تغییر پوسته (فعلی: ${LABEL[shown]})`}
+      title={`پوسته: ${LABEL[shown]}`}
       className={`items-center justify-center size-10 rounded-full border border-brand-mist text-brand-navy hover:bg-brand-ice shrink-0 ${className}`}
     >
       <span aria-hidden className="text-lg leading-none">
-        {ICON[mode]}
+        {ICON[shown]}
       </span>
     </button>
   );

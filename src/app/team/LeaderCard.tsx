@@ -44,7 +44,7 @@ export function LeaderCard({
   }
 
   return (
-    <div className="card p-5 anim-rise space-y-4" id="leader">
+    <div className="card p-5 anim-rise space-y-4 scroll-mt-24" id="leader">
       <div className="flex items-center justify-between gap-2">
         <h3 className="font-black text-brand-navy">👑 سرپرست تیم</h3>
         <Link href="/guide#leader" className="text-xs font-bold text-brand-cyan-dark underline">

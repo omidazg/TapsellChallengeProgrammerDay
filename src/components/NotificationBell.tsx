@@ -168,7 +168,7 @@ export function NotificationBell({ phase, variant = "desktop" }: { phase: Phase;
 
 function PhaseToast({ message, onRefresh, onClose }: { message: string; onRefresh: () => void; onClose: () => void }) {
   return (
-    <div role="status" className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:left-4 z-[60] anim-rise">
+    <div role="status" className="above-bottom-nav fixed bottom-4 inset-x-4 sm:inset-x-auto sm:left-4 z-[60] anim-rise">
       <div className="card px-4 py-3 shadow-lift flex items-center gap-3 max-w-sm">
         <span className="text-xl" aria-hidden>📣</span>
         <div className="flex-1 min-w-0">

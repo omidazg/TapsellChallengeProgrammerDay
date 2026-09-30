@@ -30,47 +30,71 @@ export function SlotGrid({
 
   const committedOpen = cells.filter((c) => c.status === "OPEN" && c.myBid !== null).reduce((s, c) => s + (c.myBid ?? 0), 0);
 
+  const renderCell = (cell: SlotCell) => (
+    // کلید شامل وضعیت و پیشنهاد من است تا پس از refresh مقدار ورودی کهنه نماند.
+    <Cell key={`${cell.id}|${cell.status}|${cell.myBid ?? ""}`} cell={cell} myTeamId={myTeamId} canBid={canBid} onDone={() => router.refresh()} />
+  );
+
   return (
-    <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+    <div>
       {myTeamId && (
         <div className="mb-3 text-xs text-brand-slate">
           خزانهٔ تیم: <b className="fa-num text-brand-navy">{coins(treasury)}</b> · تعهد باز فعلی:{" "}
           <b className="fa-num text-brand-navy">{coins(committedOpen)}</b>
         </div>
       )}
-      <table className="w-full min-w-[560px] border-separate border-spacing-2">
-        <caption className="sr-only">جایگاه‌های تبلیغاتی به تفکیک ساعت و نوع</caption>
-        <thead>
-          <tr>
-            <th scope="col" className="text-right text-xs font-bold text-brand-slate">ساعت</th>
-            {KINDS.map((k) => (
-              <th key={k} scope="col" className="text-right text-xs font-bold text-brand-slate">
-                <span aria-hidden>{AD_SLOT_KINDS[k].emoji}</span> {AD_SLOT_KINDS[k].label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {hours.map((h) => (
-            <tr key={h}>
-              <td className="fa-num font-black text-brand-navy align-top py-2">{jtime(new Date(h))}</td>
+      {/* زیر sm: هر ساعت یک کارت عمودی با جایگاه‌هایش (جدول ۵۶۰پیکسلی روی گوشی اسکرول افقی می‌خورد). */}
+      <div className="space-y-3 sm:hidden">
+        {hours.map((h) => (
+          <section key={h} className="rounded-2xl border border-brand-mist bg-brand-ice p-3">
+            <h3 className="fa-num font-black text-brand-navy mb-2">{jtime(new Date(h))}</h3>
+            <ul className="space-y-2">
               {KINDS.map((k) => {
                 const cell = byKey.get(`${k}|${h}`);
                 return (
-                  <td key={k} className="align-top">
-                    {cell ? (
-                      // کلید شامل وضعیت و پیشنهاد من است تا پس از refresh مقدار ورودی کهنه نماند.
-                      <Cell key={`${cell.id}|${cell.status}|${cell.myBid ?? ""}`} cell={cell} myTeamId={myTeamId} canBid={canBid} onDone={() => router.refresh()} />
-                    ) : (
-                      <span className="text-brand-slate text-xs">—</span>
-                    )}
-                  </td>
+                  <li key={k}>
+                    <div className="mb-1 text-xs font-bold text-brand-slate">
+                      <span aria-hidden>{AD_SLOT_KINDS[k].emoji}</span> {AD_SLOT_KINDS[k].label}
+                    </div>
+                    {cell ? renderCell(cell) : <span className="text-brand-slate text-xs">—</span>}
+                  </li>
                 );
               })}
+            </ul>
+          </section>
+        ))}
+      </div>
+
+      <div className="hidden sm:block overflow-x-auto">
+        <table className="w-full min-w-[560px] border-separate border-spacing-2">
+          <caption className="sr-only">جایگاه‌های تبلیغاتی به تفکیک ساعت و نوع</caption>
+          <thead>
+            <tr>
+              <th scope="col" className="text-right text-xs font-bold text-brand-slate">ساعت</th>
+              {KINDS.map((k) => (
+                <th key={k} scope="col" className="text-right text-xs font-bold text-brand-slate">
+                  <span aria-hidden>{AD_SLOT_KINDS[k].emoji}</span> {AD_SLOT_KINDS[k].label}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {hours.map((h) => (
+              <tr key={h}>
+                <td className="fa-num font-black text-brand-navy align-top py-2">{jtime(new Date(h))}</td>
+                {KINDS.map((k) => {
+                  const cell = byKey.get(`${k}|${h}`);
+                  return (
+                    <td key={k} className="align-top">
+                      {cell ? renderCell(cell) : <span className="text-brand-slate text-xs">—</span>}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

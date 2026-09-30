@@ -7,14 +7,20 @@ import { requireUser } from "@/lib/auth";
 import { teamManageError } from "@/lib/leader";
 import { getPhase, phaseIndex } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
-import { serializeImages, readyToSubmit, MAX_IMAGES, effectiveMaxPrice } from "@/lib/product";
+import { serializeImages, missingForSubmit, MAX_IMAGES, effectiveMaxPrice, imageUrlError } from "@/lib/product";
 import { runJuryAi } from "@/lib/jury-ai";
-import { isNextImageHost } from "@/lib/idea";
-import { isValidUploadName, UPLOAD_URL_PREFIX } from "@/lib/uploads";
 import { fa } from "@/lib/persian";
 
-/** `values`: مقادیر ارسالی فرم در صورت خطا، تا ری‌ست خودکار فرم (React 19) نوشته‌های کاربر را پاک نکند */
-export type ProductActionState = { error?: string; ok?: boolean; values?: Record<string, string> };
+/**
+ * `values`: مقادیر ارسالی فرم در صورت خطا، تا ری‌ست خودکار فرم (React 19) نوشته‌های کاربر را پاک نکند.
+ * `missing`: موارد ناقص چک‌لیست وقتی «ثبت نهایی» رد شده (برای پیوند به فیلدها در فرم).
+ */
+export type ProductActionState = {
+  error?: string;
+  ok?: boolean;
+  values?: Record<string, string>;
+  missing?: { label: string; fieldId: string }[];
+};
 
 /** لینک دمو/تیزر یا خالی است یا یک نشانی http(s)؛ `javascript:` و `data:` و… پذیرفته نمی‌شوند */
 function isHttpOrEmpty(v: string): boolean {
@@ -25,16 +31,6 @@ function isHttpOrEmpty(v: string): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * نشانی تصویر محصول باید یا یک فایل آپلودشدهٔ محلی (`/uploads/<hash>.webp`) یا
- * یک نشانی https روی یکی از میزبان‌های مجاز در next.config.ts باشد.
- */
-function isAllowedImageUrl(v: string): boolean {
-  if (v === "") return true;
-  if (v.startsWith(UPLOAD_URL_PREFIX)) return isValidUploadName(v.slice(UPLOAD_URL_PREFIX.length));
-  return isNextImageHost(v);
 }
 
 const productSchema = z.object({
@@ -60,7 +56,16 @@ const productSchema = z.object({
     .max(MAX_IMAGES)
     .optional()
     .default([])
-    .refine((arr) => arr.every(isAllowedImageUrl), "یکی از نشانی‌های تصویر مجاز نیست"),
+    // همان قاعدهٔ اعتبارسنجی فوری فرم (product-utils): آپلود محلی یا https روی میزبان‌های مجاز
+    .superRefine((arr, ctx) => {
+      for (const [i, url] of arr.entries()) {
+        const err = imageUrlError(url);
+        if (err) {
+          ctx.addIssue({ code: "custom", message: `تصویر ${fa(i + 1)}: ${err}` });
+          return;
+        }
+      }
+    }),
   price: z.coerce.number().int().min(DEFAULTS.minPrice, `قیمت حداقل ${DEFAULTS.minPrice} است`).max(DEFAULTS.maxPrice, `قیمت حداکثر ${DEFAULTS.maxPrice} است`),
   specialName: z.string().trim().max(80, "نام نسخهٔ ویژه خیلی طولانی است").optional().default(""),
   specialDesc: z.string().trim().max(400, "توضیح نسخهٔ ویژه خیلی طولانی است").optional().default(""),
@@ -134,7 +139,7 @@ export async function saveProductAction(prevState: ProductActionState, formData:
   }
 
   if (intent === "submit") {
-    const readyCheck = readyToSubmit(
+    const missing = missingForSubmit(
       {
         name: data.name,
         tagline: data.tagline,
@@ -148,8 +153,12 @@ export async function saveProductAction(prevState: ProductActionState, formData:
       },
       maxPrice
     );
-    if (!readyCheck) {
-      return { error: "پیش از ثبت نهایی، همهٔ موارد چک‌لیست را کامل کن", values };
+    if (missing.length > 0) {
+      return {
+        error: `پیش از ثبت نهایی، این موارد چک‌لیست را کامل کن: ${missing.map((m) => m.label).join("، ")}`,
+        values,
+        missing: missing.map((m) => ({ label: m.label, fieldId: m.fieldId })),
+      };
     }
   }
 

@@ -8,6 +8,7 @@ import { fa, coins, jdatetime } from "@/lib/persian";
 import { getPhase, phaseAtLeast, PHASE_LABEL } from "@/lib/phase";
 import { shieldCandidates, shieldMaxCredit, shieldPhaseAllowed } from "@/lib/shield";
 import { ShieldPicker } from "./ShieldPicker";
+import { getBidBudget } from "@/lib/auction";
 
 export const metadata = { title: "کیف پول" };
 
@@ -16,14 +17,17 @@ export default async function WalletPage() {
   // جریمه و سقف مؤثر (تنظیم برگزارکننده یا پیش‌فرض) با یک کوئری
   const { penaltyPerCoin, maxPerTarget } = await getEffectiveGameValues();
 
-  const [userLedger, treasuryLedger, team, now] = await Promise.all([
+  const [userLedger, treasuryLedger, team, now, budget] = await Promise.all([
     prisma.ledgerEntry.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
     user.teamId
       ? prisma.ledgerEntry.findMany({ where: { teamId: user.teamId, wallet: "TREASURY" }, orderBy: { createdAt: "desc" } })
       : Promise.resolve([]),
     user.teamId ? prisma.team.findUnique({ where: { id: user.teamId } }) : Promise.resolve(null),
     personalPenalty(user.id),
+    // سکه‌های کیف خرید که برای پیشتازی در حراج زنده رزرو شده‌اند (بدون حراج مستثنا = همهٔ حراج‌های زنده).
+    getBidBudget(user.id, null).catch(() => null),
   ]);
+  const reservedInAuction = budget?.reservedElsewhere ?? 0;
 
   const leftover = user.seedWallet + user.buyWallet;
   const hasShield = user.power === "SHIELD"; // سپر یک‌بار و دستی روی یک سرمایه‌گذاری انتخاب می‌شود
@@ -40,7 +44,16 @@ export default async function WalletPage() {
       <Container className="space-y-8">
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger">
           <Stat label="🌱 کیف بذر" value={coins(user.seedWallet)} hint="برای سرمایه‌گذاری روی ایده‌های دیگر تیم‌ها" tone="cyan" />
-          <Stat label="🛒 کیف خرید" value={coins(user.buyWallet)} hint="برای خرید محصول در روز بازار" tone="red" />
+          <Stat
+            label="🛒 کیف خرید"
+            value={coins(user.buyWallet)}
+            hint={
+              reservedInAuction > 0
+                ? `${coins(reservedInAuction)} رزرو در حراج زنده (پیشتازی تو) · قابل‌خرج: ${coins(Math.max(0, user.buyWallet - reservedInAuction))}`
+                : "برای خرید محصول در روز بازار"
+            }
+            tone="red"
+          />
           {team && <Stat label="🏦 خزانهٔ تیم" value={coins(team.treasury)} hint="سرمایهٔ جذب‌شدهٔ تیم" tone="navy" />}
         </div>
 

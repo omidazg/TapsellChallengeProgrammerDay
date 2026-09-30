@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { SERVER_TIME_HEADER } from "@/lib/auction-events";
 import { getPublicAuctionState } from "@/lib/auction";
 
 export const dynamic = "force-dynamic";
@@ -10,5 +11,5 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!state) {
     return NextResponse.json({ error: "حراج پیدا نشد" }, { status: 404, headers: { "Cache-Control": "no-store" } });
   }
-  return NextResponse.json(state, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(state, { headers: { "Cache-Control": "no-store", [SERVER_TIME_HEADER]: String(Date.now()) } });
 }

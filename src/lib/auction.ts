@@ -311,6 +311,8 @@ export type AuctionState = {
   extensions: number;
   winnerId: string | null;
   winnerNickname: string | null;
+  /** تیم برنده (برای بنر «نتیجهٔ حراج قبلی»)؛ برندهٔ بدون تیم null. */
+  winnerTeamName: string | null;
   finalPrice: number | null;
   product: {
     id: string;
@@ -335,7 +337,9 @@ export async function getAuctionState(id: string): Promise<AuctionState | null> 
   if (!auction) return null;
 
   // مدل Auction رابطهٔ winner ندارد (فقط winnerId اسکالر)؛ جدا واکشی می‌شود.
-  const winnerUser = auction.winnerId ? await prisma.user.findUnique({ where: { id: auction.winnerId } }) : null;
+  const winnerUser = auction.winnerId
+    ? await prisma.user.findUnique({ where: { id: auction.winnerId }, include: { team: { select: { name: true } } } })
+    : null;
 
   const increment = await getSettingInt("bid_increment", DEFAULTS.bidIncrement);
   const highestBid = auction.bids[0] ?? null;
@@ -364,6 +368,7 @@ export async function getAuctionState(id: string): Promise<AuctionState | null> 
     extensions: auction.extensions,
     winnerId: auction.winnerId,
     winnerNickname: winnerUser?.nickname ?? null,
+    winnerTeamName: winnerUser?.team?.name ?? null,
     finalPrice: auction.finalPrice,
     product: {
       id: auction.product.id,

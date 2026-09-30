@@ -105,6 +105,15 @@ export async function userSpentOn(userId: string, productId: string): Promise<nu
   return agg._sum.amount ?? 0;
 }
 
+/**
+ * موجودی قابل‌خرج کیف خرید برای نمایش در صفحهٔ محصول: کیف خرید منهای سکه‌های رزروشده برای
+ * پیشتازی در حراج زنده (همان مبنای purchaseProduct). فقط برای UI است؛ اعتبارسنجی نهایی در تراکنش خرید.
+ */
+export async function spendableBuyCoins(userId: string, buyWallet: number): Promise<number> {
+  const reserved = await reservedBuyCoins(prisma, userId);
+  return Math.max(0, buyWallet - reserved);
+}
+
 /** خطای قابل نمایش به کاربر (متن فارسی)؛ در purchaseProduct به شکل نتیجهٔ ok:false برگردانده می‌شود. */
 class UserFacingError extends Error {}
 

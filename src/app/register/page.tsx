@@ -8,8 +8,8 @@ import { safeNext } from "./next";
 
 export const metadata = { title: "خودت را کد بزن" };
 
-export default async function RegisterPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
-  const { next } = await searchParams;
+export default async function RegisterPage({ searchParams }: { searchParams: Promise<{ next?: string; email?: string }> }) {
+  const { next, email } = await searchParams;
   const user = await getCurrentUser();
   if (user) redirect(safeNext(next) ?? "/team");
 
@@ -29,7 +29,11 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
     <>
       <PageHeader eyebrow="ثبت‌نام" title="خودت را کد بزن" desc="شخصیت بازی‌ات را بساز، نقش و قدرتت را انتخاب کن و وارد میدان شو." />
       <Container>
-        <RegisterWizard nextUrl={safeNext(next)} smsEnabled={smsEnabled()} />
+        <RegisterWizard
+          nextUrl={safeNext(next)}
+          smsEnabled={smsEnabled()}
+          initialEmail={typeof email === "string" ? email.trim().slice(0, 120) : ""}
+        />
       </Container>
     </>
   );

@@ -1,13 +1,22 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { Avatar } from "@/components/Avatar";
 import { Alert, Stat } from "@/components/ui";
 import { ROLES, POWERS, type RoleKey, type PowerKey } from "@/lib/constants";
 import { fa } from "@/lib/persian";
-import { registerAction, checkRegisterEmailAction, requestRegisterOtpAction, verifyRegisterOtpAction } from "./actions";
+import {
+  registerAction,
+  checkRegisterEmailAction,
+  requestRegisterOtpAction,
+  verifyRegisterOtpAction,
+  type AccountField,
+  type AccountFieldErrors,
+  type RegisterFailure,
+} from "./actions";
 import { PhoneVerify } from "@/components/PhoneVerify";
+import { PasswordInput } from "@/components/PasswordInput";
 import { DEPARTMENTS, type Department } from "./departments";
 
 const STEPS = ["حساب کاربری", "نقش", "قدرت", "کد بزن", "پیش‌نمایش"] as const;
@@ -16,9 +25,29 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type Stats = { coffee: number; bugs: number; sleep: number; confidence: number };
 
-export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: string | null; smsEnabled?: boolean }) {
+/** ترتیب فیلدهای مرحلهٔ اول؛ فوکوس پس از خطا به اولین فیلد نامعتبر می‌رود */
+const ACCOUNT_FIELDS: AccountField[] = ["email", "password", "nickname", "department", "phone"];
+/** شناسهٔ ورودی هر فیلد (شماره داخل PhoneVerify است) */
+const FIELD_INPUT_ID: Record<AccountField, string> = {
+  email: "email",
+  password: "password",
+  nickname: "nickname",
+  department: "department",
+  phone: "phone-verify",
+};
+const INVALID_CLS = "aria-invalid:border-brand-red aria-invalid:focus:border-brand-red aria-invalid:focus:ring-brand-red/30";
+
+export function RegisterWizard({
+  nextUrl,
+  smsEnabled = false,
+  initialEmail = "",
+}: {
+  nextUrl?: string | null;
+  smsEnabled?: boolean;
+  initialEmail?: string;
+}) {
   const [step, setStep] = useState(0);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [nickname, setNickname] = useState("");
   const [department, setDepartment] = useState<string>("");
@@ -31,8 +60,12 @@ export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: stri
   const [stats, setStats] = useState<Stats>({ coffee: 5, bugs: 50, sleep: 7, confidence: 100 });
   const [ran, setRan] = useState(false);
   const [running, setRunning] = useState(false);
+  // خطای کلی (بالای کارت) جدا از خطاهای هر فیلد مرحلهٔ اول (زیر همان فیلد)
   const [error, setError] = useState<string | null>(null);
-  const [needsAccess, setNeedsAccess] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<AccountFieldErrors>({});
+  const [hint, setHint] = useState<RegisterFailure["hint"]>(undefined);
+  // شیء تازه در هر خطا تا حتی با همان فیلد، افکت فوکوس دوباره اجرا شود
+  const [focusTarget, setFocusTarget] = useState<{ field: AccountField } | null>(null);
   const [checking, setChecking] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -41,20 +74,63 @@ export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: stri
     [role, power, stats, nickname]
   );
 
-  async function next() {
+  // فوکوس پس از رندر (و پس از بازگشت به مرحلهٔ اول) به اولین فیلد نامعتبر می‌رود
+  useEffect(() => {
+    if (focusTarget) document.getElementById(FIELD_INPUT_ID[focusTarget.field])?.focus();
+  }, [focusTarget]);
+
+  function clearErrors() {
     setError(null);
-    setNeedsAccess(false);
+    setFieldErrors({});
+    setHint(undefined);
+  }
+
+  /** خطای فیلدی → زیر همان فیلد در مرحلهٔ اول؛ بقیه → پیام کلی بالای کارت */
+  function fail(res: RegisterFailure) {
+    const fe = res.fieldErrors ?? {};
+    const first = ACCOUNT_FIELDS.find((f) => fe[f]);
+    if (first) {
+      setError(null);
+      setFieldErrors(fe);
+      setHint(res.hint);
+      setStep(0);
+      setFocusTarget({ field: first });
+    } else {
+      setError(res.error);
+      setFieldErrors({});
+      setHint(undefined);
+    }
+  }
+
+  /** ویرایش هر فیلد خطای همان فیلد را پاک می‌کند */
+  function clearField(f: AccountField) {
+    setFieldErrors((prev) => {
+      if (!prev[f]) return prev;
+      const rest = { ...prev };
+      delete rest[f];
+      return rest;
+    });
+    if (f === "email") setHint(undefined);
+  }
+
+  function invalidProps(f: AccountField) {
+    return fieldErrors[f] ? { "aria-invalid": true as const, "aria-describedby": `${f}-error` } : {};
+  }
+
+  async function next() {
+    clearErrors();
     if (step === 0) {
-      if (!email.trim() || !password || password.length < 6 || nickname.trim().length < 2 || !department) {
-        setError("همهٔ فیلدها را کامل کن؛ رمز عبور حداقل ۶ نویسه باشد.");
-        return;
-      }
-      if (!EMAIL_RE.test(email.trim())) {
-        setError("ایمیل نامعتبر است.");
-        return;
-      }
-      if (phoneInput.trim() && !phoneProof) {
-        setError("شمارهٔ موبایل را با کد پیامکی تأیید کن، یا فیلدش را خالی بگذار.");
+      const fe: AccountFieldErrors = {};
+      const em = email.trim();
+      if (!em) fe.email = "ایمیل را وارد کن.";
+      else if (!EMAIL_RE.test(em)) fe.email = "ایمیل نامعتبر است.";
+      if (!password) fe.password = "رمز عبور را وارد کن.";
+      else if (password.length < 6) fe.password = "رمز عبور باید حداقل ۶ نویسه باشد.";
+      if (nickname.trim().length < 2) fe.nickname = "نام مستعار باید بین ۲ تا ۳۰ نویسه باشد.";
+      if (!department) fe.department = "دپارتمان را انتخاب کن.";
+      if (phoneInput.trim() && !phoneProof) fe.phone = "شمارهٔ موبایل را با کد پیامکی تأیید کن، یا فیلدش را خالی بگذار.";
+      if (Object.keys(fe).length) {
+        fail({ error: "", fieldErrors: fe });
         return;
       }
       // لیست سفید را همین‌جا چک کن، نه بعد از پنج مرحله
@@ -62,8 +138,7 @@ export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: stri
       try {
         const res = await checkRegisterEmailAction(email, phone, phoneProof);
         if ("error" in res) {
-          setError(res.error);
-          setNeedsAccess(!!res.needsAccess);
+          fail(res);
           return;
         }
       } catch {
@@ -91,7 +166,7 @@ export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: stri
     else submit();
   }
   function back() {
-    setError(null);
+    clearErrors();
     setStep((s) => Math.max(s - 1, 0));
   }
 
@@ -106,8 +181,7 @@ export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: stri
 
   function submit() {
     if (!role || !power) return;
-    setError(null);
-    setNeedsAccess(false);
+    clearErrors();
     startTransition(async () => {
       const res = await registerAction({
         email,
@@ -124,12 +198,8 @@ export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: stri
         phone,
         phoneProof,
       });
-      if (res?.error) {
-        setError(res.error);
-        setNeedsAccess("needsAccess" in res && !!res.needsAccess);
-        // خطاهای مربوط به حساب در مرحلهٔ ۱ قابل اصلاح‌اند
-        if (/ایمیل|رمز|نام مستعار|دپارتمان|شماره/.test(res.error)) setStep(0);
-      }
+      // خطاهای فیلدهای حساب، کاربر را به مرحلهٔ ۱ و همان فیلد برمی‌گرداند
+      if (res?.error) fail(res);
     });
   }
 
@@ -161,11 +231,6 @@ export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: stri
       {error && (
         <div id="register-error" className="mb-6 anim-pop">
           <Alert kind="error">{error}</Alert>
-          {needsAccess && (
-            <Link href={`/access-request?email=${encodeURIComponent(email.trim())}`} className="btn-cyan mt-3 w-full sm:w-auto">
-              درخواست دسترسی
-            </Link>
-          )}
         </div>
       )}
 
@@ -181,33 +246,38 @@ export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: stri
                 type="email"
                 autoComplete="email"
                 maxLength={120}
-                className="input"
+                className={`input ${INVALID_CLS}`}
                 dir="ltr"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  clearField("email");
+                }}
                 placeholder="ایمیل سازمانی‌ات"
                 required
-                aria-invalid={!!error}
-                aria-describedby={error ? "register-error" : undefined}
+                {...invalidProps("email")}
               />
+              <FieldError id="email-error" msg={fieldErrors.email} />
+              {fieldErrors.email && hint && <EmailHint hint={hint} email={email.trim()} nextUrl={nextUrl} />}
             </div>
             <div>
               <label className="label" htmlFor="password">رمز عبور</label>
-              <input
+              <PasswordInput
                 id="password"
-                type="password"
                 autoComplete="new-password"
                 minLength={6}
                 maxLength={72}
-                className="input"
-                dir="ltr"
+                className={INVALID_CLS}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  clearField("password");
+                }}
                 placeholder="حداقل ۶ نویسه"
                 required
-                aria-invalid={!!error}
-                aria-describedby={error ? "register-error" : undefined}
+                {...invalidProps("password")}
               />
+              <FieldError id="password-error" msg={fieldErrors.password} />
             </div>
             <div>
               <label className="label" htmlFor="nickname">نام مستعار</label>
@@ -216,23 +286,37 @@ export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: stri
                 type="text"
                 autoComplete="nickname"
                 maxLength={30}
-                className="input"
+                className={`input ${INVALID_CLS}`}
                 value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
+                onChange={(e) => {
+                  setNickname(e.target.value);
+                  clearField("nickname");
+                }}
                 placeholder="مثلاً کد-نویس"
                 required
-                aria-invalid={!!error}
-                aria-describedby={error ? "register-error" : undefined}
+                {...invalidProps("nickname")}
               />
+              <FieldError id="nickname-error" msg={fieldErrors.nickname} />
             </div>
             <div>
               <label className="label" htmlFor="department">دپارتمان</label>
-              <select id="department" className="input" value={department} onChange={(e) => setDepartment(e.target.value)}>
+              <select
+                id="department"
+                className={`input ${INVALID_CLS}`}
+                value={department}
+                onChange={(e) => {
+                  setDepartment(e.target.value);
+                  clearField("department");
+                }}
+                required
+                {...invalidProps("department")}
+              >
                 <option value="">انتخاب کن…</option>
                 {DEPARTMENTS.map((d) => (
                   <option key={d} value={d}>{d}</option>
                 ))}
               </select>
+              <FieldError id="department-error" msg={fieldErrors.department} />
             </div>
             {smsEnabled && (
               <div>
@@ -246,13 +330,17 @@ export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: stri
                     setPhone(p);
                     setPhoneInput(p);
                     setPhoneProof(proof ?? null);
+                    clearField("phone");
                   }}
                   onPhoneChange={(v) => {
                     setPhoneInput(v);
                     setPhone(null);
                     setPhoneProof(null);
+                    clearField("phone");
                   }}
                 />
+                {/* ورودی شماره داخل PhoneVerify است و aria-describedby نمی‌گیرد؛ پس خطا خودش اعلام می‌شود */}
+                <FieldError id="phone-error" msg={fieldErrors.phone} announce />
               </div>
             )}
           </div>
@@ -381,11 +469,50 @@ export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: stri
       </form>
       <p className="mt-6 text-center text-sm text-brand-slate">
         قبلاً ثبت‌نام کرده‌ای؟{" "}
-        <Link href={nextUrl ? `/login?next=${encodeURIComponent(nextUrl)}` : "/login"} className="font-bold text-brand-cyan-dark">
+        <Link href={loginHref(email.trim(), nextUrl)} className="font-bold text-brand-cyan-dark">
           وارد شو
         </Link>
       </p>
     </div>
+  );
+}
+
+function loginHref(email: string, nextUrl?: string | null) {
+  const q = new URLSearchParams();
+  if (nextUrl) q.set("next", nextUrl);
+  if (EMAIL_RE.test(email)) q.set("email", email);
+  return q.size ? `/login?${q}` : "/login";
+}
+
+/** پیام خطای زیر فیلد؛ `announce` برای فیلدی که aria-describedby نمی‌گیرد */
+function FieldError({ id, msg, announce = false }: { id: string; msg?: string; announce?: boolean }) {
+  if (!msg) return null;
+  return (
+    <p id={id} role={announce ? "alert" : undefined} className="mt-1.5 text-xs font-bold text-brand-red anim-pop">
+      {msg}
+    </p>
+  );
+}
+
+/** قدم بعدی برای ایمیلی که نمی‌تواند ثبت‌نام کند */
+function EmailHint({ hint, email, nextUrl }: { hint: NonNullable<RegisterFailure["hint"]>; email: string; nextUrl?: string | null }) {
+  const q = encodeURIComponent(email);
+  if (hint === "REQUEST")
+    return (
+      <Link href={`/access-request?email=${q}`} className="btn-cyan mt-2 w-full !py-2 !text-sm sm:w-auto">
+        درخواست دسترسی
+      </Link>
+    );
+  if (hint === "TRACK")
+    return (
+      <Link href={`/access-request?email=${q}#access-status`} className="btn-ghost mt-2 w-full !py-2 !text-sm sm:w-auto">
+        پیگیری وضعیت درخواست
+      </Link>
+    );
+  return (
+    <Link href={loginHref(email, nextUrl)} className="btn-ghost mt-2 w-full !py-2 !text-sm sm:w-auto">
+      ورود با همین ایمیل
+    </Link>
   );
 }
 

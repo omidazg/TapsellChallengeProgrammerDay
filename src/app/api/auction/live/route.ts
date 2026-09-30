@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { SERVER_TIME_HEADER } from "@/lib/auction-events";
 import { getLiveAuctionIdCached } from "@/lib/auction";
 
 export const dynamic = "force-dynamic";
@@ -6,5 +7,5 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   // کش مشترک ~۱ ثانیه‌ای (دادهٔ عمومی)؛ با هر تغییر حراج باطل می‌شود.
   const id = await getLiveAuctionIdCached();
-  return NextResponse.json({ id }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ id }, { headers: { "Cache-Control": "no-store", [SERVER_TIME_HEADER]: String(Date.now()) } });
 }

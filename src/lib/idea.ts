@@ -1,23 +1,7 @@
 import { prisma } from "./db";
 
-/**
- * میزبان‌هایی که در `next.config.ts` برای `next/image` مجاز شده‌اند.
- * هر نشانی خارج از این فهرست باید با تگ سادهٔ <img> نمایش داده شود،
- * وگرنه `next/image` هنگام رندر خطا می‌دهد.
- */
-const NEXT_IMAGE_HOSTS = ["picsum.photos", "images.unsplash.com", "tapsell.com"];
-
-/** آیا این نشانی را می‌توان به `next/image` سپرد؟ */
-export function isNextImageHost(url: string): boolean {
-  if (!url) return false;
-  try {
-    const u = new URL(url);
-    if (u.protocol !== "https:") return false;
-    return NEXT_IMAGE_HOSTS.includes(u.hostname);
-  } catch {
-    return false;
-  }
-}
+// فهرست میزبان‌های مجاز next/image و قاعدهٔ نشانی تصویر در product-utils (قابل‌استفاده در کلاینت) است.
+export { isNextImageHost } from "./product-utils";
 
 /** آیا نشانی جلد یک نشانی معتبر http(s) است؟ */
 export function isHttpUrl(url: string): boolean {

@@ -41,6 +41,18 @@ const registerSchema = z.object({
   confidence: z.number().int().min(0).max(150),
 });
 
+/** فیلدهای مرحلهٔ اول ویزارد (اطلاعات حساب) که خطایشان زیر همان فیلد نمایش داده می‌شود */
+export type AccountField = "email" | "password" | "nickname" | "department" | "phone";
+export type AccountFieldErrors = Partial<Record<AccountField, string>>;
+/**
+ * نتیجهٔ ناموفق اکشن‌های ثبت‌نام. `error` همیشه پیام کلی است؛ اگر خطا به فیلد مشخصی برگردد
+ * `fieldErrors` هم پر می‌شود. `hint` قدم بعدی کاربر را نشان می‌دهد: REQUEST → درخواست دسترسی،
+ * TRACK → پیگیری درخواست در انتظار، LOGIN → ورود با حساب موجود.
+ */
+export type RegisterFailure = { error: string; fieldErrors?: AccountFieldErrors; hint?: "REQUEST" | "TRACK" | "LOGIN" };
+
+const ACCOUNT_FIELDS: readonly string[] = ["email", "password", "nickname", "department", "phone"] satisfies AccountField[];
+
 export type RegisterInput = z.infer<typeof registerSchema> & {
   next?: string | null;
   /** شمارهٔ موبایل اختیاری؛ فقط همراه گواهی تأیید (phoneProof) پذیرفته می‌شود */
@@ -49,13 +61,18 @@ export type RegisterInput = z.infer<typeof registerSchema> & {
 };
 
 const PHONE_TAKEN = "این شماره به حساب دیگری وصل است.";
+const EMAIL_TAKEN = "این ایمیل قبلاً ثبت‌نام کرده است؛ از صفحهٔ ورود وارد شو.";
+
+function fieldFail(field: AccountField, error: string, hint?: RegisterFailure["hint"]): RegisterFailure {
+  return { error, fieldErrors: { [field]: error }, ...(hint ? { hint } : {}) };
+}
 
 /** شمارهٔ اختیاری ثبت‌نام: خالی → null؛ پر ولی بدون گواهی معتبر → خطا */
-function verifiedPhone(raw: string | null | undefined, proof: string | null | undefined): { phone: string | null } | { error: string } {
+function verifiedPhone(raw: string | null | undefined, proof: string | null | undefined): { phone: string | null } | RegisterFailure {
   if (!raw?.trim()) return { phone: null };
   const phone = normalizePhone(raw);
-  if (!phone) return { error: "شمارهٔ موبایل معتبر نیست." };
-  if (!checkPhoneProof(proof, phone, "REGISTER")) return { error: "شمارهٔ موبایل هنوز تأیید نشده؛ کد پیامکی را وارد کن یا شماره را خالی بگذار." };
+  if (!phone) return fieldFail("phone", "شمارهٔ موبایل معتبر نیست.");
+  if (!checkPhoneProof(proof, phone, "REGISTER")) return fieldFail("phone", "شمارهٔ موبایل هنوز تأیید نشده؛ کد پیامکی را وارد کن یا شماره را خالی بگذار.");
   return { phone };
 }
 
@@ -90,26 +107,26 @@ export async function checkRegisterEmailAction(
   rawEmail: string,
   rawPhone?: string | null,
   phoneProof?: string | null
-): Promise<{ ok: true } | { error: string; needsAccess?: boolean }> {
+): Promise<{ ok: true } | RegisterFailure> {
   const email = z.string().trim().toLowerCase().max(120).email().safeParse(rawEmail);
-  if (!email.success) return { error: FIELD_ERRORS.email };
+  if (!email.success) return fieldFail("email", FIELD_ERRORS.email);
   // بدون سقف، این اکشن ابزار بی‌محدودیتِ کشف ایمیل‌های لیست سفید و حساب‌های موجود بود
   const limit = rateLimit("register-check:ip", await clientIp(), REGISTER_IP_RULE());
   if (!limit.ok) return { error: rateLimitMessage(limit.retryAfterSec) };
   const existing = await prisma.user.findUnique({ where: { email: email.data }, select: { id: true } });
-  if (existing) return { error: "این ایمیل قبلاً ثبت‌نام کرده است؛ از صفحهٔ ورود وارد شو." };
+  if (existing) return fieldFail("email", EMAIL_TAKEN, "LOGIN");
   const ph = verifiedPhone(rawPhone, phoneProof);
-  if ("error" in ph) return { error: ph.error };
-  if (ph.phone && (await prisma.user.findUnique({ where: { phone: ph.phone }, select: { id: true } }))) return { error: PHONE_TAKEN };
+  if ("error" in ph) return ph;
+  if (ph.phone && (await prisma.user.findUnique({ where: { phone: ph.phone }, select: { id: true } }))) return fieldFail("phone", PHONE_TAKEN);
   // شمارهٔ تأییدشده‌ای که در لیست سفید است هم کافی است
   if (ph.phone && (await canRegister(email.data, ph.phone))) return { ok: true };
   const state: AccessState = await accessState(email.data);
   if (state === "ALLOWED") return { ok: true };
-  if (state === "PENDING") return { error: "درخواست دسترسی این ایمیل هنوز در انتظار تأیید برگزارکننده است." };
-  return { error: NOT_ALLOWED, needsAccess: true };
+  if (state === "PENDING") return fieldFail("email", "درخواست دسترسی این ایمیل هنوز در انتظار تأیید برگزارکننده است.", "TRACK");
+  return fieldFail("email", NOT_ALLOWED, "REQUEST");
 }
 
-export async function registerAction(input: RegisterInput): Promise<{ error: string; needsAccess?: boolean } | never> {
+export async function registerAction(input: RegisterInput): Promise<RegisterFailure | never> {
   // کاربر واردشده نباید بتواند حساب دوم بسازد و نشستش را جابه‌جا کند
   if (await getSessionUserId()) {
     return { error: "شما از قبل وارد شده‌اید." };
@@ -128,20 +145,29 @@ export async function registerAction(input: RegisterInput): Promise<{ error: str
   if (!parsed.success) {
     const first = parsed.error.issues[0];
     const key = String(first?.path[0] ?? "");
-    return { error: FIELD_ERRORS[key] ?? "اطلاعات وارد‌شده نامعتبر است." };
+    // همهٔ خطاهای مرحلهٔ اول یک‌جا برمی‌گردند تا هرکدام زیر فیلد خودش نمایش داده شود
+    const fieldErrors: AccountFieldErrors = {};
+    for (const issue of parsed.error.issues) {
+      const k = String(issue.path[0] ?? "");
+      if (ACCOUNT_FIELDS.includes(k) && FIELD_ERRORS[k]) fieldErrors[k as AccountField] ??= FIELD_ERRORS[k];
+    }
+    return {
+      error: FIELD_ERRORS[key] ?? "اطلاعات وارد‌شده نامعتبر است.",
+      ...(Object.keys(fieldErrors).length ? { fieldErrors } : {}),
+    };
   }
   const data = parsed.data;
 
   const ph = verifiedPhone(input.phone, input.phoneProof);
-  if ("error" in ph) return { error: ph.error };
+  if ("error" in ph) return ph;
 
   if (!(await canRegister(data.email, ph.phone))) {
-    return { error: NOT_ALLOWED, needsAccess: true };
+    return fieldFail("email", NOT_ALLOWED, "REQUEST");
   }
 
   const existing = await prisma.user.findUnique({ where: { email: data.email } });
   if (existing) {
-    return { error: "این ایمیل قبلاً ثبت‌نام کرده است." };
+    return fieldFail("email", EMAIL_TAKEN, "LOGIN");
   }
 
   // شماره: یا همان که کاربر تأیید کرده، یا شماره‌ای که برگزارکننده کنار ایمیلش در لیست سفید ثبت کرده
@@ -150,7 +176,7 @@ export async function registerAction(input: RegisterInput): Promise<{ error: str
     const listed = await prisma.allowedEmail.findUnique({ where: { email: data.email }, select: { phone: true } });
     if (listed?.phone && !(await prisma.user.findUnique({ where: { phone: listed.phone }, select: { id: true } }))) phone = listed.phone;
   } else if (await prisma.user.findUnique({ where: { phone }, select: { id: true } })) {
-    return { error: PHONE_TAKEN };
+    return fieldFail("phone", PHONE_TAKEN);
   }
 
   const [seedWallet, buyWallet] = await Promise.all([
@@ -187,7 +213,7 @@ export async function registerAction(input: RegisterInput): Promise<{ error: str
     // فقط نقض کلید یکتای ایمیل را به پیام «تکراری» ترجمه کن؛ بقیه خطای سرور است
     if (typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002") {
       const target = String((e as { meta?: { target?: unknown } }).meta?.target ?? "");
-      return { error: target.includes("phone") ? PHONE_TAKEN : "این ایمیل قبلاً ثبت‌نام کرده است." };
+      return target.includes("phone") ? fieldFail("phone", PHONE_TAKEN) : fieldFail("email", EMAIL_TAKEN, "LOGIN");
     }
     return { error: "ثبت‌نام انجام نشد؛ دوباره تلاش کن." };
   }

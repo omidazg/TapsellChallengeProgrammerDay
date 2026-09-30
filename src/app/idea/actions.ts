@@ -7,25 +7,13 @@ import { requireUser } from "@/lib/auth";
 import { teamManageError } from "@/lib/leader";
 import { getPhase } from "@/lib/phase";
 import { runAnalyst } from "@/lib/analyst";
-import { isNextImageHost } from "@/lib/idea";
-import { isValidUploadName, UPLOAD_URL_PREFIX } from "@/lib/uploads";
+import { imageUrlError } from "@/lib/product-utils";
 
 /** `values`: مقادیر ارسالی فرم در صورت خطا، تا ری‌ست خودکار فرم (React 19) نوشته‌های کاربر را پاک نکند */
 export type IdeaActionState = { error?: string; ok?: boolean; values?: Record<string, string> };
 
 /** حداکثر طول فیلدهای متنی بلند ایده (هم در فرم و هم در سرور) */
 const LONG_TEXT_MAX = 2000;
-
-/**
- * نشانی تصویر باید یا یک فایل آپلودشدهٔ محلی (`/uploads/<hash>.webp`) یا یک
- * نشانی https روی یکی از میزبان‌های مجاز در next.config.ts باشد؛ هیچ میزبان
- * دلخواه دیگری پذیرفته نمی‌شود (جلوگیری از تصاویر ردیاب/میزبان‌های ناشناس).
- */
-function isAllowedImageUrl(v: string): boolean {
-  if (v === "") return true;
-  if (v.startsWith(UPLOAD_URL_PREFIX)) return isValidUploadName(v.slice(UPLOAD_URL_PREFIX.length));
-  return isNextImageHost(v);
-}
 
 const ideaSchema = z.object({
   title: z.string().trim().min(1, "عنوان را بنویس").max(80, "عنوان خیلی طولانی است"),
@@ -39,7 +27,11 @@ const ideaSchema = z.object({
     .max(500, "نشانی تصویر خیلی طولانی است")
     .optional()
     .default("")
-    .refine(isAllowedImageUrl, "نشانی تصویر مجاز نیست؛ از دکمهٔ آپلود استفاده کن یا نشانی یکی از میزبان‌های مجاز را بده"),
+    // همان قاعدهٔ اعتبارسنجی فوری فرم (product-utils): آپلود محلی یا https روی میزبان‌های مجاز
+    .superRefine((v, ctx) => {
+      const err = imageUrlError(v);
+      if (err) ctx.addIssue({ code: "custom", message: `تصویر جلد: ${err}` });
+    }),
   fundingCap: z.coerce.number().int().min(50, "هدف جذب سرمایه حداقل ۵۰ است").max(600, "هدف جذب سرمایه حداکثر ۶۰۰ است"),
   revenueShare: z.coerce.number().int().min(20, "سهم سود حداقل ۲۰٪ است").max(60, "سهم سود حداکثر ۶۰٪ است"),
 });

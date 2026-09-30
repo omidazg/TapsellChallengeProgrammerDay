@@ -19,23 +19,12 @@ import { SettingsForm, type SettingField } from "./SettingsForm";
 import { updateSchedulerSettingsAction } from "./scheduler-actions";
 import { AiUsageCard } from "@/components/AiUsageCard";
 import { areEconomySettingsLocked, isLockedSettingKey } from "@/lib/settings-lock";
+import { ADMIN_SECTIONS, ADMIN_EXTRA_LINKS } from "./nav-items";
 
 export const metadata = { title: "پنل برگزارکننده" };
 
-const SUBPAGES = [
-  { href: "/admin/teams", label: "تیم‌ها", emoji: "👥" },
-  { href: "/admin/jury", label: "هیئت داوران", emoji: "🧑‍⚖️" },
-  { href: "/admin/auction", label: "حراج زنده", emoji: "🔨" },
-  { href: "/admin/flags", label: "پرچم‌های تخلف", emoji: "🚩" },
-  { href: "/admin/users", label: "کاربران", emoji: "🧑‍💻" },
-  { href: "/admin/whitelist", label: "لیست سفید و درخواست‌های دسترسی", emoji: "✅" },
-  { href: "/admin/export", label: "خروجی گزارش‌ها", emoji: "📤" },
-  { href: "/admin/settlement", label: "تسویهٔ نهایی", emoji: "🧾" },
-  { href: "/admin/announcements", label: "اطلاعیه‌ها", emoji: "📢" },
-  { href: "/admin/analytics", label: "داشبورد تحلیلی", emoji: "📊" },
-  { href: "/admin/audit", label: "گزارش کارهای ادمین", emoji: "🗂️" },
-  { href: "/hall", label: "نمای سالن (پروژکتور)", emoji: "📽️" },
-];
+// بخش‌ها از همان فهرست ناوبری کناری می‌آیند تا برچسب‌ها یک‌جا نگه داشته شوند.
+const SUBPAGES = [...ADMIN_SECTIONS.filter((s) => s.href !== "/admin"), ...ADMIN_EXTRA_LINKS];
 
 export default async function AdminPage() {
   await requireAdmin();
@@ -48,6 +37,13 @@ export default async function AdminPage() {
   ]);
 
   const phaseOptions = PHASES.map((p) => ({ value: p, label: PHASE_LABEL[p] }));
+  // مدت پیکربندی‌شدهٔ هر فاز (همان که زمان‌بند خودکار با parseInt می‌خواند) برای دکمهٔ «رفتن به فاز بعد».
+  const phaseHours: Record<string, number | null> = {};
+  for (const p of PHASES) {
+    const raw = (schedulerSettings as Record<string, string | undefined>)[`phase_hours_${p}`];
+    const hours = raw !== undefined ? parseInt(raw, 10) : NaN;
+    phaseHours[p] = Number.isFinite(hours) && hours > 0 ? hours : null;
+  }
   // پس از شروع بازی (خروج از REGISTRATION) کلیدهای اقتصادی قفل و فقط‌خواندنی‌اند.
   const economyLocked = areEconomySettingsLocked(phase);
   const settingFields: SettingField[] = SETTING_KEYS.map((key) => ({
@@ -77,13 +73,21 @@ export default async function AdminPage() {
           <Stat label="حجم خرید بازار" value={coins(counts.purchasesVolume)} hint={`${fa(counts.purchasesCount)} تراکنش`} tone="red" />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 stagger">
+        {/* کنترل فاز پرکاربردترین ابزار روز بازی است؛ بالاتر از کارت‌های بخش‌ها */}
+        <PhaseForm
+          phase={phase}
+          endsAt={endsAt ? endsAt.toISOString() : null}
+          phases={phaseOptions}
+          phaseHours={phaseHours}
+        />
+
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 stagger">
           {SUBPAGES.map((s) => (
-            <Link key={s.href} href={s.href} className="card p-5 flex items-center gap-3 hover:shadow-lift transition">
-              <span className="text-2xl" aria-hidden>{s.emoji}</span>
-              <span className="font-bold text-brand-navy">{s.label}</span>
+            <Link key={s.href} href={s.href} className="card p-4 flex flex-wrap items-center gap-2 min-h-16 hover:shadow-lift transition">
+              <span className="text-xl" aria-hidden>{s.emoji}</span>
+              <span className="font-bold text-sm text-brand-navy">{s.label}</span>
               {s.href === "/admin/whitelist" && pendingRequests > 0 && (
-                <span className="chip chip-red ms-auto">{fa(pendingRequests)} درخواست تازه</span>
+                <span className="chip-red ms-auto">{fa(pendingRequests)} درخواست تازه</span>
               )}
             </Link>
           ))}
@@ -91,13 +95,15 @@ export default async function AdminPage() {
 
         <AiUsageCard />
 
-        <PhaseForm phase={phase} endsAt={endsAt ? endsAt.toISOString() : null} phases={phaseOptions} />
         <SettingsForm fields={settingFields} />
-        <SettingsForm
-          fields={schedulerFields}
-          action={updateSchedulerSettingsAction}
-          title="زمان‌بند خودکار"
-        />
+        {/* لنگر #scheduler از نوار وضعیت بالای پنل («پیشروی خودکار: روشن/خاموش») */}
+        <div id="scheduler" className="scroll-mt-32">
+          <SettingsForm
+            fields={schedulerFields}
+            action={updateSchedulerSettingsAction}
+            title="زمان‌بند خودکار"
+          />
+        </div>
       </Container>
     </>
   );

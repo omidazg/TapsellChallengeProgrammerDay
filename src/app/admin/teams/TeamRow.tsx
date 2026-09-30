@@ -15,6 +15,94 @@ import {
 } from "./actions";
 
 type Member = { id: string; nickname: string; avatarSeed: string; role: string };
+type FormAction = (formData: FormData) => void;
+
+/** انتخابگر با اندازهٔ معمولی (ارتفاع لمسی حداقل ۴۰px) به‌جای select ریز قبلی */
+const SELECT_CLS = "input !py-2 !px-3 !text-sm !w-auto min-h-10 max-w-48";
+/** دکمهٔ آیکونی گرد ۴۰×۴۰ برای اقدامات هر عضو */
+const ICON_BTN_CLS =
+  "inline-flex items-center justify-center size-10 shrink-0 rounded-full border border-brand-mist bg-white font-bold transition hover:bg-brand-ice";
+
+/**
+ * اقدامات هر عضو (انتقال به تیم دیگر، حذف از تیم) با confirm.
+ * `inline` برای دسکتاپ (آیکونی، کنار نام) و `menu` برای منوی جمع‌شوندهٔ موبایل (با برچسب متنی).
+ */
+function MemberActions({
+  variant,
+  member,
+  teamName,
+  otherTeams,
+  moveAction,
+  removeAction,
+}: {
+  variant: "inline" | "menu";
+  member: Member;
+  teamName: string;
+  otherTeams: { id: string; name: string }[];
+  moveAction: FormAction;
+  removeAction: FormAction;
+}) {
+  const menu = variant === "menu";
+  const selectId = `move-${variant}-${member.id}`;
+  return (
+    <>
+      {otherTeams.length > 0 && (
+        <form
+          action={moveAction}
+          className={menu ? "space-y-1.5" : "flex items-center gap-2"}
+          onSubmit={(e) => {
+            const select = e.currentTarget.elements.namedItem("targetTeamId") as HTMLSelectElement | null;
+            const target = select?.selectedOptions[0]?.textContent ?? "";
+            if (!confirm(`${member.nickname} از «${teamName}» به «${target}» منتقل شود؟`)) e.preventDefault();
+          }}
+        >
+          <input type="hidden" name="userId" value={member.id} />
+          <label htmlFor={selectId} className={menu ? "block text-xs font-bold text-brand-slate" : "sr-only"}>
+            انتقال {member.nickname} به تیم دیگر
+          </label>
+          <div className="flex items-center gap-2">
+            <select id={selectId} name="targetTeamId" required defaultValue="" className={menu ? `${SELECT_CLS} flex-1 !max-w-none` : SELECT_CLS}>
+              <option value="" disabled>انتقال به…</option>
+              {otherTeams.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              className={`${ICON_BTN_CLS} text-brand-navy`}
+              title="انتقال به تیم دیگر"
+              aria-label={`انتقال ${member.nickname} به تیم انتخاب‌شده`}
+            >
+              <span aria-hidden>↪</span>
+            </button>
+          </div>
+        </form>
+      )}
+      <form
+        action={removeAction}
+        onSubmit={(e) => {
+          if (!confirm(`${member.nickname} از تیم «${teamName}» حذف شود؟ او بی‌تیم می‌شود.`)) e.preventDefault();
+        }}
+      >
+        <input type="hidden" name="userId" value={member.id} />
+        {menu ? (
+          <button type="submit" className="btn-ghost w-full !py-2 text-sm min-h-10 !text-brand-red" aria-label={`حذف ${member.nickname} از تیم`}>
+            <span aria-hidden>✕</span> حذف از تیم
+          </button>
+        ) : (
+          <button
+            type="submit"
+            className={`${ICON_BTN_CLS} text-brand-red`}
+            title="حذف از تیم"
+            aria-label={`حذف ${member.nickname} از تیم`}
+          >
+            <span aria-hidden>✕</span>
+          </button>
+        )}
+      </form>
+    </>
+  );
+}
 export type TeamRowData = {
   id: string;
   name: string;
@@ -73,75 +161,46 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
 
       {renameState.error && <Alert kind="error">{renameState.error}</Alert>}
 
-      <div className="flex flex-wrap gap-2">
-        {team.members.map((m) => (
-          <div key={m.id} className="flex items-center gap-1.5 rounded-pill bg-brand-ice px-2.5 py-1.5">
-            <Avatar seed={m.avatarSeed || m.id} size={22} />
-            <span className="text-sm font-bold text-brand-navy">
-              {m.id === team.leaderId && <span title="سرپرست تیم">👑 </span>}
-              {m.nickname}
-            </span>
-            {otherTeams.length > 0 && (
-              <form
-                action={moveAction}
-                className="flex items-center gap-1"
-                onSubmit={(e) => {
-                  const select = e.currentTarget.elements.namedItem("targetTeamId") as HTMLSelectElement | null;
-                  const target = select?.selectedOptions[0]?.textContent ?? "";
-                  if (!confirm(`${m.nickname} از «${team.name}» به «${target}» منتقل شود؟`)) e.preventDefault();
-                }}
-              >
-                <input type="hidden" name="userId" value={m.id} />
-                <label htmlFor={`move-${m.id}`} className="sr-only">انتقال {m.nickname} به تیم دیگر</label>
-                <select id={`move-${m.id}`} name="targetTeamId" required defaultValue="" className="input !py-0.5 !px-1.5 !text-[11px] !w-auto">
-                  <option value="" disabled>انتقال به…</option>
-                  {otherTeams.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-                <button
-                  type="submit"
-                  className="text-brand-navy text-xs font-bold hover:underline"
-                  title="انتقال به تیم دیگر"
-                  aria-label={`انتقال ${m.nickname} به تیم انتخاب‌شده`}
-                >
-                  ↪
-                </button>
-              </form>
-            )}
-            <form
-              action={removeAction}
-              onSubmit={(e) => {
-                if (!confirm(`${m.nickname} از تیم «${team.name}» حذف شود؟ او بی‌تیم می‌شود.`)) e.preventDefault();
-              }}
-            >
-              <input type="hidden" name="userId" value={m.id} />
-              <button
-                type="submit"
-                className="text-brand-red text-xs font-bold hover:underline"
-                title="حذف از تیم"
-                aria-label={`حذف ${m.nickname} از تیم`}
-              >
-                ✕
-              </button>
-            </form>
-          </div>
-        ))}
-        {team.members.length === 0 && <span className="text-xs text-brand-slate">بدون عضو</span>}
-      </div>
+      {team.members.length === 0 ? (
+        <p className="text-xs text-brand-slate">بدون عضو</p>
+      ) : (
+        <ul className="space-y-2">
+          {team.members.map((m) => (
+            <li key={m.id} className="flex flex-wrap items-center gap-2 rounded-2xl bg-brand-ice px-3 py-2">
+              <Avatar seed={m.avatarSeed || m.id} size={28} />
+              <span className="text-sm font-bold text-brand-navy min-w-0 break-words">
+                {m.id === team.leaderId && <span title="سرپرست تیم">👑 </span>}
+                {m.nickname}
+              </span>
+              {/* دسکتاپ: اقدامات کنار هم؛ موبایل: جمع‌شده در منوی «اقدامات» تا ردیف شلوغ نشود */}
+              <div className="hidden sm:flex items-center gap-2 ms-auto">
+                <MemberActions variant="inline" member={m} teamName={team.name} otherTeams={otherTeams} moveAction={moveAction} removeAction={removeAction} />
+              </div>
+              <details className="sm:hidden ms-auto relative">
+                <summary className="btn-ghost !py-2 !px-3 text-sm min-h-10 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                  اقدامات <span aria-hidden>▾</span>
+                </summary>
+                <div className="absolute end-0 z-20 mt-2 w-72 max-w-[calc(100vw-4rem)] card p-3 space-y-3">
+                  <MemberActions variant="menu" member={m} teamName={team.name} otherTeams={otherTeams} moveAction={moveAction} removeAction={removeAction} />
+                </div>
+              </details>
+            </li>
+          ))}
+        </ul>
+      )}
       {team.members.length >= 2 && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-brand-slate">سرپرست: {leader ? <b className="text-brand-navy">{leader.nickname}</b> : "در حال رأی‌گیری"}</span>
-          <form action={leaderAction} className="flex items-center gap-1">
+          <form action={leaderAction} className="flex items-center gap-2">
             <input type="hidden" name="teamId" value={team.id} />
             <label htmlFor={`leader-${team.id}`} className="sr-only">تعیین سرپرست {team.name}</label>
-            <select id={`leader-${team.id}`} name="userId" defaultValue="" className="input !py-0.5 !px-1.5 !text-[11px] !w-auto">
+            <select id={`leader-${team.id}`} name="userId" required defaultValue="" className={SELECT_CLS}>
               <option value="" disabled>تعیین سرپرست…</option>
               {team.members.map((m) => (
                 <option key={m.id} value={m.id}>{m.nickname}</option>
               ))}
             </select>
-            <button type="submit" className="btn-ghost !py-0.5 !px-2 text-xs">اعمال</button>
+            <button type="submit" className="btn-ghost !py-2 !px-4 text-sm min-h-10">اعمال</button>
           </form>
           {leader && (
             <form
@@ -151,7 +210,7 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
               }}
             >
               <input type="hidden" name="teamId" value={team.id} />
-              <button type="submit" className="text-brand-red text-xs font-bold hover:underline">رأی‌گیری از نو</button>
+              <button type="submit" className="btn-ghost !py-2 !px-4 text-sm min-h-10 !text-brand-red">رأی‌گیری از نو</button>
             </form>
           )}
         </div>
@@ -170,7 +229,7 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
           }}
         >
           <input type="hidden" name="teamId" value={team.id} />
-          <button type="submit" className="text-brand-red text-xs font-bold hover:underline">حذف تیم خالی</button>
+          <button type="submit" className="btn-ghost !py-2 !px-4 text-sm min-h-10 !text-brand-red">حذف تیم خالی</button>
         </form>
       )}
       {deleteState.error && <Alert kind="error">{deleteState.error}</Alert>}

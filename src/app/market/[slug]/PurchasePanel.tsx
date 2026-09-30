@@ -22,6 +22,7 @@ export function PurchasePanel({
   hasBargain,
   alreadySpent,
   maxPerTarget,
+  walletBalance,
   hasPurchasedAny,
   alreadyHearted,
   heartsCount,
@@ -37,6 +38,8 @@ export function PurchasePanel({
   alreadySpent: number;
   /** سقف مؤثر خرید از *این* محصول (effectivePurchaseCap: حداقل قیمت محصول، حتی اگر از سقف عمومی بیشتر باشد) */
   maxPerTarget: number;
+  /** موجودی قابل‌خرج کیف خرید (کیف خرید منهای رزرو حراج زنده)؛ اعتبارسنجی نهایی سمت سرور است */
+  walletBalance: number;
   hasPurchasedAny: boolean;
   alreadyHearted: boolean;
   heartsCount: number;
@@ -46,6 +49,7 @@ export function PurchasePanel({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [spent, setSpent] = useState(alreadySpent);
+  const [wallet, setWallet] = useState(walletBalance);
   const [purchased, setPurchased] = useState(hasPurchasedAny);
   const [justBought, setJustBought] = useState(false);
   const [hearted, setHearted] = useState(alreadyHearted);
@@ -57,7 +61,10 @@ export function PurchasePanel({
   const remaining = Math.max(0, maxPerTarget - spent);
   const discount = hasBargain ? bargainDiscountFor(price, DEFAULTS.bargainDiscount) : 0;
   const amount = price - discount;
-  const disabled = pending || isOwnTeam || !phaseIsMarket || price > remaining;
+  const capReached = price > remaining;
+  const walletShort = amount > wallet;
+  const walletAfter = wallet - amount;
+  const disabled = pending || isOwnTeam || !phaseIsMarket || capReached || walletShort;
 
   function buy() {
     setError(null);
@@ -69,6 +76,7 @@ export function PurchasePanel({
       }
       // سقف و فروش همیشه با قیمت کامل افزایش می‌یابند؛ فقط کیف خریدار با تخفیف کم می‌شود.
       setSpent((s) => s + price);
+      setWallet((w) => Math.max(0, w - (res.amount ?? amount)));
       setSold((s) => s + price);
       setPurchased(true);
       setJustBought(true);
@@ -121,11 +129,36 @@ export function PurchasePanel({
             </p>
           )}
 
-          <button type="button" onClick={buy} disabled={disabled} className={`btn-primary w-full ${justBought ? "anim-pop" : ""}`}>
+          <dl className="rounded-2xl bg-brand-ice px-4 py-3 text-sm space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <dt className="text-brand-slate">موجودی کیف خرید</dt>
+              <dd className="font-black text-brand-navy fa-num">{coins(wallet)}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <dt className="text-brand-slate">موجودی پس از خرید</dt>
+              <dd className={`font-black fa-num ${walletShort ? "text-brand-red" : "text-brand-navy"}`}>
+                {walletShort ? "کافی نیست" : coins(walletAfter)}
+              </dd>
+            </div>
+          </dl>
+
+          <button
+            type="button"
+            onClick={buy}
+            disabled={disabled}
+            aria-describedby={capReached || walletShort ? "purchase-blocked-reason" : undefined}
+            className={`btn-primary w-full ${justBought ? "anim-pop" : ""}`}
+          >
             {pending ? "در حال خرید…" : `خرید — ${coins(amount)}`}
           </button>
 
-          {price > remaining && <p className="text-xs text-brand-red">به سقف مجاز رسیده‌ای.</p>}
+          {capReached ? (
+            <p id="purchase-blocked-reason" className="text-xs text-brand-red">به سقف مجاز خریدت از این محصول رسیده‌ای.</p>
+          ) : walletShort ? (
+            <p id="purchase-blocked-reason" className="text-xs text-brand-red">
+              موجودی کیف خریدت کافی نیست؛ برای این خرید {coins(amount - wallet)} دیگر لازم داری.
+            </p>
+          ) : null}
         </>
       )}
 

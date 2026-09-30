@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { coverUrl, isLocalUploadUrl } from "@/lib/product-utils";
 import { fa } from "@/lib/persian";
+import { thumbUrl } from "@/lib/thumb";
 
 export function Gallery({ images, seed }: { images: string[]; seed: string }) {
   const list = images.length > 0 ? images : [coverUrl([], seed)];
@@ -24,7 +25,7 @@ export function Gallery({ images, seed }: { images: string[]; seed: string }) {
               aria-pressed={idx === active}
               className={`relative size-16 sm:size-auto sm:aspect-square shrink-0 rounded-xl overflow-hidden border-2 transition ${idx === active ? "border-brand-red" : "border-transparent opacity-80 hover:opacity-100"}`}
             >
-              <Image src={url} alt={`تصویر ${fa(idx + 1)}`} fill sizes="120px" className="object-cover" unoptimized={!isLocalUploadUrl(url)} />
+              <Image src={thumbUrl(url)} alt={`تصویر ${fa(idx + 1)}`} fill sizes="120px" className="object-cover" unoptimized={!isLocalUploadUrl(url)} />
             </button>
           ))}
         </div>

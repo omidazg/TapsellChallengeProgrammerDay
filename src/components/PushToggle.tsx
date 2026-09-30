@@ -32,6 +32,55 @@ async function waitForServiceWorkerReady(timeoutMs = 8000): Promise<ServiceWorke
   }
 }
 
+export type EnablePushResult =
+  | { ok: true }
+  | { ok: false; status: "unsupported" | "not-configured" | "denied" | "off"; error?: string };
+
+/**
+ * گرفتن اجازهٔ اعلان، اشتراک push و ثبت آن روی سرور. بین PushToggle (صفحهٔ اعلان‌ها)
+ * و PushPrompt (بنر پیشنهاد در لحظهٔ مناسب) مشترک است. باید از داخل یک کلیک کاربر صدا زده شود.
+ */
+export async function enablePush(): Promise<EnablePushResult> {
+  try {
+    if (typeof Notification === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      return { ok: false, status: "unsupported" };
+    }
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      return { ok: false, status: permission === "denied" ? "denied" : "off" };
+    }
+
+    const reg = await waitForServiceWorkerReady();
+    if (!reg) {
+      return { ok: false, status: "off", error: "ثبت service worker به‌موقع کامل نشد؛ دوباره تلاش کن." };
+    }
+
+    const keyRes = await fetch("/api/push/key", { cache: "no-store" });
+    const keyData = await keyRes.json();
+    if (!keyData.publicKey) {
+      return { ok: false, status: "not-configured" };
+    }
+
+    const subscription = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(keyData.publicKey),
+    });
+
+    const json = subscription.toJSON();
+    const subRes = await fetch("/api/push/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }),
+    });
+    if (!subRes.ok) {
+      return { ok: false, status: "off", error: "ثبت اشتراک اعلان با خطا مواجه شد." };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, status: "off", error: "فعال‌سازی اعلان فوری ممکن نشد." };
+  }
+}
+
 export function PushToggle() {
   const [status, setStatus] = useState<Status>("checking");
   const [message, setMessage] = useState<string>("");
@@ -73,54 +122,14 @@ export function PushToggle() {
   async function handleEnable() {
     setError("");
     setStatus("busy");
-    try {
-      if (typeof Notification === "undefined") {
-        setStatus("unsupported");
-        return;
-      }
-      const permission = await Notification.requestPermission();
-      if (permission !== "granted") {
-        setStatus(permission === "denied" ? "denied" : "off");
-        return;
-      }
-
-      const reg = await waitForServiceWorkerReady();
-      if (!reg) {
-        setError("ثبت service worker به‌موقع کامل نشد؛ دوباره تلاش کن.");
-        setStatus("off");
-        return;
-      }
-
-      const keyRes = await fetch("/api/push/key", { cache: "no-store" });
-      const keyData = await keyRes.json();
-      if (!keyData.publicKey) {
-        setStatus("not-configured");
-        return;
-      }
-
-      const subscription = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(keyData.publicKey),
-      });
-
-      const json = subscription.toJSON();
-      const subRes = await fetch("/api/push/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }),
-      });
-      if (!subRes.ok) {
-        setError("ثبت اشتراک اعلان با خطا مواجه شد.");
-        setStatus("off");
-        return;
-      }
-
+    const result = await enablePush();
+    if (result.ok) {
       setMessage("اعلان فوری فعال شد.");
       setStatus("on");
-    } catch {
-      setError("فعال‌سازی اعلان فوری ممکن نشد.");
-      setStatus("off");
+      return;
     }
+    if (result.error) setError(result.error);
+    setStatus(result.status);
   }
 
   async function handleDisable() {

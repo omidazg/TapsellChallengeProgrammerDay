@@ -1,13 +1,17 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import Image from "next/image";
 import { fa, coins } from "@/lib/persian";
 import { Alert } from "@/components/ui";
+import { ImageUploadField } from "@/components/ImageUploadField";
+import { useDraftAutosave, type DraftValues } from "@/hooks/useDraftAutosave";
 import { DEFAULTS } from "@/lib/constants";
-import { parseTeaser, randomPicsumUrl, MAX_IMAGES, uploadImageFile, isLocalUploadUrl } from "@/lib/product-utils";
+import { parseTeaser, randomPicsumUrl, MAX_IMAGES, isLocalUploadUrl, imageUrlError } from "@/lib/product-utils";
 import { saveProductAction, type ProductActionState } from "./actions";
+import { DraftBanner } from "./DraftBanner";
+import { ChecklistLink } from "./ChecklistLink";
 
 type ProductInput = {
   name: string;
@@ -22,6 +26,13 @@ type ProductInput = {
   specialStart: number;
 };
 
+/** فیلدهایی که پیش‌نویس محلی‌شان ذخیره می‌شود */
+const DRAFT_FIELDS = ["name", "tagline", "description", "demoUrl", "teaserUrl", "images", "price", "specialName", "specialDesc", "specialStart"] as const;
+
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
 function SubmitButtons({ disabled }: { disabled: boolean }) {
   const status = useFormStatus();
   const intent = status.pending ? String(status.data?.get("intent") ?? "") : "";
@@ -30,7 +41,7 @@ function SubmitButtons({ disabled }: { disabled: boolean }) {
       <button type="submit" name="intent" value="draft" disabled={disabled || status.pending} className="btn-ghost w-full sm:w-auto">
         {status.pending && intent === "draft" ? "در حال ذخیره…" : "ذخیرهٔ پیش‌نویس"}
       </button>
-      <button type="submit" name="intent" value="submit" disabled={disabled || status.pending} className="btn-primary w-full sm:w-auto">
+      <button id="productFinalSubmit" type="submit" name="intent" value="submit" disabled={disabled || status.pending} className="btn-primary w-full sm:w-auto">
         {status.pending && intent === "submit" ? "داور هوش مصنوعی در حال بررسی…" : "ثبت نهایی محصول"}
       </button>
     </div>
@@ -38,12 +49,15 @@ function SubmitButtons({ disabled }: { disabled: boolean }) {
 }
 
 export function BuildForm({
+  draftKey,
   editable,
   submitted,
   initial,
   maxPrice = DEFAULTS.maxPrice,
   lockNote = "مرکز ساخت قفل شده و فقط قابل مشاهده است.",
 }: {
+  /** کلید پیش‌نویس محلی (بر پایهٔ تیم و شناسهٔ محصول) */
+  draftKey: string;
   editable: boolean;
   /** پیام نمایش‌داده‌شده وقتی فرم قابل ویرایش نیست (قفل فاز یا نبودن سرپرستی) */
   lockNote?: string | null;
@@ -52,19 +66,75 @@ export function BuildForm({
   /** سقف مؤثر قیمت (کمینهٔ DEFAULTS.maxPrice و سقف خرید هر نفر)؛ از سرور محاسبه و پاس داده می‌شود. */
   maxPrice?: number;
 }) {
-  const [state, formAction] = useActionState<ProductActionState, FormData>(saveProductAction, {});
+  const formRef = useRef<HTMLFormElement>(null);
   const [images, setImages] = useState<string[]>(initial?.images ?? []);
   const [teaserUrl, setTeaserUrl] = useState(initial?.teaserUrl ?? "");
   const [price, setPrice] = useState(() => Math.min(initial?.price ?? 20, maxPrice));
   const [specialStart, setSpecialStart] = useState(initial?.specialStart ?? 20);
   const locked = !editable || submitted;
+
+  // مقادیر فعلی سرور، به همان شکلی که در FormData ظاهر می‌شوند
+  const baseline: DraftValues = {
+    name: [initial?.name ?? ""],
+    tagline: [initial?.tagline ?? ""],
+    description: [initial?.description ?? ""],
+    demoUrl: [initial?.demoUrl ?? ""],
+    teaserUrl: [initial?.teaserUrl ?? ""],
+    images: initial?.images ?? [],
+    price: [String(Math.min(initial?.price ?? 20, maxPrice))],
+    specialName: [initial?.specialName ?? ""],
+    specialDesc: [initial?.specialDesc ?? ""],
+    specialStart: [String(initial?.specialStart ?? 20)],
+  };
+  const draft = useDraftAutosave({
+    key: `build:${draftKey}`,
+    formRef,
+    fields: DRAFT_FIELDS,
+    baseline,
+    enabled: !locked,
+    controlled: {
+      teaserUrl: (vals) => setTeaserUrl(vals[0] ?? ""),
+      images: (vals) => setImages(Array.from(new Set(vals.map((u) => u.trim()))).filter((u) => u && !imageUrlError(u)).slice(0, MAX_IMAGES)),
+      price: (vals) => {
+        const n = Number(vals[0]);
+        if (Number.isFinite(n)) setPrice(clamp(n, DEFAULTS.minPrice, maxPrice));
+      },
+      specialStart: (vals) => {
+        const n = Number(vals[0]);
+        if (Number.isFinite(n)) setSpecialStart(clamp(n, 5, 100));
+      },
+    },
+  });
+
+  const [state, formAction] = useActionState<ProductActionState, FormData>(async (prev, formData) => {
+    const result = await saveProductAction(prev, formData);
+    // پس از ذخیره/ثبت موفق، پیش‌نویس محلی دیگر لازم نیست
+    if (result.ok) draft.clear();
+    return result;
+  }, {});
   const teaser = parseTeaser(teaserUrl);
   // پس از خطا، مقادیر ارسالی برمی‌گردند تا ری‌ست خودکار فرم نوشته‌ها را پاک نکند
   const v = state.values ?? {};
 
   return (
-    <form action={formAction} className="card p-6 space-y-6 anim-rise">
-      {state.error && <Alert kind="error">{state.error}</Alert>}
+    <form ref={formRef} action={formAction} className="card p-6 space-y-6 anim-rise">
+      {draft.found && <DraftBanner savedAt={draft.found.savedAt} onRestore={draft.restore} onDismiss={draft.dismiss} />}
+      {state.error &&
+        (state.missing && state.missing.length > 0 ? (
+          <Alert kind="error">
+            پیش از ثبت نهایی، این موارد چک‌لیست را کامل کن:{" "}
+            {state.missing.map((m, i) => (
+              <span key={m.fieldId}>
+                {i > 0 && "، "}
+                <ChecklistLink fieldId={m.fieldId} className="underline underline-offset-4 hover:no-underline">
+                  {m.label}
+                </ChecklistLink>
+              </span>
+            ))}
+          </Alert>
+        ) : (
+          <Alert kind="error">{state.error}</Alert>
+        ))}
       {state.ok && <Alert kind="ok">ذخیره شد.</Alert>}
       {!editable && lockNote && <Alert kind="info">{lockNote}</Alert>}
 
@@ -165,37 +235,33 @@ export function BuildForm({
 
 function ImagesField({ images, setImages, disabled }: { images: string[]; setImages: React.Dispatch<React.SetStateAction<string[]>>; disabled: boolean }) {
   const [draft, setDraft] = useState("");
-  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "error">("idle");
-  const [uploadMessage, setUploadMessage] = useState("");
+  const [urlError, setUrlError] = useState("");
+  const full = images.length >= MAX_IMAGES;
 
-  function addImage(url: string) {
+  /** افزودن تصویر با اعتبارسنجی فوری (همان قاعدهٔ سرور)؛ خطا کنار فیلد نمایش داده می‌شود */
+  function addImage(url: string, fromDraft = false) {
     const v = url.trim();
     if (!v) return;
+    const err = full
+      ? `حداکثر ${fa(MAX_IMAGES)} تصویر مجاز است`
+      : images.includes(v)
+        ? "این تصویر قبلاً افزوده شده است"
+        : imageUrlError(v);
+    if (err) {
+      // خطای نشانیِ تایپ‌شده کنار همان فیلد نشان داده می‌شود؛ خطای آپلود را خود ImageUploadField نشان می‌دهد
+      if (fromDraft) setUrlError(err);
+      return;
+    }
     // تصویر تکراری افزوده نمی‌شود (کلید تکراری و شمارش نادرست در چک‌لیست)
     setImages((prev) => (prev.length >= MAX_IMAGES || prev.includes(v) ? prev : [...prev, v]));
-    setDraft("");
+    if (fromDraft) {
+      setDraft("");
+      setUrlError("");
+    }
   }
   function removeImage(idx: number) {
     setImages((prev) => prev.filter((_, i) => i !== idx));
   }
-
-  async function handleFiles(files: FileList | null) {
-    const file = files?.[0];
-    if (!file || images.length >= MAX_IMAGES) return;
-    setUploadStatus("uploading");
-    setUploadMessage("در حال آپلود تصویر…");
-    try {
-      const { url } = await uploadImageFile(file);
-      addImage(url);
-      setUploadStatus("idle");
-      setUploadMessage("تصویر آپلود شد.");
-    } catch (e) {
-      setUploadStatus("error");
-      setUploadMessage(e instanceof Error ? e.message : "آپلود با خطا مواجه شد");
-    }
-  }
-
-  const uploadDisabled = disabled || uploadStatus === "uploading" || images.length >= MAX_IMAGES;
 
   return (
     <div>
@@ -206,66 +272,44 @@ function ImagesField({ images, setImages, disabled }: { images: string[]; setIma
         <input key={url} type="hidden" name="images" value={url} />
       ))}
 
-      <div
-        className="mb-3 rounded-2xl border-2 border-dashed border-brand-mist p-3 text-center transition hover:border-brand-cyan"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          e.preventDefault();
-          if (!uploadDisabled) handleFiles(e.dataTransfer.files);
-        }}
-      >
-        <label
-          htmlFor="productImageFile"
-          className={`btn-cyan inline-block ${uploadDisabled ? "pointer-events-none opacity-50" : "cursor-pointer"}`}
-        >
-          {uploadStatus === "uploading" ? "در حال آپلود…" : "آپلود تصویر از رایانه"}
-        </label>
-        <input
-          id="productImageFile"
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
-          className="sr-only"
-          disabled={uploadDisabled}
-          onChange={(e) => {
-            handleFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
-        <p className="mt-1 text-xs text-brand-slate">یا فایل را همین‌جا رها کن</p>
-        <p role="status" aria-live="polite" className={`mt-1 text-xs ${uploadStatus === "error" ? "text-brand-red" : "text-brand-slate"}`}>
-          {uploadMessage}
-        </p>
+      <div className="mb-3">
+        <ImageUploadField id="productImageFile" disabled={disabled || full} onUploaded={(url) => addImage(url)} />
       </div>
 
       <div className="flex flex-wrap gap-3 items-center">
         <input
           id="productImageUrl"
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            if (urlError) setUrlError("");
+          }}
           onKeyDown={(e) => {
             // Enter در این فیلد نباید کل فرم را ذخیره کند؛ تصویر را اضافه می‌کند
             if (e.key === "Enter") {
               e.preventDefault();
-              addImage(draft);
+              addImage(draft, true);
             }
           }}
-          disabled={disabled || images.length >= MAX_IMAGES}
+          disabled={disabled || full}
+          aria-invalid={urlError ? true : undefined}
+          aria-describedby={urlError ? "productImageUrlError" : undefined}
           className="input flex-1 min-w-[220px]"
           placeholder="https://picsum.photos/seed/.../800/500"
           dir="ltr"
         />
-        <button type="button" disabled={disabled || !draft.trim() || images.length >= MAX_IMAGES} className="btn-cyan shrink-0" onClick={() => addImage(draft)}>
+        <button type="button" disabled={disabled || !draft.trim() || full} className="btn-cyan shrink-0" onClick={() => addImage(draft, true)}>
           افزودن
         </button>
-        <button
-          type="button"
-          disabled={disabled || images.length >= MAX_IMAGES}
-          className="btn-ghost shrink-0"
-          onClick={() => addImage(randomPicsumUrl())}
-        >
+        <button type="button" disabled={disabled || full} className="btn-ghost shrink-0" onClick={() => addImage(randomPicsumUrl())}>
           تصویر تصادفی
         </button>
       </div>
+      {urlError && (
+        <p id="productImageUrlError" role="alert" className="mt-1 text-xs text-brand-red">
+          {urlError}
+        </p>
+      )}
 
       {images.length > 0 && (
         <div className="mt-4 flex gap-3 overflow-x-auto no-scrollbar sm:grid sm:grid-cols-4 sm:overflow-visible stagger">

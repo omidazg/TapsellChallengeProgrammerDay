@@ -10,6 +10,14 @@ const GREETING: ChatMsg = {
   content: "سلام! من دستیار سؤال‌وجواب میدان بنیان‌گذارانم. هر سؤالی دربارهٔ قوانین، زمان‌بندی یا جوایز مسابقه داری بپرس.",
 };
 
+/** سؤال‌های پرتکرار؛ زیر پیام خوشامد نشان داده می‌شوند و با یک کلیک فرستاده می‌شوند. */
+const SUGGESTED_QUESTIONS = [
+  "جریمهٔ سکهٔ خرج‌نشده چطور حساب می‌شود؟",
+  "سپر چه کار می‌کند؟",
+  "امتیاز نهایی چطور حساب می‌شود؟",
+  "در این فاز چه کار کنم؟",
+];
+
 /** `loggedIn`: /api/assistant فقط برای کاربران واردشده پاسخ می‌دهد؛ مهمان به‌جای گفت‌وگو دعوت به ورود می‌بیند. */
 export function AskAgent({ loggedIn = true }: { loggedIn?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -35,8 +43,10 @@ export function AskAgent({ loggedIn = true }: { loggedIn?: boolean }) {
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
-  async function send() {
-    const text = input.trim();
+  const hasUserMessage = messages.some((m) => m.role === "user");
+
+  async function send(override?: string) {
+    const text = (override ?? input).trim();
     if (!text || pending) return;
     setError(null);
     const prev = messages;
@@ -80,7 +90,9 @@ export function AskAgent({ loggedIn = true }: { loggedIn?: boolean }) {
         aria-expanded={open}
         aria-controls="ask-agent-panel"
         aria-label={open ? "بستن دستیار هوش مصنوعی" : "باز کردن دستیار هوش مصنوعی"}
-        className="print:hidden fixed bottom-4 left-4 z-50 size-14 rounded-full bg-brand-navy text-white shadow-lift flex items-center justify-center text-2xl hover:opacity-90 transition"
+        // فاصله از پایین به ارتفاع نوار پایینی موبایل (اگر باشد) اضافه می‌شود تا روی آن نیفتد
+        style={{ bottom: "calc(var(--bottom-nav-h, 0px) + 1rem)" }}
+        className="print:hidden fixed left-4 z-50 size-14 rounded-full bg-brand-navy text-white shadow-lift flex items-center justify-center text-2xl hover:opacity-90 transition"
       >
         <span aria-hidden>{open ? "✕" : "🤖"}</span>
       </button>
@@ -90,7 +102,12 @@ export function AskAgent({ loggedIn = true }: { loggedIn?: boolean }) {
           id="ask-agent-panel"
           role="dialog"
           aria-label="دستیار سؤال‌وجواب مسابقه"
-          className="print:hidden fixed bottom-20 left-4 z-50 w-[92vw] max-w-sm card p-0 flex flex-col overflow-hidden shadow-lift" style={{ height: "min(70vh, 520px)" }}>
+          className="print:hidden fixed left-4 z-50 w-[92vw] max-w-sm card p-0 flex flex-col overflow-hidden shadow-lift"
+          style={{
+            bottom: "calc(var(--bottom-nav-h, 0px) + 5rem)",
+            height: "min(70vh, calc(100dvh - var(--bottom-nav-h, 0px) - 6.5rem), 520px)",
+          }}
+        >
           <div className="flex items-start justify-between gap-2 px-4 py-3 border-b border-brand-mist bg-brand-ice">
             <div className="min-w-0">
               <div className="font-black text-brand-navy text-sm">دستیار سؤال‌وجواب مسابقه</div>
@@ -121,6 +138,20 @@ export function AskAgent({ loggedIn = true }: { loggedIn?: boolean }) {
                 </div>
               </div>
             ))}
+            {loggedIn && !hasUserMessage && !pending && (
+              <div className="flex flex-wrap justify-end gap-1.5 pt-1" aria-label="سؤال‌های پیشنهادی">
+                {SUGGESTED_QUESTIONS.map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => send(q)}
+                    className="rounded-pill border border-brand-mist bg-brand-ice px-3 py-1.5 text-xs font-bold text-brand-navy text-start hover:border-brand-cyan-dark hover:bg-brand-mist transition"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
             {pending && <div className="text-xs text-brand-slate px-1">در حال نوشتن پاسخ...</div>}
             {error && <div role="alert" className="text-xs text-brand-red px-1">{error}</div>}
           </div>

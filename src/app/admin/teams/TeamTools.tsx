@@ -100,12 +100,12 @@ function TeamlessUsersCard({ users, teams }: { users: TeamlessUser[]; teams: Tea
       {state.ok && <Alert kind="ok">کاربر به تیم اضافه شد.</Alert>}
       <div className="flex flex-wrap gap-2">
         {users.map((u) => (
-          <form key={u.id} action={action} className="flex items-center gap-1.5 rounded-pill bg-brand-ice px-2.5 py-1.5">
+          <form key={u.id} action={action} className="flex flex-wrap items-center gap-2 rounded-2xl bg-brand-ice px-3 py-2">
             <input type="hidden" name="userId" value={u.id} />
             <Avatar seed={u.avatarSeed || u.id} size={22} />
             <span className="text-sm font-bold text-brand-navy">{u.nickname}</span>
             <label htmlFor={`add-${u.id}`} className="sr-only">افزودن {u.nickname} به تیم</label>
-            <select id={`add-${u.id}`} name="targetTeamId" required defaultValue="" className="input !py-0.5 !px-1.5 !text-[11px] !w-auto">
+            <select id={`add-${u.id}`} name="targetTeamId" required defaultValue="" className="input !py-2 !px-3 !text-sm !w-auto min-h-10 max-w-48">
               <option value="" disabled>افزودن به…</option>
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
@@ -113,7 +113,7 @@ function TeamlessUsersCard({ users, teams }: { users: TeamlessUser[]; teams: Tea
             </select>
             <button
               type="submit"
-              className="text-brand-navy text-xs font-bold hover:underline"
+              className="inline-flex items-center justify-center size-10 shrink-0 rounded-full border border-brand-mist bg-white font-bold text-brand-navy transition hover:bg-brand-ice"
               title="افزودن به این تیم"
               aria-label={`افزودن ${u.nickname} به تیم انتخاب‌شده`}
             >

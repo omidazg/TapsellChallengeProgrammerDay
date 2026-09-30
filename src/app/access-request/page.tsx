@@ -23,6 +23,12 @@ export default async function AccessRequestPage({ searchParams }: { searchParams
           {phase !== "REGISTRATION" && (
             <Alert kind="info">فاز ثبت‌نام الان بسته است؛ درخواستت ثبت می‌شود ولی حتی پس از تأیید، ساخت حساب فقط وقتی ممکن است که برگزارکننده ثبت‌نام را دوباره باز کند.</Alert>
           )}
+          <p className="text-center text-sm text-brand-slate">
+            قبلاً درخواست داده‌ای؟{" "}
+            <a href="#access-status" className="font-bold text-brand-cyan-dark">
+              وضعیتش را پیگیری کن
+            </a>
+          </p>
           <AccessRequestForm
             email={typeof email === "string" ? email.slice(0, 120) : ""}
             phone={typeof phone === "string" ? phone.slice(0, 20) : ""}

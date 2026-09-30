@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { isNextImageHost } from "@/lib/idea";
+import { isNextImageHost } from "@/lib/product-utils";
 
 /**
  * جلد ایده.

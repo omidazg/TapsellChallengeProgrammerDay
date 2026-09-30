@@ -93,22 +93,46 @@ self.addEventListener("notificationclick", (event) => {
         /* href نامعتبر → صفحهٔ اصلی */
       }
 
+      // «/auction/» و «/auction» یک صفحه‌اند
+      const normPath = (p) => (p.length > 1 ? p.replace(/\/+$/, "") : p);
+      const targetPath = normPath(new URL(target).pathname);
+      // اول تبی که همین مسیر را باز دارد focus می‌شود. تب نامرتبط را navigate نمی‌کنیم:
+      // ممکن است کاربر وسط پر کردن فرم (مثلاً پیشنهاد حراج) باشد و ورودی‌اش از دست برود.
       for (const client of allClients) {
-        if ("focus" in client) {
-          await client.focus();
-          if ("navigate" in client) {
-            try {
-              await client.navigate(target);
-            } catch {
-              /* برخی مرورگرها navigate را پشتیبانی نمی‌کنند؛ focus کافی است */
-            }
+        let clientPath = null;
+        try {
+          clientPath = normPath(new URL(client.url).pathname);
+        } catch {
+          clientPath = null;
+        }
+        if (clientPath === targetPath && "focus" in client) {
+          try {
+            await client.focus();
+            return;
+          } catch {
+            /* focus مجاز نبود؛ پنجرهٔ جدید باز می‌شود */
           }
-          return;
         }
       }
 
       if (self.clients.openWindow) {
-        await self.clients.openWindow(target);
+        try {
+          const opened = await self.clients.openWindow(target);
+          if (opened) return;
+        } catch {
+          /* openWindow ممکن است رد شود؛ در این صورت دست‌کم یک تب موجود را جلو می‌آوریم */
+        }
+      }
+
+      for (const client of allClients) {
+        if ("focus" in client) {
+          try {
+            await client.focus();
+            return;
+          } catch {
+            /* ادامه */
+          }
+        }
       }
     })()
   );

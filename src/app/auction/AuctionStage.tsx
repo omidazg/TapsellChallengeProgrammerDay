@@ -27,7 +27,22 @@ const ANNOUNCE_MIN_GAP_MS = 3000;
 /** خطای شبکه/سرور هنگام صدا زدن اکشن (مثلاً ری‌استارت سرور) نباید صفحه را به error boundary بفرستد. */
 const NETWORK_ERROR = "ارتباط با سرور برقرار نشد؛ دوباره تلاش کن.";
 
+/** سرآیند ساعت سرور در پاسخ‌های /api/auction (همان SERVER_TIME_HEADER در lib/auction-events؛ آن ماژول سمت سرور است). */
+const SERVER_TIME_HEADER = "X-Server-Time";
+/** تغییرِ کوچک‌تر از این در اختلاف ساعت نادیده گرفته می‌شود تا شمارش معکوس با نوسان شبکه نپرد. */
+const CLOCK_JITTER_MS = 250;
+/** مدت نمایش بنر «نتیجهٔ حراج قبلی» پس از شروع حراج بعدی. */
+const PREV_RESULT_MS = 10_000;
+
 type StreamPayload = { id: string | null; state: AuctionState | null };
+type PrevResult = {
+  auctionId: string;
+  productName: string;
+  hadBids: boolean;
+  winnerNickname: string | null;
+  winnerTeamName: string | null;
+  finalPrice: number | null;
+};
 
 /** بوق کوتاه با WebAudio، بدون فایل صوتی. */
 function playBeep() {
@@ -107,6 +122,35 @@ export function AuctionStage({
   const [failures, setFailures] = useState(0);
   const [announced, setAnnounced] = useState("");
   const lastAnnounceAt = useRef(0);
+  // نتیجهٔ حراجی که همین حالا تمام شد (حراج بعدی بلافاصله جایش را می‌گیرد و ENDED آن دیده نمی‌شود).
+  const [prevResult, setPrevResult] = useState<PrevResult | null>(null);
+  // اختلاف ساعت سرور و مرورگر (ms). ساعت بعضی گوشی‌ها چند ثانیه جلو/عقب است؛ شمارش معکوس با
+  // serverNow() حساب می‌شود. تا نمونهٔ اول نرسیده null است (یعنی همان ساعت مرورگر).
+  const clockOffset = useRef<number | null>(null);
+  // نوار پیشنهاد ثابت پایین صفحه در موبایل؛ ارتفاعش به padding پایین <html> اضافه می‌شود تا محتوا زیرش نماند.
+  const bidBarRef = useRef<HTMLDivElement | null>(null);
+
+  const serverNow = useCallback(() => Date.now() + (clockOffset.current ?? 0), []);
+
+  /** یک نمونهٔ ساعت سرور: serverMs در لحظهٔ محلیِ localMs. نمونهٔ نامعتبر نادیده گرفته می‌شود. */
+  const noteServerTime = useCallback((serverMs: number, localMs: number) => {
+    if (!Number.isFinite(serverMs) || serverMs <= 0 || !Number.isFinite(localMs)) return;
+    const offset = Math.round(serverMs - localMs);
+    const prev = clockOffset.current;
+    if (prev !== null && Math.abs(offset - prev) < CLOCK_JITTER_MS) return;
+    clockOffset.current = offset;
+    setNow(Date.now() + offset);
+  }, []);
+
+  /** ساعت سرور از سرآیند پاسخ fetch؛ لحظهٔ محلی وسط رفت‌وبرگشت فرض می‌شود. نبود سرآیند بی‌اثر است. */
+  const noteResponseTime = useCallback(
+    (res: Response, sentAt: number) => {
+      const raw = res.headers.get(SERVER_TIME_HEADER);
+      if (!raw) return;
+      noteServerTime(Number(raw), (sentAt + Date.now()) / 2);
+    },
+    [noteServerTime]
+  );
 
   useEffect(() => {
     originalTitle.current = document.title;
@@ -193,21 +237,23 @@ export function AuctionStage({
       lastStatus.current = data.status;
 
       setState(data);
-      setNow(Date.now());
+      setNow(serverNow());
     },
-    [currentUser.id, router, triggerOutbidAlert]
+    [currentUser.id, router, triggerOutbidAlert, serverNow]
   );
 
   /** یک بار وضعیت یک حراج را می‌گیرد؛ برای polling پشتیبان و تازه‌سازی بلافاصله پس از پیشنهاد. */
   const fetchState = useCallback(
     async (id: string) => {
+      const sentAt = Date.now();
       const res = await fetch(`/api/auction/${id}/state`, { cache: "no-store" });
       if (!res.ok) throw new Error(String(res.status));
+      noteResponseTime(res, sentAt);
       const data: AuctionState = await res.json();
       applyState(data);
       return data;
     },
-    [applyState]
+    [applyState, noteResponseTime]
   );
 
   // جریان زنده (SSE): وضعیت عمومی حراج فقط هنگام تغییر از سرور می‌رسد.
@@ -230,6 +276,14 @@ export function AuctionStage({
         /* پیام خراب؛ پیام بعدی جایگزین می‌شود */
       }
     };
+    const onClock = (ev: MessageEvent<string>) => {
+      try {
+        const { now: serverMs } = JSON.parse(ev.data) as { now?: unknown };
+        if (typeof serverMs === "number") noteServerTime(serverMs, Date.now());
+      } catch {
+        /* پیام خراب؛ heartbeat بعدی دوباره ساعت را می‌فرستد */
+      }
+    };
     const onError = () => {
       // EventSource خودش دوباره وصل می‌شود؛ پس از چند خطای پیاپی (یا بسته‌شدن قطعی، مثل 401) به polling برمی‌گردیم.
       errors += 1;
@@ -241,14 +295,16 @@ export function AuctionStage({
     };
     es.addEventListener("open", onOpen);
     es.addEventListener("state", onState);
+    es.addEventListener("clock", onClock);
     es.addEventListener("error", onError);
     return () => {
       es.removeEventListener("open", onOpen);
       es.removeEventListener("state", onState);
+      es.removeEventListener("clock", onClock);
       es.removeEventListener("error", onError);
       es.close();
     };
-  }, [mode, applyState]);
+  }, [mode, applyState, noteServerTime]);
 
   // در حالت polling، پس از مدتی دوباره SSE امتحان شود.
   useEffect(() => {
@@ -261,8 +317,10 @@ export function AuctionStage({
   usePolling(
     async () => {
       try {
+        const sentAt = Date.now();
         const res = await fetch("/api/auction/live", { cache: "no-store" });
         if (!res.ok) throw new Error(String(res.status));
+        noteResponseTime(res, sentAt);
         const data: { id: string | null } = await res.json();
         setAuctionId((prev) => (prev === data.id ? prev : data.id));
         if (data.id) await fetchState(data.id);
@@ -276,9 +334,9 @@ export function AuctionStage({
   );
 
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
+    const t = setInterval(() => setNow(serverNow()), 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [serverNow]);
 
   const submitBid = useCallback(
     (value: number) => {
@@ -321,13 +379,66 @@ export function AuctionStage({
 
   // حراج عوض شد (قبلی تسویه شد و بعدی بلافاصله زنده شد، یا صف تمام شد): ممکن است وضعیت ENDED
   // حراج قبلی هیچ‌وقت به کلاینت نرسیده باشد؛ پس کیف خرید و فهرست صف/پایان‌یافته‌ها را از سرور تازه کن.
+  // در همان حال نتیجهٔ نهایی حراج قبلی یک‌بار گرفته و چند ثانیه در بنری بالای صحنه نشان داده می‌شود.
   useEffect(() => {
-    if (prevAuctionId.current !== auctionId) router.refresh();
+    const prev = prevAuctionId.current;
     prevAuctionId.current = auctionId;
+    if (prev === auctionId) return;
+    router.refresh();
+    if (!prev) return;
+    let cancelled = false;
+    fetch(`/api/auction/${prev}/state`, { cache: "no-store" })
+      .then((res) => (res.ok ? (res.json() as Promise<AuctionState>) : null))
+      .then((data) => {
+        // فقط حراجی که واقعاً تمام شده (نه مثلاً حراج در صفی که برگزارکننده جابه‌جا کرده).
+        if (cancelled || !data || data.id !== prev || data.status !== "ENDED") return;
+        setPrevResult({
+          auctionId: data.id,
+          productName: data.product.specialName,
+          hadBids: data.bids.length > 0,
+          winnerNickname: data.winnerNickname,
+          winnerTeamName: data.winnerTeamName ?? null,
+          finalPrice: data.finalPrice,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [auctionId, router]);
+
+  // بنر نتیجهٔ حراج قبلی پس از چند ثانیه خودش بسته می‌شود.
+  useEffect(() => {
+    if (!prevResult) return;
+    const t = setTimeout(() => setPrevResult(null), PREV_RESULT_MS);
+    return () => clearTimeout(t);
+  }, [prevResult]);
 
   // وضعیتِ مانده از حراج قبلی نباید نمایش داده شود.
   const current = auctionId && state && state.id === auctionId ? state : null;
+  // نوار پیشنهاد فقط در حراج زنده و برای محصول تیم‌های دیگر رندر می‌شود.
+  const hasBidBar =
+    current?.status === "LIVE" && !(!!currentUser.teamId && current.product.teamId === currentUser.teamId);
+
+  // در موبایل نوار پیشنهاد fixed است و انتهای صفحه را می‌پوشاند؛ به‌اندازهٔ ارتفاعش به پایین سند
+  // (padding روی <html>، تا با فاصله‌ای که نوار پایین سایت روی body/main می‌گذارد جمع شود) فضا بده.
+  useEffect(() => {
+    const el = bidBarRef.current;
+    if (!hasBidBar || !el || typeof ResizeObserver === "undefined") return;
+    const root = document.documentElement;
+    const original = root.style.paddingBottom;
+    const update = () => {
+      root.style.paddingBottom = getComputedStyle(el).position === "fixed" ? `${el.offsetHeight}px` : original;
+    };
+    update();
+    // عبور از مرز sm پهنای نوار را عوض می‌کند، پس همین ResizeObserver آن را هم پوشش می‌دهد.
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      root.style.paddingBottom = original;
+    };
+  }, [hasBidBar]);
 
   // متن ناحیهٔ aria-live: فقط با تغییر قیمت/نفر اول/وضعیت یا عبور از آستانه‌های زمانی عوض می‌شود، نه هر ثانیه.
   let liveText = "";
@@ -357,6 +468,38 @@ export function AuctionStage({
   }, [liveText]);
 
   const banner = <ConnectionBanner failing={failures >= 2} />;
+  const prevBanner = (className: string) =>
+    prevResult ? (
+      <div className={`anim-pop ${className}`} role="status">
+        <div className="flex items-start gap-3 rounded-2xl border border-brand-mist bg-brand-ice px-4 py-3 text-sm text-brand-navy">
+          <span aria-hidden className="text-lg leading-6">
+            🔨
+          </span>
+          <p className="flex-1 min-w-0 leading-6 break-words">
+            <b>حراج قبلی:</b> {prevResult.productName} —{" "}
+            {prevResult.winnerNickname ? (
+              <>
+                برنده: <b>{prevResult.winnerNickname}</b>
+                {prevResult.winnerTeamName && <span className="text-brand-slate"> ({prevResult.winnerTeamName})</span>} با{" "}
+                <span className="fa-num font-black">{coins(prevResult.finalPrice ?? 0)}</span>
+              </>
+            ) : prevResult.hadBids ? (
+              "بدون پیشنهاد معتبر فروخته نشد"
+            ) : (
+              "بدون پیشنهاد فروخته نشد"
+            )}
+          </p>
+          <button
+            type="button"
+            onClick={() => setPrevResult(null)}
+            aria-label="بستن نتیجهٔ حراج قبلی"
+            className="-m-1 grid h-8 w-8 shrink-0 place-items-center rounded-full text-brand-slate hover:bg-brand-mist hover:text-brand-navy"
+          >
+            <span aria-hidden>✕</span>
+          </button>
+        </div>
+      </div>
+    ) : null;
   const liveRegion = (
     <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
       {announced}
@@ -365,25 +508,31 @@ export function AuctionStage({
 
   if (!current && auctionId) {
     return (
-      <div className="card p-10 text-center" aria-busy="true">
-        {banner}
-        {liveRegion}
-        <p className="text-brand-slate">در حال دریافت وضعیت حراج…</p>
-      </div>
+      <>
+        {prevBanner("mb-4")}
+        <div className="card p-10 text-center" aria-busy="true">
+          {banner}
+          {liveRegion}
+          <p className="text-brand-slate">در حال دریافت وضعیت حراج…</p>
+        </div>
+      </>
     );
   }
 
   if (!current) {
     return (
-      <div className="card p-10 text-center anim-pop">
-        {banner}
-        {liveRegion}
-        <div className="text-5xl mb-3" aria-hidden>
-          ⏳
+      <>
+        {prevBanner("mb-4")}
+        <div className="card p-10 text-center anim-pop">
+          {banner}
+          {liveRegion}
+          <div className="text-5xl mb-3" aria-hidden>
+            ⏳
+          </div>
+          <h3 className="text-xl font-black">فعلاً حراجی زنده نیست</h3>
+          <p className="mt-2 text-brand-slate">منتظر شروع حراج بعدی توسط برگزارکننده باش.</p>
         </div>
-        <h3 className="text-xl font-black">فعلاً حراجی زنده نیست</h3>
-        <p className="mt-2 text-brand-slate">منتظر شروع حراج بعدی توسط برگزارکننده باش.</p>
-      </div>
+      </>
     );
   }
 
@@ -403,6 +552,9 @@ export function AuctionStage({
   const iLead = current.highest?.userId === currentUser.id;
   const reservedHere = iLead && current.highest ? current.highest.amount : 0;
   const reserved = reservedElsewhere + reservedHere;
+  // برای کارت «کیف خرید تو»: کل رزرو (پیشتازی در همین حراج فقط تا وقتی زنده است) و باقیِ واقعاً آزاد کیف.
+  const reservedTotal = reservedElsewhere + (isLive ? reservedHere : 0);
+  const freeToSpend = Math.max(0, wallet - reservedTotal);
   const cantAffordNext = current.nextMin > spendable;
   const typedText = toEnDigits(amount.trim()).replace(/[٬,\s]/g, "");
   const typed = typedText === "" || !/^\d+$/.test(typedText) ? null : Number(typedText);
@@ -413,6 +565,7 @@ export function AuctionStage({
     <div className="grid lg:grid-cols-[1.4fr_1fr] gap-6">
       {banner}
       {liveRegion}
+      {prevBanner("lg:col-span-2")}
       <div className="card overflow-hidden anim-rise">
         <div className="relative h-56 sm:h-72">
           <Image src={current.product.cover} alt={current.product.specialName} fill className="object-cover" unoptimized />
@@ -488,58 +641,79 @@ export function AuctionStage({
 
           {isLive && !isMyTeam && (
             <div className="space-y-3">
-              <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2" role="group" aria-label="پیشنهاد سریع">
-                {quickAmounts.map((v, i) => {
-                  const overWallet = v > spendable;
-                  return (
-                    <button
-                      key={v}
-                      type="button"
-                      disabled={pending || overWallet || !biddingOpen}
-                      onClick={() => submitBid(v)}
-                      aria-label={`ثبت پیشنهاد ${coins(v)}${i === 0 ? " (حداقل مجاز)" : ` (حداقل به‌علاوهٔ ${fa(QUICK_STEPS[i])})`}${
-                        overWallet ? "، بیشتر از موجودی قابل‌خرج" : ""
-                      }`}
-                      className="btn-cyan !px-2 sm:!px-4 !py-3 sm:!py-2 text-sm sm:text-base disabled:opacity-40"
-                    >
-                      {i === 0 ? "حداقل" : `+${fa(QUICK_STEPS[i])}`} ({fa(v)})
-                    </button>
-                  );
-                })}
-              </div>
-              <form
-                className="flex items-center gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (canSubmitTyped && typed !== null) submitBid(typed);
-                }}
+              {/* در موبایل نوار پیشنهاد (دکمه‌های سریع + مبلغ دلخواه) ثابت پایین صفحه می‌ماند: بالای نوار پایین
+                  سایت (--bottom-nav-h) و با فاصلهٔ ناحیهٔ امن. از sm به بالا همان جای عادی خودش است. */}
+              <div
+                ref={bidBarRef}
+                className="space-y-2 sm:space-y-3 max-sm:fixed max-sm:inset-x-0 max-sm:bottom-[var(--bottom-nav-h,0px)] max-sm:z-30 max-sm:border-t max-sm:border-[var(--border)] max-sm:bg-[var(--surface)] max-sm:px-4 max-sm:pt-2.5 max-sm:pb-[max(0.75rem,calc(env(safe-area-inset-bottom,0px)-var(--bottom-nav-h,0px)))] max-sm:shadow-[0_-8px_24px_-12px_rgba(0,45,71,0.35)]"
               >
-                <label htmlFor="bid-amount" className="sr-only">
-                  مبلغ پیشنهاد دلخواه (سکه)
-                </label>
-                {/* type=text تا رقم فارسی هم پذیرفته شود (input عددی رقم فارسی را رد می‌کند). */}
-                <input
-                  id="bid-amount"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  dir="ltr"
-                  className="input fa-num flex-1 min-w-0 sm:!w-32 sm:flex-none"
-                  placeholder={fa(current.nextMin, { sep: false })}
-                  value={amount}
-                  aria-describedby="bid-hint"
-                  aria-invalid={amount.trim() !== "" && typed === null ? true : undefined}
-                  onChange={(e) => setAmount(e.target.value)}
-                />
-                <button
-                  type="submit"
-                  disabled={!canSubmitTyped}
-                  aria-label={typed !== null ? `ثبت پیشنهاد ${coins(typed)}` : "ثبت پیشنهاد دلخواه"}
-                  className="btn-primary !px-5 !py-3 sm:!py-2 shrink-0 disabled:opacity-40"
+                {/* خلاصهٔ فشرده برای موبایل (تایمر و متن‌های بالای صفحه ممکن است بیرون از دید باشند). اعلان‌ها از Alert/aria-live بالا می‌آیند. */}
+                <div className="flex items-center justify-between gap-2 text-xs sm:hidden" aria-hidden>
+                  <span className={`fa-num font-black tabular-nums shrink-0 ${urgent ? "text-brand-red" : "text-brand-navy"}`}>
+                    ⏱ {mmss(remaining)}
+                  </span>
+                  {error || outbid ? (
+                    <span className="min-w-0 truncate font-bold text-brand-red">{error ?? "روی شما پیشنهاد بالاتر داده شد!"}</span>
+                  ) : (
+                    <span className="min-w-0 truncate text-brand-slate">
+                      حداقل <b className="fa-num text-brand-navy">{fa(current.nextMin)}</b> · قابل‌خرج{" "}
+                      <b className="fa-num text-brand-navy">{fa(spendable)}</b>
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2" role="group" aria-label="پیشنهاد سریع">
+                  {quickAmounts.map((v, i) => {
+                    const overWallet = v > spendable;
+                    return (
+                      <button
+                        key={v}
+                        type="button"
+                        disabled={pending || overWallet || !biddingOpen}
+                        onClick={() => submitBid(v)}
+                        aria-label={`ثبت پیشنهاد ${coins(v)}${i === 0 ? " (حداقل مجاز)" : ` (حداقل به‌علاوهٔ ${fa(QUICK_STEPS[i])})`}${
+                          overWallet ? "، بیشتر از موجودی قابل‌خرج" : ""
+                        }`}
+                        className="btn-cyan !px-2 sm:!px-4 !py-3 sm:!py-2 text-sm sm:text-base disabled:opacity-40"
+                      >
+                        {i === 0 ? "حداقل" : `+${fa(QUICK_STEPS[i])}`} ({fa(v)})
+                      </button>
+                    );
+                  })}
+                </div>
+                <form
+                  className="flex items-center gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (canSubmitTyped && typed !== null) submitBid(typed);
+                  }}
                 >
-                  ثبت پیشنهاد
-                </button>
-              </form>
+                  <label htmlFor="bid-amount" className="sr-only">
+                    مبلغ پیشنهاد دلخواه (سکه)
+                  </label>
+                  {/* type=text تا رقم فارسی هم پذیرفته شود (input عددی رقم فارسی را رد می‌کند). */}
+                  <input
+                    id="bid-amount"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    dir="ltr"
+                    className="input fa-num flex-1 min-w-0 sm:!w-32 sm:flex-none"
+                    placeholder={fa(current.nextMin, { sep: false })}
+                    value={amount}
+                    aria-describedby="bid-hint"
+                    aria-invalid={amount.trim() !== "" && typed === null ? true : undefined}
+                    onChange={(e) => setAmount(e.target.value)}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!canSubmitTyped}
+                    aria-label={typed !== null ? `ثبت پیشنهاد ${coins(typed)}` : "ثبت پیشنهاد دلخواه"}
+                    className="btn-primary !px-5 !py-3 sm:!py-2 shrink-0 disabled:opacity-40"
+                  >
+                    ثبت پیشنهاد
+                  </button>
+                </form>
+              </div>
               <div id="bid-hint" className="space-y-1 text-xs text-brand-slate">
                 <div className="flex flex-wrap gap-x-3 gap-y-1 rounded-xl bg-brand-ice px-3 py-2">
                   <span>
@@ -603,6 +777,12 @@ export function AuctionStage({
       <div className="card p-5 h-fit">
         <div className="text-sm font-black text-brand-navy mb-2">کیف خرید تو</div>
         <Coin n={wallet} />
+        {reservedTotal > 0 && (
+          <div className="mt-2 text-xs text-brand-slate">
+            قابل‌خرج: <span className="fa-num font-black text-brand-navy">{coins(freeToSpend)}</span> (
+            <span className="fa-num">{coins(reservedTotal)}</span> رزرو در حراج)
+          </div>
+        )}
         <div className="mt-4 text-xs text-brand-slate">
           {current.extensions > 0 && <>این حراج {fa(current.extensions)} بار تمدید شده است.</>}
         </div>

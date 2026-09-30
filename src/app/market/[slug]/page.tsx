@@ -7,7 +7,7 @@ import { Container, PageHeader, Locked } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { fa, coins } from "@/lib/persian";
 import { getProductBySlug, parseTeaser } from "@/lib/product";
-import { salesSummary, userSpentOn, getBuyers, hasHearted, effectivePurchaseCap } from "@/lib/market";
+import { salesSummary, userSpentOn, getBuyers, hasHearted, effectivePurchaseCap, spendableBuyCoins } from "@/lib/market";
 import { Gallery } from "./Gallery";
 import { PurchasePanel } from "./PurchasePanel";
 
@@ -37,12 +37,13 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
     );
   }
 
-  const [summary, buyers, alreadyHearted, alreadySpent, maxPerTarget] = await Promise.all([
+  const [summary, buyers, alreadyHearted, alreadySpent, maxPerTarget, walletBalance] = await Promise.all([
     salesSummary(product.id),
     getBuyers(product.id),
     hasHearted(user.id, product.id),
     userSpentOn(user.id, product.id),
     getSettingInt("max_per_target", DEFAULTS.maxPerTarget),
+    spendableBuyCoins(user.id, user.buyWallet),
   ]);
 
   const isOwnTeam = user.teamId === product.teamId;
@@ -118,6 +119,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             hasBargain={hasBargain}
             alreadySpent={alreadySpent}
             maxPerTarget={purchaseCap}
+            walletBalance={walletBalance}
             hasPurchasedAny={hasPurchasedAny}
             alreadyHearted={alreadyHearted}
             heartsCount={summary.heartsCount}

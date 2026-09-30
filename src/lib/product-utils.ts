@@ -37,19 +37,65 @@ export function randomPicsumUrl(): string {
 export type UploadResult = { url: string; thumb: string };
 
 /**
+ * سقف حجم فایل آپلودی (۵ مگابایت) برای بررسی فوری سمت کلاینت پیش از ارسال.
+ * باید با MAX_UPLOAD_BYTES در src/lib/uploads.ts هماهنگ بماند
+ * (آن فایل sharp/fs دارد و در کلاینت قابل‌ایمپورت نیست).
+ */
+export const MAX_UPLOAD_BYTES_CLIENT = 5 * 1024 * 1024;
+
+/** نوع‌های MIME تصویرِ پذیرفته‌شده در آپلود (نوع واقعی را سرور با sharp بررسی می‌کند) */
+export const UPLOAD_ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
+
+/**
+ * بررسی فوری فایل پیش از آپلود (حجم و نوع اعلامی)؛ پیام فارسی خطا یا `null`.
+ * فقط برای بازخورد سریع است و جای بررسی سرور را نمی‌گیرد.
+ */
+export function uploadFileError(file: File): string | null {
+  if (file.size <= 0) return "فایل خالی است";
+  if (file.size > MAX_UPLOAD_BYTES_CLIENT) {
+    return `حجم فایل ${fa((file.size / (1024 * 1024)).toFixed(1))} مگابایت است؛ حداکثر ${fa(5)} مگابایت مجاز است`;
+  }
+  if (file.type && !UPLOAD_ACCEPT.split(",").includes(file.type)) {
+    return "فقط تصویرهای JPEG، PNG، WebP یا GIF پذیرفته می‌شوند";
+  }
+  return null;
+}
+
+/**
  * آپلود یک فایل تصویر به `/api/upload` (سمت کلاینت).
+ * از XMLHttpRequest استفاده می‌شود چون fetch رویداد پیشرفت آپلود ندارد؛
+ * `onProgress` کسری بین ۰ و ۱ دریافت می‌کند.
  * در صورت خطا، پیام فارسی برگشتی از سرور را در قالب Error پرتاب می‌کند.
  */
-export async function uploadImageFile(file: File): Promise<UploadResult> {
+export function uploadImageFile(file: File, onProgress?: (fraction: number) => void): Promise<UploadResult> {
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch("/api/upload", { method: "POST", body: formData });
-  const data: unknown = await res.json().catch(() => ({}));
-  const obj = (data && typeof data === "object" ? data : {}) as { error?: unknown; url?: unknown; thumb?: unknown };
-  if (!res.ok) {
-    throw new Error(typeof obj.error === "string" ? obj.error : "آپلود با خطا مواجه شد");
-  }
-  return { url: String(obj.url ?? ""), thumb: String(obj.thumb ?? "") };
+  return new Promise<UploadResult>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/upload");
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && e.total > 0) onProgress(Math.min(1, e.loaded / e.total));
+      };
+    }
+    xhr.onload = () => {
+      let data: unknown = {};
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        data = {};
+      }
+      const obj = (data && typeof data === "object" ? data : {}) as { error?: unknown; url?: unknown; thumb?: unknown };
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(typeof obj.error === "string" ? obj.error : "آپلود با خطا مواجه شد"));
+        return;
+      }
+      resolve({ url: String(obj.url ?? ""), thumb: String(obj.thumb ?? "") });
+    };
+    xhr.onerror = () => reject(new Error("آپلود با خطا مواجه شد؛ اتصال اینترنت را بررسی کن"));
+    xhr.onabort = () => reject(new Error("آپلود لغو شد"));
+    xhr.send(formData);
+  });
 }
 
 /**
@@ -60,6 +106,56 @@ export async function uploadImageFile(file: File): Promise<UploadResult> {
  */
 export function isLocalUploadUrl(url: string): boolean {
   return /^\/uploads\/[a-f0-9]{64}(-480)?\.webp$/.test(url);
+}
+
+/**
+ * میزبان‌هایی که در `next.config.ts` برای `next/image` مجاز شده‌اند.
+ * هر نشانی خارج از این فهرست باید با تگ سادهٔ <img> نمایش داده شود،
+ * وگرنه `next/image` هنگام رندر خطا می‌دهد.
+ */
+export const NEXT_IMAGE_HOSTS = ["picsum.photos", "images.unsplash.com", "tapsell.com"];
+
+/** آیا این نشانی را می‌توان به `next/image` سپرد؟ */
+export function isNextImageHost(url: string): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:") return false;
+    return NEXT_IMAGE_HOSTS.includes(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * قاعدهٔ مشترک (کلاینت و سرور) برای نشانی تصویر ایده/محصول: یا یک فایل آپلودشدهٔ
+ * محلی (`/uploads/<hash>.webp`) یا یک نشانی https روی یکی از میزبان‌های مجاز
+ * next.config.ts؛ هیچ میزبان دلخواه دیگری پذیرفته نمی‌شود (جلوگیری از تصاویر
+ * ردیاب/میزبان‌های ناشناس). خروجی: پیام خطای مشخص فارسی یا `null` (نشانی خالی مجاز است).
+ */
+export function imageUrlError(raw: string): string | null {
+  const v = raw.trim();
+  if (v === "") return null;
+  if (v.length > 500) return "نشانی تصویر خیلی طولانی است";
+  if (v.startsWith("/uploads/")) {
+    return isLocalUploadUrl(v) ? null : "نشانی فایل آپلودی نامعتبر است؛ تصویر را دوباره آپلود کن";
+  }
+  let u: URL;
+  try {
+    u = new URL(v);
+  } catch {
+    return "نشانی تصویر معتبر نیست؛ باید با https:// شروع شود";
+  }
+  if (u.protocol !== "https:") return "نشانی تصویر باید با https:// شروع شود";
+  if (!NEXT_IMAGE_HOSTS.includes(u.hostname)) {
+    return `میزبان «${u.hostname}» مجاز نیست؛ فقط ${NEXT_IMAGE_HOSTS.join("، ")} یا آپلود از رایانه`;
+  }
+  return null;
+}
+
+/** نسخهٔ بولی {@link imageUrlError} برای اعتبارسنجی سرور */
+export function isAllowedImageUrl(v: string): boolean {
+  return imageUrlError(v) === null;
 }
 
 /** تشخیص نوع تیزر و ساخت آدرس embed مناسب */
@@ -100,7 +196,11 @@ export function parseTeaser(url: string): { kind: TeaserKind; embedSrc?: string 
   }
 }
 
-export type ChecklistItem = { key: string; label: string; done: boolean };
+/**
+ * `fieldId`: شناسهٔ فیلد مرتبط در فرم مرکز ساخت (BuildForm) تا کلیک روی مورد چک‌لیست
+ * به همان فیلد اسکرول و فوکوس کند.
+ */
+export type ChecklistItem = { key: string; label: string; done: boolean; fieldId: string };
 
 export type ProductForChecklist = {
   name: string;
@@ -121,15 +221,22 @@ export type ProductForChecklist = {
  */
 export function buildChecklist(p: ProductForChecklist, maxPrice: number = DEFAULTS.maxPrice): ChecklistItem[] {
   const images = parseImages(p.images);
+  const hasName = p.name.trim().length > 0;
   return [
-    { key: "name", label: "نام و توضیح", done: p.name.trim().length > 0 && p.description.trim().length > 0 },
-    { key: "demo", label: "لینک دمو", done: p.demoUrl.trim().length > 0 },
-    { key: "teaser", label: "تیزر", done: p.teaserUrl.trim().length > 0 },
-    { key: "images", label: `حداقل ${fa(MIN_IMAGES_FOR_SUBMIT)} تصویر`, done: images.length >= MIN_IMAGES_FOR_SUBMIT },
-    { key: "price", label: "قیمت", done: p.price >= DEFAULTS.minPrice && p.price <= maxPrice },
-    { key: "special", label: "نسخهٔ ویژه", done: p.specialName.trim().length > 0 },
-    { key: "submit", label: "ثبت نهایی", done: !!p.submittedAt },
+    // اگر نام پر است ولی توضیح نه، کلیک به فیلد توضیح می‌رود
+    { key: "name", label: "نام و توضیح", done: hasName && p.description.trim().length > 0, fieldId: hasName ? "description" : "name" },
+    { key: "demo", label: "لینک دمو", done: p.demoUrl.trim().length > 0, fieldId: "demoUrl" },
+    { key: "teaser", label: "تیزر", done: p.teaserUrl.trim().length > 0, fieldId: "teaserUrl" },
+    { key: "images", label: `حداقل ${fa(MIN_IMAGES_FOR_SUBMIT)} تصویر`, done: images.length >= MIN_IMAGES_FOR_SUBMIT, fieldId: "productImageUrl" },
+    { key: "price", label: "قیمت", done: p.price >= DEFAULTS.minPrice && p.price <= maxPrice, fieldId: "price" },
+    { key: "special", label: "نسخهٔ ویژه", done: p.specialName.trim().length > 0, fieldId: "specialName" },
+    { key: "submit", label: "ثبت نهایی", done: !!p.submittedAt, fieldId: "productFinalSubmit" },
   ];
+}
+
+/** موارد انجام‌نشدهٔ چک‌لیست که مانع «ثبت نهایی» هستند (به‌جز خودِ ثبت) */
+export function missingForSubmit(p: ProductForChecklist, maxPrice: number = DEFAULTS.maxPrice): ChecklistItem[] {
+  return buildChecklist(p, maxPrice).filter((i) => i.key !== "submit" && !i.done);
 }
 
 export function checklistProgress(items: ChecklistItem[]): number {
@@ -139,8 +246,6 @@ export function checklistProgress(items: ChecklistItem[]): number {
 
 /** آیا همهٔ الزامات لازم برای «ثبت نهایی» فراهم است (به‌جز خودِ ثبت) */
 export function readyToSubmit(p: ProductForChecklist, maxPrice: number = DEFAULTS.maxPrice): boolean {
-  return buildChecklist(p, maxPrice)
-    .filter((i) => i.key !== "submit")
-    .every((i) => i.done);
+  return missingForSubmit(p, maxPrice).length === 0;
 }
 

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getPhase, getSetting, phaseIndex, PHASE_LABEL } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
@@ -21,7 +22,15 @@ export default async function InvestPage({ searchParams }: { searchParams: Promi
   if (phaseIndex(phase) < phaseIndex("SEED_ROUND")) {
     return (
       <>
-        <PageHeader eyebrow={`از فاز «${PHASE_LABEL.SEED_ROUND}» باز می‌شود`} title="طبقهٔ سرمایه‌گذاری" />
+        <PageHeader
+          eyebrow={`از فاز «${PHASE_LABEL.SEED_ROUND}» باز می‌شود`}
+          title="طبقهٔ سرمایه‌گذاری"
+          action={
+            <Link href="/" className="btn-ghost">
+              الان چه کنم؟
+            </Link>
+          }
+        />
         <Container>
           <Locked title="هنوز زود است" desc="طبقهٔ سرمایه‌گذاری از فاز «دور سرمایه‌گذاری» باز می‌شود." />
         </Container>

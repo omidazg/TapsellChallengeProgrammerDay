@@ -33,6 +33,14 @@ export function sseMessage(event: string, data: string): string {
   return `event: ${event}\ndata: ${data}\n\n`;
 }
 
+/** سرآیند HTTP ساعت سرور (میلی‌ثانیهٔ epoch) تا کلاینت اختلاف ساعت گوشی را جبران کند. */
+export const SERVER_TIME_HEADER = "X-Server-Time";
+
+/** پیام SSE «clock» با ساعت فعلی سرور؛ جدا از `state` تا حذف پیام‌های تکراری وضعیت به‌هم نخورد. */
+export function sseClockMessage(nowMs: number = Date.now()): string {
+  return sseMessage("clock", JSON.stringify({ now: nowMs }));
+}
+
 export function createBroadcaster(load: () => Promise<AuctionSnapshot>, intervalMs = 1000): Broadcaster {
   const subscribers = new Set<Subscriber>();
   let timer: ReturnType<typeof setInterval> | null = null;

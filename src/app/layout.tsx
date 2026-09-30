@@ -42,6 +42,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#002d47",
+  // تا env(safe-area-inset-*) روی آیفون مقدار واقعی بدهد (نوار زبانه‌های پایین موبایل از آن فاصله می‌گیرد)
+  viewportFit: "cover",
 };
 
 export const dynamic = "force-dynamic";
@@ -49,7 +51,9 @@ export const dynamic = "force-dynamic";
 // اعمال پوستهٔ ذخیره‌شده پیش از رنگ‌آمیزی صفحه — بدون این اسکریپت، حالت تیره
 // یک لحظه فلاش سفید نشان می‌دهد (hydration mismatch هم رخ نمی‌دهد چون این
 // script از React خارج است و suppressHydrationWarning روی <html> ست شده).
-const THEME_INIT_SCRIPT = `(function(){try{var m=localStorage.getItem("theme");var d=m==="dark"||(m==="system"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.setAttribute("data-theme",d?"dark":"light");}catch(e){}})();`;
+// بدون انتخاب ذخیره‌شده (یا با "system") از prefers-color-scheme پیروی می‌شود؛
+// فقط انتخاب صریح "light"/"dark" آن را کنار می‌گذارد. هم‌خوان با ThemeToggle.tsx.
+const THEME_INIT_SCRIPT = `(function(){var d=false;try{var m=localStorage.getItem("theme");d=m==="dark"||(m!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);}catch(e){try{d=matchMedia("(prefers-color-scheme: dark)").matches;}catch(e2){}}document.documentElement.setAttribute("data-theme",d?"dark":"light");})();`;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const [user, phaseInfo] = await Promise.all([getCurrentUser(), getPhase().catch(() => ({ phase: "REGISTRATION" as const, endsAt: null }))]);
@@ -59,7 +63,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {/* اعمال فوری پوستهٔ ذخیره‌شده، پیش از اولین رنگ‌آمیزی صفحه (بدون فلاش نور) */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body className="min-h-screen bg-white text-brand-navy">
+      {/* رنگ زمینه/متن از متغیرهای معنایی globals.css/theme.css می‌آید (body { background: var(--bg) })؛
+          کلاس bg-white اینجا در حالت تیره به‌جای --bg رنگ سطح کارت را می‌داد و کارت‌ها در زمینه گم می‌شدند. */}
+      <body className="min-h-screen">
         <a href="#main" className="skip-link">
           پرش به محتوای اصلی
         </a>
