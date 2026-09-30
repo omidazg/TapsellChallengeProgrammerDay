@@ -8,6 +8,7 @@ import { audit } from "@/lib/audit";
 import { setSetting } from "@/lib/admin";
 import { WHITELIST_SETTING } from "@/lib/whitelist";
 import { fa } from "@/lib/persian";
+import { normalizePhone } from "@/lib/phone";
 
 export type WhitelistActionState = { error?: string; ok?: boolean; message?: string };
 
@@ -21,7 +22,21 @@ const entrySchema = z.object({
   position: z.string().trim().max(60, "سمت خیلی بلند است"),
   unit: z.string().trim().max(60, "واحد سازمانی خیلی بلند است"),
   note: z.string().trim().max(200, "یادداشت خیلی بلند است"),
+  // اختیاری؛ خالی یعنی بدون شماره
+  phone: z.string().transform((v, ctx) => {
+    if (!v.trim()) return null;
+    const p = normalizePhone(v);
+    if (!p) ctx.addIssue({ code: "custom", message: "شمارهٔ موبایل نامعتبر است" });
+    return p;
+  }),
 });
+
+/** شماره در لیست سفید یکتاست؛ اگر ردیف دیگری آن را دارد پیام خطا برمی‌گرداند */
+async function phoneClash(phone: string | null, exceptId?: string) {
+  if (!phone) return null;
+  const other = await prisma.allowedEmail.findUnique({ where: { phone }, select: { id: true, email: true } });
+  return other && other.id !== exceptId ? `این شماره از قبل برای ${other.email} ثبت شده است` : null;
+}
 
 function readEntry(formData: FormData) {
   return entrySchema.safeParse({
@@ -31,6 +46,7 @@ function readEntry(formData: FormData) {
     position: formData.get("position") ?? "",
     unit: formData.get("unit") ?? "",
     note: formData.get("note") ?? "",
+    phone: String(formData.get("phone") ?? ""),
   });
 }
 
@@ -59,6 +75,8 @@ export async function addEntryAction(_prev: WhitelistActionState, formData: Form
 
   const exists = await prisma.allowedEmail.findUnique({ where: { email: data.email }, select: { id: true } });
   if (exists) return { error: "این ایمیل از قبل در لیست سفید است" };
+  const clash = await phoneClash(data.phone);
+  if (clash) return { error: clash };
 
   await prisma.allowedEmail.create({ data });
   await closePendingRequest(data.email, me.id);
@@ -69,7 +87,7 @@ export async function addEntryAction(_prev: WhitelistActionState, formData: Form
 
 /**
  * افزودن گروهی: هر خط یک نفر.
- * «ایمیل» یا «ایمیل، نام، نام خانوادگی، سمت، واحد» (جداکننده: ویرگول انگلیسی/فارسی یا تب).
+ * «ایمیل» یا «ایمیل، نام، نام خانوادگی، سمت، واحد، موبایل» (جداکننده: ویرگول انگلیسی/فارسی یا تب).
  */
 export async function bulkAddAction(_prev: WhitelistActionState, formData: FormData): Promise<WhitelistActionState> {
   const me = await requireAdmin();
@@ -81,8 +99,8 @@ export async function bulkAddAction(_prev: WhitelistActionState, formData: FormD
   const invalid: string[] = [];
   const rows = new Map<string, z.infer<typeof entrySchema>>();
   for (const line of lines) {
-    const [email = "", firstName = "", lastName = "", position = "", unit = ""] = line.split(/[,،\t]/).map((p) => p.trim());
-    const parsed = entrySchema.safeParse({ email, firstName, lastName, position, unit, note: "" });
+    const [email = "", firstName = "", lastName = "", position = "", unit = "", phone = ""] = line.split(/[,،\t]/).map((p) => p.trim());
+    const parsed = entrySchema.safeParse({ email, firstName, lastName, position, unit, note: "", phone });
     if (!parsed.success) invalid.push(email || line);
     else rows.set(parsed.data.email, parsed.data);
   }
@@ -90,6 +108,20 @@ export async function bulkAddAction(_prev: WhitelistActionState, formData: FormD
   const existing = await prisma.allowedEmail.findMany({ where: { email: { in: [...rows.keys()] } }, select: { email: true } });
   const existingSet = new Set(existing.map((e) => e.email));
   const fresh = [...rows.values()].filter((r) => !existingSet.has(r.email));
+
+  // شماره‌های تکراری (در همین فهرست یا از قبل) کنار گذاشته می‌شوند؛ خود ایمیل اضافه می‌شود
+  const wantedPhones = fresh.map((r) => r.phone).filter((p): p is string => !!p);
+  const takenPhones = new Set(
+    (await prisma.allowedEmail.findMany({ where: { phone: { in: wantedPhones } }, select: { phone: true } })).map((r) => r.phone)
+  );
+  let droppedPhones = 0;
+  for (const r of fresh) {
+    if (!r.phone) continue;
+    if (takenPhones.has(r.phone)) {
+      r.phone = null;
+      droppedPhones++;
+    } else takenPhones.add(r.phone);
+  }
 
   if (fresh.length > 0) {
     await prisma.allowedEmail.createMany({ data: fresh });
@@ -100,6 +132,7 @@ export async function bulkAddAction(_prev: WhitelistActionState, formData: FormD
 
   const parts = [`${fa(fresh.length)} ایمیل اضافه شد`];
   if (existingSet.size) parts.push(`${fa(existingSet.size)} ایمیل از قبل در فهرست بود`);
+  if (droppedPhones) parts.push(`${fa(droppedPhones)} شمارهٔ تکراری نادیده گرفته شد`);
   if (invalid.length) parts.push(`${fa(invalid.length)} خط نامعتبر رد شد: ${invalid.slice(0, 5).join("، ")}${invalid.length > 5 ? "…" : ""}`);
   return { ok: true, message: parts.join("؛ ") + "." };
 }
@@ -118,6 +151,8 @@ export async function updateEntryAction(_prev: WhitelistActionState, formData: F
     const clash = await prisma.allowedEmail.findUnique({ where: { email: data.email }, select: { id: true } });
     if (clash) return { error: "ایمیل جدید از قبل در لیست سفید است" };
   }
+  const phoneTaken = await phoneClash(data.phone, id);
+  if (phoneTaken) return { error: phoneTaken };
 
   await prisma.allowedEmail.update({ where: { id }, data });
   await audit(me.id, "whitelist.update", data.email, current.email !== data.email ? { from: current.email } : {});
@@ -143,7 +178,16 @@ export async function approveRequestAction(_prev: WhitelistActionState, formData
   const req = id ? await prisma.accessRequest.findUnique({ where: { id } }) : null;
   if (!req) return { error: "درخواست پیدا نشد" };
 
-  const profile = { firstName: req.firstName, lastName: req.lastName, position: req.position, unit: req.unit };
+  // شمارهٔ درخواست هم به لیست سفید می‌رود (اگر ردیف دیگری آن را نگرفته باشد) تا ورود با پیامک ممکن شود
+  const phone = normalizePhone(req.phone);
+  const phoneFree = phone && !(await prisma.allowedEmail.findFirst({ where: { phone, NOT: { email: req.email } }, select: { id: true } }));
+  const profile = {
+    firstName: req.firstName,
+    lastName: req.lastName,
+    position: req.position,
+    unit: req.unit,
+    ...(phoneFree ? { phone } : {}),
+  };
   await prisma.$transaction([
     prisma.allowedEmail.upsert({
       where: { email: req.email },

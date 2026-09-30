@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireAdmin, hashPassword } from "@/lib/auth";
 import { audit } from "@/lib/audit";
+import { normalizePhone } from "@/lib/phone";
 
 export type UsersActionState = { error?: string; ok?: boolean };
 export type ResetPasswordState = { error?: string; password?: string };
@@ -105,6 +106,28 @@ export async function toggleBlockAction(prevState: UsersActionState, formData: F
     data: { blockedAt: blocking ? new Date() : null, sessionVersion: { increment: 1 } },
   });
   await audit(me.id, blocking ? "user.block" : "user.unblock", user.id, {});
+  revalidatePath("/admin/users");
+  return { ok: true };
+}
+
+/** ثبت، تغییر یا حذف شمارهٔ موبایل کاربر (برای ورود با کد پیامکی) */
+export async function setUserPhoneAction(prevState: UsersActionState, formData: FormData): Promise<UsersActionState> {
+  const me = await requireAdmin();
+  const userId = String(formData.get("userId") ?? "");
+  const raw = String(formData.get("phone") ?? "").trim();
+  const phone = raw ? normalizePhone(raw) : null;
+  if (!userId) return { error: "ورودی نامعتبر است" };
+  if (raw && !phone) return { error: "شمارهٔ موبایل نامعتبر است" };
+
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, phone: true } });
+  if (!user) return { error: "کاربر پیدا نشد" };
+  if (phone) {
+    const other = await prisma.user.findUnique({ where: { phone }, select: { id: true, email: true } });
+    if (other && other.id !== userId) return { error: `این شماره به حساب ${other.email} وصل است` };
+  }
+
+  await prisma.user.update({ where: { id: userId }, data: { phone } });
+  await audit(me.id, "user.set_phone", userId, { from: user.phone, to: phone });
   revalidatePath("/admin/users");
   return { ok: true };
 }

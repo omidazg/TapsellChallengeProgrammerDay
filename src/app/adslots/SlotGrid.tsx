@@ -12,7 +12,18 @@ import type { SlotCell } from "@/lib/adslots";
 type Kind = keyof typeof AD_SLOT_KINDS;
 const KINDS = Object.keys(AD_SLOT_KINDS) as Kind[];
 
-export function SlotGrid({ cells, myTeamId, treasury }: { cells: SlotCell[]; myTeamId: string | null; treasury: number }) {
+export function SlotGrid({
+  cells,
+  myTeamId,
+  treasury,
+  canBid = true,
+}: {
+  cells: SlotCell[];
+  myTeamId: string | null;
+  treasury: number;
+  /** فقط سرپرست تیم پیشنهاد می‌دهد؛ بقیهٔ اعضا پیشنهاد تیم را فقط می‌بینند */
+  canBid?: boolean;
+}) {
   const hours = Array.from(new Set(cells.map((c) => c.hourStart))).sort();
   const byKey = new Map(cells.map((c) => [`${c.kind}|${c.hourStart}`, c]));
   const router = useRouter();
@@ -49,7 +60,7 @@ export function SlotGrid({ cells, myTeamId, treasury }: { cells: SlotCell[]; myT
                   <td key={k} className="align-top">
                     {cell ? (
                       // کلید شامل وضعیت و پیشنهاد من است تا پس از refresh مقدار ورودی کهنه نماند.
-                      <Cell key={`${cell.id}|${cell.status}|${cell.myBid ?? ""}`} cell={cell} myTeamId={myTeamId} onDone={() => router.refresh()} />
+                      <Cell key={`${cell.id}|${cell.status}|${cell.myBid ?? ""}`} cell={cell} myTeamId={myTeamId} canBid={canBid} onDone={() => router.refresh()} />
                     ) : (
                       <span className="text-brand-slate text-xs">—</span>
                     )}
@@ -64,7 +75,17 @@ export function SlotGrid({ cells, myTeamId, treasury }: { cells: SlotCell[]; myT
   );
 }
 
-function Cell({ cell, myTeamId, onDone }: { cell: SlotCell; myTeamId: string | null; onDone: () => void }) {
+function Cell({
+  cell,
+  myTeamId,
+  canBid,
+  onDone,
+}: {
+  cell: SlotCell;
+  myTeamId: string | null;
+  canBid: boolean;
+  onDone: () => void;
+}) {
   const [value, setValue] = useState(cell.myBid ?? 1);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -100,7 +121,11 @@ function Cell({ cell, myTeamId, onDone }: { cell: SlotCell; myTeamId: string | n
   return (
     <div className="card p-3 space-y-1.5">
       <div className="chip-cyan !py-0.5 !px-2 text-[10px]">باز · {fa(cell.bidderCount)} پیشنهاددهنده</div>
-      {myTeamId ? (
+      {myTeamId && !canBid ? (
+        <div className="text-xs text-brand-slate">
+          پیشنهاد تیم: <b className="fa-num text-brand-navy">{cell.myBid !== null ? coins(cell.myBid) : "—"}</b>
+        </div>
+      ) : myTeamId ? (
         <div className="flex items-center gap-1.5">
           <input
             type="number"

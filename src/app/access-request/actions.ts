@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { getSessionUserId } from "@/lib/auth";
 import { rateLimit, rateLimitMessage, clientIp, ACCESS_REQUEST_IP_RULE } from "@/lib/rate-limit";
 import { canRegister } from "@/lib/whitelist";
+import { normalizePhone } from "@/lib/phone";
 
 export type AccessRequestState = { error?: string; ok?: "CREATED" | "UPDATED" | "ALLOWED" | "HAS_ACCOUNT" };
 
@@ -14,6 +15,7 @@ const FIELD_ERRORS: Record<string, string> = {
   lastName: "نام خانوادگی را وارد کن (۲ تا ۴۰ نویسه).",
   position: "سمت را وارد کن (۲ تا ۶۰ نویسه).",
   unit: "واحد سازمانی را وارد کن (۲ تا ۶۰ نویسه).",
+  phone: "شمارهٔ موبایل معتبر نیست؛ مثلاً ۰۹۱۲۱۲۳۴۵۶۷.",
 };
 
 const requestSchema = z.object({
@@ -22,6 +24,11 @@ const requestSchema = z.object({
   lastName: z.string().trim().min(2).max(40),
   position: z.string().trim().min(2).max(60),
   unit: z.string().trim().min(2).max(60),
+  phone: z.string().transform((v, ctx) => {
+    const p = normalizePhone(v);
+    if (!p) ctx.addIssue({ code: "custom", message: "phone" });
+    return p ?? "";
+  }),
 });
 
 export async function submitAccessRequestAction(_prev: AccessRequestState, formData: FormData): Promise<AccessRequestState> {
@@ -37,6 +44,7 @@ export async function submitAccessRequestAction(_prev: AccessRequestState, formD
     lastName: formData.get("lastName"),
     position: formData.get("position"),
     unit: formData.get("unit"),
+    phone: String(formData.get("phone") ?? ""),
   });
   if (!parsed.success) {
     const key = String(parsed.error.issues[0]?.path[0] ?? "");
@@ -44,7 +52,7 @@ export async function submitAccessRequestAction(_prev: AccessRequestState, formD
   }
   const data = parsed.data;
 
-  const user = await prisma.user.findUnique({ where: { email: data.email }, select: { id: true } });
+  const user = await prisma.user.findFirst({ where: { OR: [{ email: data.email }, { phone: data.phone }] }, select: { id: true } });
   if (user) return { ok: "HAS_ACCOUNT" };
   if (await canRegister(data.email)) return { ok: "ALLOWED" };
 

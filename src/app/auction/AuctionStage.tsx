@@ -8,8 +8,8 @@ import { Alert, Coin } from "@/components/ui";
 import { ConnectionBanner } from "@/components/ConnectionBanner";
 import { usePolling } from "@/hooks/usePolling";
 import { fa, coins } from "@/lib/persian";
-import { placeBidAction, secondWindAction } from "./actions";
-import type { AuctionState } from "@/lib/auction";
+import { placeBidAction, secondWindAction, bidBudgetAction } from "./actions";
+import type { AuctionState, BidBudget } from "@/lib/auction";
 
 const QUICK_STEPS = [0, 2, 5] as const;
 const FLASH_TITLE = "🔔 پیشنهادت شکسته شد";
@@ -70,12 +70,17 @@ function remainingBucket(ms: number): string {
 
 export function AuctionStage({
   initialId,
+  initialBudget,
   currentUser,
 }: {
   initialId: string | null;
+  initialBudget: BidBudget | null;
   currentUser: { id: string; nickname: string; teamId: string | null; buyWallet: number; power: string; powerUsed: boolean };
 }) {
   const [auctionId, setAuctionId] = useState(initialId);
+  // بودجهٔ خصوصی کاربر (کیف خرید و رزرو حراج‌های دیگر) برای حراج جاری؛ از وضعیت عمومی حراج جداست.
+  const [budget, setBudget] = useState<BidBudget | null>(initialBudget);
+  const budgetFor = useRef<string | null>(initialId);
   const [state, setState] = useState<AuctionState | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
@@ -138,6 +143,23 @@ export function AuctionStage({
     }
   }, []);
 
+  /** بودجهٔ تازه را از سرور می‌گیرد؛ پاسخِ مانده از حراج قبلی نادیده گرفته می‌شود. */
+  const refreshBudget = useCallback((id: string | null) => {
+    budgetFor.current = id;
+    bidBudgetAction(id)
+      .then((b) => {
+        if (b && budgetFor.current === b.auctionId) setBudget(b);
+      })
+      .catch(() => {});
+  }, []);
+
+  // با عوض شدن حراج جاری یا موجودی سرور (مثلاً پس از router.refresh)، بودجه دوباره گرفته شود.
+  useEffect(() => {
+    if (budget && budget.auctionId === auctionId && budget.buyWallet === currentUser.buyWallet) return;
+    refreshBudget(auctionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- فقط با تغییر حراج یا موجودی سرور
+  }, [auctionId, currentUser.buyWallet, refreshBudget]);
+
   /** پردازش یک وضعیت تازه (از SSE یا polling): هشدار شکسته‌شدن، رفرش پس از پایان، و ذخیره. */
   const applyState = useCallback(
     (data: AuctionState) => {
@@ -162,6 +184,7 @@ export function AuctionStage({
       wasHighest.current = iAmHighestNow;
 
       // با پایان یافتن حراج، کیف خرید سرور تغییر کرده است؛ صفحه را تازه کن.
+      // (تغییر موجودی سرور پس از رفرش، بودجه را هم از طریق effect بالا تازه می‌کند.)
       if (lastStatus.current === "LIVE" && data.status === "ENDED") router.refresh();
       lastStatus.current = data.status;
 
@@ -259,6 +282,7 @@ export function AuctionStage({
       setError(null);
       startTransition(async () => {
         const res = await placeBidAction(auctionId, value);
+        if ("budget" in res && res.budget && res.budget.auctionId === budgetFor.current) setBudget(res.budget);
         if ("error" in res && res.error) setError(res.error);
         else {
           setOutbid(false);
@@ -339,8 +363,17 @@ export function AuctionStage({
   const urgent = isLive && remaining <= 30_000;
   const isMyTeam = !!currentUser.teamId && current.product.teamId === currentUser.teamId;
   const quickAmounts = QUICK_STEPS.map((step) => current.nextMin + step);
+  // بودجه: اگر بودجهٔ همین حراج هنوز نرسیده، از کیف خرید سرور بدون رزرو استفاده می‌شود (سرور در هر حال بررسی می‌کند).
+  const myBudget = budget && budget.auctionId === current.id ? budget : null;
+  const wallet = myBudget?.buyWallet ?? currentUser.buyWallet;
+  const reservedElsewhere = myBudget?.reservedElsewhere ?? 0;
+  const spendable = myBudget?.spendable ?? Math.max(0, wallet - reservedElsewhere);
+  const iLead = current.highest?.userId === currentUser.id;
+  const reservedHere = iLead && current.highest ? current.highest.amount : 0;
+  const reserved = reservedElsewhere + reservedHere;
+  const cantAffordNext = current.nextMin > spendable;
   const typed = amount === "" ? null : Number(amount);
-  const canSubmitTyped = !pending && typed !== null && typed >= current.nextMin && typed <= currentUser.buyWallet;
+  const canSubmitTyped = !pending && typed !== null && typed >= current.nextMin && typed <= spendable;
 
   return (
     <div className="grid lg:grid-cols-[1.4fr_1fr] gap-6">
@@ -423,7 +456,7 @@ export function AuctionStage({
             <div className="space-y-3">
               <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2" role="group" aria-label="پیشنهاد سریع">
                 {quickAmounts.map((v, i) => {
-                  const overWallet = v > currentUser.buyWallet;
+                  const overWallet = v > spendable;
                   return (
                     <button
                       key={v}
@@ -431,7 +464,7 @@ export function AuctionStage({
                       disabled={pending || overWallet}
                       onClick={() => submitBid(v)}
                       aria-label={`ثبت پیشنهاد ${coins(v)}${i === 0 ? " (حداقل مجاز)" : ` (حداقل به‌علاوهٔ ${fa(QUICK_STEPS[i])})`}${
-                        overWallet ? "، بیشتر از موجودی کیف خرید" : ""
+                        overWallet ? "، بیشتر از موجودی قابل‌خرج" : ""
                       }`}
                       className="btn-cyan !px-2 sm:!px-4 !py-3 sm:!py-2 text-sm sm:text-base disabled:opacity-40"
                     >
@@ -458,6 +491,7 @@ export function AuctionStage({
                   placeholder={fa(current.nextMin)}
                   value={amount}
                   min={current.nextMin}
+                  max={spendable}
                   step={1}
                   aria-describedby="bid-hint"
                   onChange={(e) => setAmount(e.target.value === "" ? "" : Number(e.target.value))}
@@ -471,8 +505,29 @@ export function AuctionStage({
                   ثبت پیشنهاد
                 </button>
               </form>
-              <div id="bid-hint" className="text-xs text-brand-slate">
-                حداقل پیشنهاد بعدی: {coins(current.nextMin)} · موجودی کیف خرید تو: {coins(currentUser.buyWallet)}
+              <div id="bid-hint" className="space-y-1 text-xs text-brand-slate">
+                <div className="flex flex-wrap gap-x-3 gap-y-1 rounded-xl bg-brand-ice px-3 py-2">
+                  <span>
+                    موجودی کیف خرید: <span className="fa-num font-bold text-brand-navy">{coins(wallet)}</span>
+                  </span>
+                  <span>
+                    رزرو‌شده: <span className="fa-num font-bold text-brand-navy">{coins(reserved)}</span>
+                  </span>
+                  <span>
+                    قابل‌خرج برای این حراج: <span className="fa-num font-black text-brand-navy">{coins(spendable)}</span>
+                  </span>
+                </div>
+                <div>
+                  حداقل پیشنهاد بعدی: {coins(current.nextMin)}
+                  {iLead && <> · پیشنهاد پیشتاز فعلی‌ات ({coins(reservedHere)}) رزرو است؛ بالا بردنش جایگزینش می‌کند، نه اضافه.</>}
+                  {reservedElsewhere > 0 && <> · {coins(reservedElsewhere)} برای پیشتازی‌ات در حراج دیگر رزرو است.</>}
+                </div>
+                {cantAffordNext && (
+                  <div className="font-bold text-brand-red">
+                    حداقل پیشنهاد بعدی ({coins(current.nextMin)}) از موجودی قابل‌خرجت ({coins(spendable)}) بیشتر است؛
+                    {iLead ? " فعلاً پیشتازی، ولی نمی‌توانی پیشنهادت را بالاتر ببری." : " فعلاً نمی‌توانی پیشنهاد بدهی."}
+                  </div>
+                )}
               </div>
 
               {currentUser.power === "SECOND_WIND" && !currentUser.powerUsed && (
@@ -512,7 +567,7 @@ export function AuctionStage({
 
       <div className="card p-5 h-fit">
         <div className="text-sm font-black text-brand-navy mb-2">کیف خرید تو</div>
-        <Coin n={currentUser.buyWallet} />
+        <Coin n={wallet} />
         <div className="mt-4 text-xs text-brand-slate">
           {current.extensions > 0 && <>این حراج {fa(current.extensions)} بار تمدید شده است.</>}
         </div>

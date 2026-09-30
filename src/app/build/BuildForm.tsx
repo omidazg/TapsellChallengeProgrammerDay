@@ -42,8 +42,11 @@ export function BuildForm({
   submitted,
   initial,
   maxPrice = DEFAULTS.maxPrice,
+  lockNote = "مرکز ساخت قفل شده و فقط قابل مشاهده است.",
 }: {
   editable: boolean;
+  /** پیام نمایش‌داده‌شده وقتی فرم قابل ویرایش نیست (قفل فاز یا نبودن سرپرستی) */
+  lockNote?: string | null;
   submitted: boolean;
   initial: ProductInput | null;
   /** سقف مؤثر قیمت (کمینهٔ DEFAULTS.maxPrice و سقف خرید هر نفر)؛ از سرور محاسبه و پاس داده می‌شود. */
@@ -61,7 +64,7 @@ export function BuildForm({
     <form action={formAction} className="card p-6 space-y-6 anim-rise">
       {state.error && <Alert kind="error">{state.error}</Alert>}
       {state.ok && <Alert kind="ok">ذخیره شد.</Alert>}
-      {!editable && <Alert kind="info">مرکز ساخت قفل شده و فقط قابل مشاهده است.</Alert>}
+      {!editable && lockNote && <Alert kind="info">{lockNote}</Alert>}
 
       <fieldset disabled={locked} className="space-y-6 disabled:opacity-70">
         <div className="grid md:grid-cols-2 gap-5">

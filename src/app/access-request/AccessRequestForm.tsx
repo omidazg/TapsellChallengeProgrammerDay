@@ -6,7 +6,7 @@ import { Alert } from "@/components/ui";
 import { DEPARTMENTS } from "@/app/register/departments";
 import { submitAccessRequestAction, type AccessRequestState } from "./actions";
 
-export function AccessRequestForm({ email }: { email: string }) {
+export function AccessRequestForm({ email, phone }: { email: string; phone: string }) {
   const [state, formAction, pending] = useActionState<AccessRequestState, FormData>(submitAccessRequestAction, {});
 
   if (state.ok === "HAS_ACCOUNT") {
@@ -48,6 +48,10 @@ export function AccessRequestForm({ email }: { email: string }) {
         <div>
           <label className="label" htmlFor="email">ایمیل سازمانی</label>
           <input id="email" name="email" type="email" dir="ltr" autoComplete="email" className="input" defaultValue={email} required maxLength={120} />
+        </div>
+        <div>
+          <label className="label" htmlFor="phone">شمارهٔ موبایل</label>
+          <input id="phone" name="phone" type="tel" dir="ltr" inputMode="tel" autoComplete="tel" className="input" placeholder="09xxxxxxxxx" defaultValue={phone} required maxLength={20} />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>

@@ -6,6 +6,7 @@ import { SCORE_CATEGORY_ORDER, SCORE_CATEGORY_LABELS, SCORE_CATEGORY_MEASURES, S
 import { fa, coins } from "@/lib/persian";
 import { Container } from "@/components/ui";
 import { PRIZES, CASH_PRIZE_TOTAL_MILLION_TOMAN } from "@/lib/prizes";
+import { getEffectiveGameValues, type GameValues } from "@/lib/game-values";
 
 export const metadata = { title: "راهنمای بازی" };
 
@@ -13,6 +14,7 @@ const TOC: { id: string; label: string; emoji: string }[] = [
   { id: "overview", label: "خلاصهٔ بازی", emoji: "🗺️" },
   { id: "timeline", label: "زمان‌بندی", emoji: "⏳" },
   { id: "roles", label: "نقش‌ها", emoji: "🎭" },
+  { id: "leader", label: "سرپرست تیم", emoji: "👑" },
   { id: "powers", label: "قدرت‌ها", emoji: "✨" },
   { id: "wallets", label: "کیف پول‌ها", emoji: "👛" },
   { id: "idea", label: "اتاق ایده", emoji: "💡" },
@@ -25,20 +27,28 @@ const TOC: { id: string; label: string; emoji: string }[] = [
   { id: "strategy", label: "استراتژی‌های برنده", emoji: "🧠" },
   { id: "awards", label: "جوایز", emoji: "🏆" },
   { id: "rules", label: "قوانین و اخلاق", emoji: "⚖️" },
+  { id: "login", label: "ورود و دسترسی", emoji: "🔑" },
   { id: "faq", label: "سؤالات متداول", emoji: "❓" },
 ];
 
-const POWER_TIP: Record<PowerKey, string> = {
+/** نکتهٔ هر قدرت؛ مثال سپر از سقف مؤثر سرمایه‌گذاری روی یک هدف ساخته می‌شود */
+function powerTips(v: GameValues): Record<PowerKey, string> {
+  const shieldInvested = v.maxPerTarget;
+  const shieldCredit = Math.floor(shieldInvested * DEFAULTS.shieldFloor);
+  const shieldDividend = Math.floor(shieldCredit * 0.3);
+  return {
   HYPE: "نزدیک شروع روز بازار فعالش کن؛ اولین جایگاه «محصول ویژهٔ» شروع‌نشده (یک ساعت کامل) رایگان مال تیمت می‌شود، درست وقتی همه در حال گردش‌اند.",
   BARGAIN: "خودکار روی همهٔ خریدهای روز بازار اعمال می‌شود (نه حراج)؛ یعنی با همان کیف خرید، محصول بیشتری می‌خری و فروشنده همچنان قیمت کامل را می‌گیرد. پس بیشتر بخر و روی محصولات باکیفیت، تا امتیاز «سلیقه» هم بگیری.",
   ANGEL: "هر وقت فعالش کنی، خودش کم‌سرمایه‌ترین ایدهٔ آن لحظهٔ بازار (غیر از ایدهٔ تیم خودت) را پیدا می‌کند و ۲۰ سکه رویش سرمایه‌گذاری می‌کند؛ چون آن ایده هنوز سرمایهٔ کمی دارد، سهم تو از سودش می‌تواند بزرگ باشد.",
   SECOND_WIND: "برای حراج نسخهٔ ویژه‌ای که واقعاً می‌خواهی نگه‌دار؛ وقتی شمارش معکوس نزدیک صفر است و رقیب جلو افتاده، فعالش کن.",
   INSIDER: "در اتاق ایده یا همان اول دور سرمایه‌گذاری استفاده کن تا قبل از دیگران بفهمی کدام تیم‌ها سرمایه‌گذار قوی جذب کرده‌اند.",
-  SHIELD: "فقط یک‌بار و فقط روی یک سرمایه‌گذاری: در دور سرمایه‌گذاری یا فاز ساخت (پیش از شروع روز بازار) از صفحهٔ کیف پول یکی از سرمایه‌گذاری‌هایت را انتخاب کن؛ انتخابت قطعی است و عوض نمی‌شود. اگر سود آن سرمایه‌گذاری کمتر از نصف مبلغش شد، نصف مبلغ در امتیاز «پرتفوی» تیمت حساب می‌شود (بازپرداخت مجازی؛ هیچ سکهٔ واقعی جابه‌جا نمی‌شود). مثال: ۴۰ سکه گذاشتی و ۶ سکه سود گرفتی → بدون سپر ۶، با سپر ۲۰. بیشترین اثر: نصف سقف سرمایه‌گذاری روی یک هدف. پس سپر را روی پرریسک‌ترین سرمایه‌گذاری بزرگت بگذار.",
-};
+  SHIELD: `فقط یک‌بار و فقط روی یک سرمایه‌گذاری: در دور سرمایه‌گذاری یا فاز ساخت (پیش از شروع روز بازار) از صفحهٔ کیف پول یکی از سرمایه‌گذاری‌هایت را انتخاب کن؛ انتخابت قطعی است و عوض نمی‌شود. اگر سود آن سرمایه‌گذاری کمتر از نصف مبلغش شد، نصف مبلغ در امتیاز «پرتفوی» تیمت حساب می‌شود (بازپرداخت مجازی؛ هیچ سکهٔ واقعی جابه‌جا نمی‌شود). مثال: ${fa(shieldInvested)} سکه گذاشتی و ${fa(shieldDividend)} سکه سود گرفتی → بدون سپر ${fa(shieldDividend)}، با سپر ${fa(shieldCredit)}. بیشترین اثر: نصف سقف سرمایه‌گذاری روی یک هدف (${fa(shieldCredit)} سکه). پس سپر را روی پرریسک‌ترین سرمایه‌گذاری بزرگت بگذار.`,
+  };
+}
 
 export default async function GuidePage() {
-  const [user, { phase }] = await Promise.all([getCurrentUser(), getPhase()]);
+  // مقادیر مؤثر (تنظیم برگزارکننده یا پیش‌فرض) — همان مقادیری که موتور بازی اعمال می‌کند
+  const [user, { phase }, values] = await Promise.all([getCurrentUser(), getPhase(), getEffectiveGameValues()]);
 
   return (
     <>
@@ -51,19 +61,21 @@ export default async function GuidePage() {
             <OverviewSection />
             <TimelineSection phase={user ? phase : null} />
             <RolesSection />
-            <PowersSection />
-            <WalletsSection />
+            <LeaderSection />
+            <PowersSection values={values} />
+            <WalletsSection values={values} />
             <IdeaSection />
-            <InvestSection />
+            <InvestSection values={values} />
             <BuildSection />
-            <MarketSection />
+            <MarketSection values={values} />
             <AdSlotsSection />
-            <AuctionSection />
-            <ScoringSection />
+            <AuctionSection values={values} />
+            <ScoringSection values={values} />
             <StrategySection />
             <AwardsSection />
-            <RulesSection />
-            <FaqSection />
+            <RulesSection values={values} />
+            <LoginSection />
+            <FaqSection values={values} />
             <BottomCta loggedIn={!!user} />
           </div>
         </div>
@@ -267,11 +279,102 @@ function RolesSection() {
           </div>
         ))}
       </div>
+      <p className="text-xs text-brand-slate">
+        نقش و قدرتی که در ثبت‌نام انتخاب می‌کنی قطعی نیست: تا پایان فاز «ثبت‌نام و تیم» هر عضو از پروفایل یا «تنظیمات تیم»
+        می‌تواند آن‌ها را عوض کند و سرپرست تیم هم می‌تواند چیدمان همهٔ اعضا را هماهنگ کند. با شروع «اتاق ایده» همه‌چیز قفل می‌شود.
+      </p>
     </Section>
   );
 }
 
-function PowersSection() {
+function LeaderSection() {
+  return (
+    <Section
+      id="leader"
+      emoji="👑"
+      title="سرپرست تیم"
+      desc="هر تیم یک سرپرست دارد که کارهای تیمی را ثبت می‌کند؛ او را خود اعضا با رأی انتخاب می‌کنند."
+    >
+      <List
+        items={[
+          <>
+            <b>رأی‌گیری:</b> از وقتی تیم دست‌کم دو عضو دارد، هر عضو در «اتاق تیم» به یک نفر (از جمله خودش) برای سرپرستی رأی می‌دهد.
+          </>,
+          <>
+            <b>انتخاب خودکار:</b> هر کس رأی اکثریت اعضای فعلی را بگیرد، همان لحظه خودکار سرپرست می‌شود؛ در تیم سه‌نفره یعنی{" "}
+            <b>۲ رأی از ۳</b> و در تیم دونفره هر دو رأی.
+          </>,
+          <>
+            <b>قفل نمی‌شود:</b> اگر رأی‌ها پخش شد و کسی به اکثریت نرسید (مثلاً هر نفر به یک نفر متفاوت رأی داد)، هر عضو می‌تواند
+            رأیش را عوض کند یا پس بگیرد تا یک نفر به اکثریت برسد.
+          </>,
+          <>
+            <b>شفافیت:</b> همهٔ اعضا می‌بینند چه کسی به چه کسی رأی داده، هر نامزد چند رأی دارد و سرپرست فعلی کیست.
+          </>,
+          <>
+            <b>پس از انتخاب:</b> رأی‌گیری بسته می‌شود و سرپرست ثابت می‌ماند. اگر سرپرست از تیم برود (یا برگزارکننده رأی‌گیری را از نو باز
+            کند)، رأی‌ها پاک و رأی‌گیری دوباره باز می‌شود. در صورت بن‌بست، برگزارکننده می‌تواند مستقیماً سرپرست تعیین کند.
+          </>,
+          <>
+            <b>تیم یک‌نفره:</b> تا وقتی تنها عضو تیمی، سرپرست رسمی لازم نیست و خودت همه‌چیز را مدیریت می‌کنی.
+          </>,
+        ]}
+      />
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div className="rounded-2xl border border-brand-mist p-4">
+          <div className="font-black text-brand-navy mb-1.5">فقط سرپرست</div>
+          <List
+            items={[
+              "نوشتن، ثبت نهایی و بازکردن دوبارهٔ ایدهٔ تیم",
+              "ساخت، ویرایش و ثبت نهایی محصول",
+              "پیشنهاد قیمت برای جایگاه‌های تبلیغاتی (از خزانهٔ تیم)",
+              "هماهنگی نقش و قدرت اعضا و تغییر نام و نشان تیم پیش از شروع بازی",
+            ]}
+          />
+        </div>
+        <div className="rounded-2xl border border-brand-mist p-4">
+          <div className="font-black text-brand-navy mb-1.5">همهٔ اعضا</div>
+          <List
+            items={[
+              "دیدن همه‌چیز: پیش‌نویس ایده، محصول، پیشنهادهای تیم و خزانه",
+              "کارهای شخصی با کیف خودشان: سرمایه‌گذاری، خرید، حراج زنده و قدرت شخصی",
+              "دعوت هم‌تیمی تا وقتی تیم کامل نشده",
+            ]}
+          />
+        </div>
+      </div>
+      <ExampleBox title="مثال">
+        علی به سارا، سارا به خودش و رضا به علی رأی داده‌اند (هر کدام ۱ رأی). رضا رأیش را به سارا تغییر می‌دهد؛ سارا ۲ رأی از ۳ می‌گیرد و
+        همان لحظه سرپرست می‌شود و به همهٔ اعضا اعلان می‌رود.
+      </ExampleBox>
+    </Section>
+  );
+}
+
+function LoginSection() {
+  return (
+    <Section id="login" emoji="🔑" title="ورود و دسترسی" desc="فقط همکارانی که در لیست سفید رویداد هستند می‌توانند حساب بسازند.">
+      <List
+        items={[
+          <>
+            <b>ایمیل و رمز:</b> با ایمیل سازمانی و رمزی که در ثبت‌نام ساخته‌ای وارد شو.
+          </>,
+          <>
+            <b>موبایل و کد پیامکی:</b> اگر شمارهٔ موبایلت را در ثبت‌نام یا پروفایل تأیید کرده باشی، می‌توانی بدون رمز و فقط با کد
+            شش‌رقمی پیامکی وارد شوی. هر کد دو دقیقه اعتبار دارد و فقط یک‌بار قابل استفاده است.
+          </>,
+          <>
+            <b>لیست سفید:</b> اگر ایمیل یا شماره‌ات در فهرست نیست، از صفحهٔ ورود «درخواست دسترسی» بده و نام، نام خانوادگی، سمت، واحد
+            سازمانی و موبایلت را بفرست. پس از تأیید برگزارکننده می‌توانی ثبت‌نام کنی.
+          </>,
+        ]}
+      />
+    </Section>
+  );
+}
+
+function PowersSection({ values }: { values: GameValues }) {
+  const POWER_TIP = powerTips(values);
   return (
     <Section id="powers" emoji="✨" title="قدرت‌ها" desc="هر بازیکن یک قدرت ویژه دارد که فقط یک‌بار در کل بازی قابل استفاده است.">
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger">
@@ -291,20 +394,20 @@ function PowersSection() {
   );
 }
 
-function WalletsSection() {
+function WalletsSection({ values }: { values: GameValues }) {
   return (
     <Section id="wallets" emoji="👛" title="کیف پول‌ها">
       <div className="grid sm:grid-cols-3 gap-4">
         <div className="rounded-2xl border border-brand-mist p-4">
           <div className="text-xl mb-1" aria-hidden>🌱</div>
           <div className="font-black text-brand-navy">کیف بذر</div>
-          <div className="mt-1 text-2xl font-black text-brand-cyan-dark fa-num">{coins(DEFAULTS.seedWallet)}</div>
+          <div className="mt-1 text-2xl font-black text-brand-cyan-dark fa-num">{coins(values.seedWallet)}</div>
           <p className="mt-1 text-xs text-brand-slate">فقط در دور سرمایه‌گذاری، برای سرمایه‌گذاری روی ایدهٔ تیم‌های دیگر.</p>
         </div>
         <div className="rounded-2xl border border-brand-mist p-4">
           <div className="text-xl mb-1" aria-hidden>🛒</div>
           <div className="font-black text-brand-navy">کیف خرید</div>
-          <div className="mt-1 text-2xl font-black text-brand-red fa-num">{coins(DEFAULTS.buyWallet)}</div>
+          <div className="mt-1 text-2xl font-black text-brand-red fa-num">{coins(values.buyWallet)}</div>
           <p className="mt-1 text-xs text-brand-slate">در روز بازار برای خرید محصول و در حراج زنده برای پیشنهاد قیمت.</p>
         </div>
         <div className="rounded-2xl border border-brand-mist p-4">
@@ -316,7 +419,7 @@ function WalletsSection() {
       </div>
       <List
         items={[
-          `حداکثر ${fa(DEFAULTS.maxPerTarget)} سکه از هر نفر روی یک ایده یا یک محصول قابل سرمایه‌گذاری/خرید است.`,
+          `حداکثر ${fa(values.maxPerTarget)} سکه از هر نفر روی یک ایده یا یک محصول قابل سرمایه‌گذاری/خرید است.`,
           "کیف بذر و کیف خرید جدا هستند و قابل تبدیل به هم نیستند.",
           "خزانهٔ تیم جریمهٔ خرج‌نشده ندارد؛ فقط کیف‌های شخصی جریمه می‌شوند.",
         ]}
@@ -344,14 +447,14 @@ function IdeaSection() {
   );
 }
 
-function InvestSection() {
+function InvestSection({ values }: { values: GameValues }) {
   const sales = 200, share = 30, yours = 20, external = 80;
   const dividend = Math.floor(sales * (share / 100) * (yours / external));
   return (
     <Section id="invest" emoji="💰" title="دور سرمایه‌گذاری" desc="با کیف بذر روی ایده‌های تیم‌های دیگر سرمایه‌گذاری می‌کنی و در سود آن‌ها شریک می‌شوی.">
       <List
         items={[
-          <>سقف سرمایه‌گذاری روی هر ایده، سرجمع از یک نفر، {fa(DEFAULTS.maxPerTarget)} سکه است.</>,
+          <>سقف سرمایه‌گذاری روی هر ایده، سرجمع از یک نفر، {fa(values.maxPerTarget)} سکه است.</>,
           "سرمایه‌گذاری روی ایدهٔ تیم خودت ممنوع است؛ فقط می‌توانی روی ایدهٔ تیم‌های دیگر سرمایه‌گذاری کنی.",
           "همهٔ سرمایه‌گذاری‌ها در معیار «جذب سرمایه» تیم سرمایه‌پذیر و در سود سهامی که پرداخت می‌کند اثر دارند.",
           "هرچه سرمایهٔ بیشتری روی یک ایده جمع شود، سهم هر سرمایه‌گذار از سود آن کوچک‌تر می‌شود (رقیق‌تر شدن سود)؛ رسیدن زود به یک ایدهٔ کم‌سرمایه معمولاً سهم بزرگ‌تری می‌دهد.",
@@ -388,12 +491,12 @@ function BuildSection() {
   );
 }
 
-function MarketSection() {
+function MarketSection({ values }: { values: GameValues }) {
   return (
     <Section id="market" emoji="🛒" title="روز بازار" desc="با کیف خرید از محصولات تیم‌های دیگر خرید می‌کنی.">
       <List
         items={[
-          <>قیمت هر محصول بین {fa(DEFAULTS.minPrice)} تا {fa(DEFAULTS.maxPrice)} سکه است؛ سقف خرج از هر نفر روی یک محصول {fa(DEFAULTS.maxPerTarget)} سکه است، اما همیشه دست‌کم یک واحد قابل خرید است.</>,
+          <>قیمت هر محصول بین {fa(DEFAULTS.minPrice)} تا {fa(DEFAULTS.maxPrice)} سکه است؛ سقف خرج از هر نفر روی یک محصول {fa(values.maxPerTarget)} سکه است، اما همیشه دست‌کم یک واحد قابل خرید است.</>,
           "خرید از محصول تیم خودت ممنوع است.",
           "قلب دادن به یک محصول فقط بعد از خرید از آن امکان دارد؛ قلب در معیار «جامعه» اثر می‌گذارد.",
           "تعداد خریداران یکتا هم جزو معیار جامعه حساب می‌شود، نه فقط مجموع فروش.",
@@ -428,7 +531,7 @@ function AdSlotsSection() {
   );
 }
 
-function AuctionSection() {
+function AuctionSection({ values }: { values: GameValues }) {
   return (
     <Section id="auction" emoji="🔨" title="حراج زنده" desc="نسخه‌های ویژهٔ محصولات یکی‌یکی به‌صورت زنده حراج می‌شوند.">
       <List
@@ -436,6 +539,7 @@ function AuctionSection() {
           "ترتیب حراج محصولات از قبل به‌صورت تصادفی مشخص و اعلام می‌شود؛ محصولات یکی‌یکی، نه هم‌زمان، حراج می‌شوند.",
           "بالاترین پیشنهاد برندهٔ همان حراج می‌شود و دقیقاً همان مبلغ پیشنهادی‌اش را می‌پردازد.",
           "طول هر حراج طوری تنظیم می‌شود که همهٔ محصولات در زمان فاز «حراج زنده» جا شوند؛ نیازی نیست همهٔ حراج‌ها زمان یکسانی داشته باشند.",
+          <>نخستین پیشنهاد می‌تواند برابر قیمت پایه باشد؛ هر پیشنهاد بعدی باید دست‌کم {fa(values.bidIncrement)} سکه از بالاترین پیشنهاد فعلی بیشتر باشد.</>,
           "پیشنهاد باید از موجودی قابل‌خرج کیف خریدت کمتر یا مساوی باشد؛ پیشنهاد بیشتر از موجودی از همان اول رد می‌شود.",
           "تا وقتی بالاترین پیشنهاد مال توست، آن مبلغ برایت رزرو می‌ماند و نمی‌توانی جای دیگری خرجش کنی؛ اگر کسی پیشنهادت را بشکند، رزرو آزاد می‌شود. برداشت واقعی از کیف فقط در لحظهٔ بسته شدن حراج (تسویه) انجام می‌شود.",
           <>قانون ضد-اسنایپ: اگر پیشنهادی در {fa(DEFAULTS.antiSnipeWindowSec)} ثانیهٔ پایانی ثبت شود، پایان حراج به‌طور خودکار {fa(DEFAULTS.antiSnipeExtendSec)} ثانیه تمدید می‌شود.</>,
@@ -447,9 +551,9 @@ function AuctionSection() {
   );
 }
 
-function ScoringSection() {
+function ScoringSection({ values }: { values: GameValues }) {
   const leftoverExample = 10;
-  const penaltyExample = leftoverExample * DEFAULTS.penaltyPerCoin;
+  const penaltyExample = leftoverExample * values.penaltyPerCoin;
   return (
     <Section id="scoring" emoji="📊" title="امتیازدهی" desc="امتیاز هر تیم از هشت معیار جمع می‌شود (جمعاً ۱۰۰۰ امتیاز)؛ هر معیار نسبت به بهترین تیم در همان معیار نرمال می‌شود.">
       <div className="overflow-x-auto -mx-1">
@@ -483,7 +587,7 @@ function ScoringSection() {
       <div className="rounded-2xl bg-red-50 border border-red-100 p-4">
         <div className="text-xs font-bold text-brand-red mb-1.5">⚠️ چطور امتیاز از دست می‌دهی (جریمهٔ سکهٔ خرج‌نشده)</div>
         <p className="text-sm text-brand-navy">
-          در پایان بازی، به‌ازای هر سکه‌ای که در کیف بذر یا کیف خرید اعضای تیمت باقی مانده و راهی قانونی برای خرجش وجود داشت (مثلاً هنوز روی ایده یا محصولی که به سقفش نرسیده بودید جا داشتید)، {fa(DEFAULTS.penaltyPerCoin)} امتیاز از امتیاز کل تیم کم می‌شود. سکه‌ای که واقعاً هیچ راه قانونی برای خرجش نداشتی (چون همهٔ اهداف ممکن پر شده بودند) جریمه نمی‌شود.
+          در پایان بازی، به‌ازای هر سکه‌ای که در کیف بذر یا کیف خرید اعضای تیمت باقی مانده و راهی قانونی برای خرجش وجود داشت (مثلاً هنوز روی ایده یا محصولی که به سقفش نرسیده بودید جا داشتید)، {fa(values.penaltyPerCoin)} امتیاز از امتیاز کل تیم کم می‌شود. سکه‌ای که واقعاً هیچ راه قانونی برای خرجش نداشتی (چون همهٔ اهداف ممکن پر شده بودند) جریمه نمی‌شود.
         </p>
         <div className="mt-2 text-sm fa-num">
           مثال: اگر {fa(leftoverExample)} سکهٔ قابل‌خرج در کیف‌هایت بماند → {fa(penaltyExample)} امتیاز جریمه برای تیمت. پس بهتر است تا جای ممکن هر دو کیف را تا آخر بازی خرج کنی.
@@ -576,14 +680,14 @@ function AwardsSection() {
   );
 }
 
-function RulesSection() {
+function RulesSection({ values }: { values: GameValues }) {
   return (
     <Section id="rules" emoji="⚖️" title="قوانین و اخلاق" desc="بازی برای همه عادلانه‌تر می‌شود وقتی این قوانین را رعایت کنی.">
       <List
         items={[
           "خرید از محصول تیم خودت در روز بازار ممنوع است و مسدود می‌شود.",
           "سرمایه‌گذاری روی ایدهٔ تیم خودت هم ممنوع است و مسدود می‌شود؛ باید روی ایدهٔ تیم‌های دیگر سرمایه‌گذاری کنی.",
-          <>سقف {fa(DEFAULTS.maxPerTarget)} سکه از هر نفر روی هر ایده یا محصول، تا سرمایه و فروش بین تیم‌های بیشتری پخش شود.</>,
+          <>سقف {fa(values.maxPerTarget)} سکه از هر نفر روی هر ایده یا محصول، تا سرمایه و فروش بین تیم‌های بیشتری پخش شود.</>,
           <>
             برای جلوگیری از تبانی، جریان دوطرفهٔ خرید و سرمایه‌گذاری بین هر دو تیم رصد می‌شود: اگر مجموع دوطرفهٔ آن‌ها به {fa(DEFAULTS.collusionThreshold)} سکه یا بیشتر برسد <b>و</b> هرکدام دست‌کم {fa(Math.round(DEFAULTS.collusionShare * 100))}٪ از کل خرج بیرونی‌شان (خرید و سرمایه‌گذاری روی تیم‌های دیگر) را به همان یک تیم داده باشند، آن دو تیم به‌صورت خودکار برای بررسی برگزارکننده علامت می‌خورند.
           </>,
@@ -596,14 +700,19 @@ function RulesSection() {
   );
 }
 
-const FAQ: { q: string; a: React.ReactNode }[] = [
+// پاسخ تابعی با مقادیر مؤثر بازی (تنظیم برگزارکننده) ساخته می‌شود
+const FAQ: { q: string; a: React.ReactNode | ((v: GameValues) => React.ReactNode) }[] = [
+  {
+    q: "اگر در تیم سه‌نفره هیچ‌کس دو رأی نگرفت چه می‌شود؟",
+    a: "رأی‌گیری باز می‌ماند و هر عضو هر وقت بخواهد می‌تواند رأیش را عوض کند یا پس بگیرد؛ به محض این‌که یک نفر ۲ رأی بگیرد، خودکار سرپرست می‌شود. تا آن موقع کارهای تیمی (ایده، محصول، جایگاه تبلیغاتی) ثبت نمی‌شوند، پس زود به توافق برسید. اگر به بن‌بست خوردید، برگزارکننده می‌تواند سرپرست تعیین کند.",
+  },
   {
     q: "کیف بذر و کیف خرید چه فرقی دارند؟",
     a: "کیف بذر فقط در دور سرمایه‌گذاری برای سرمایه‌گذاری روی ایدهٔ تیم‌های دیگر استفاده می‌شود. کیف خرید در روز بازار برای خرید محصول و در حراج زنده برای پیشنهاد قیمت به کار می‌رود. این دو کیف قابل تبدیل به هم نیستند.",
   },
   {
     q: "اگر سکه‌ام را خرج نکنم چه می‌شود؟",
-    a: <>هر سکه‌ای که تا پایان بازی راهی قانونی برای خرجش داشتی و خرج نکردی، {fa(DEFAULTS.penaltyPerCoin)} امتیاز از تیمت کم می‌کند؛ پس تلاش کن تا پایان بازی هر دو کیف را خرج کنی. سکه‌ای که واقعاً هیچ هدف مجازی برایش نمانده بود جریمه نمی‌شود.</>,
+    a: (v) => <>هر سکه‌ای که تا پایان بازی راهی قانونی برای خرجش داشتی و خرج نکردی، {fa(v.penaltyPerCoin)} امتیاز از تیمت کم می‌کند؛ پس تلاش کن تا پایان بازی هر دو کیف را خرج کنی. سکه‌ای که واقعاً هیچ هدف مجازی برایش نمانده بود جریمه نمی‌شود.</>,
   },
   {
     q: "می‌توانم روی تیم خودم سرمایه‌گذاری یا خرید کنم؟",
@@ -611,7 +720,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: "چرا سقف سرمایه‌گذاری/خرید روی هر هدف وجود دارد؟",
-    a: <>برای این‌که سرمایه و فروش بین تیم‌های بیشتری پخش شود، هر نفر حداکثر {fa(DEFAULTS.maxPerTarget)} سکه روی یک ایده یا یک محصول می‌تواند بگذارد.</>,
+    a: (v) => <>برای این‌که سرمایه و فروش بین تیم‌های بیشتری پخش شود، هر نفر حداکثر {fa(v.maxPerTarget)} سکه روی یک ایده یا یک محصول می‌تواند بگذارد.</>,
   },
   {
     q: "سود سرمایه‌گذاری‌ام چطور حساب می‌شود؟",
@@ -639,7 +748,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
 ];
 
-function FaqSection() {
+function FaqSection({ values }: { values: GameValues }) {
   return (
     <Section id="faq" emoji="❓" title="سؤالات متداول">
       <div className="space-y-2.5">
@@ -649,7 +758,7 @@ function FaqSection() {
               <span>{f.q}</span>
               <span className="text-brand-cyan-dark group-open:rotate-45 transition-transform shrink-0">＋</span>
             </summary>
-            <p className="mt-2 text-sm text-brand-slate leading-7">{f.a}</p>
+            <p className="mt-2 text-sm text-brand-slate leading-7">{typeof f.a === "function" ? f.a(values) : f.a}</p>
           </details>
         ))}
       </div>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 import { getPhase, PHASE_LABEL, PHASE_DESC, type Phase } from "@/lib/phase";
-import { ROLES, POWERS, SCORE_WEIGHTS, DEFAULTS } from "@/lib/constants";
+import { ROLES, POWERS, SCORE_WEIGHTS } from "@/lib/constants";
 import { SCORE_CATEGORY_ORDER, SCORE_CATEGORY_LABELS } from "@/lib/score-labels";
 import { fa, coins } from "@/lib/persian";
 import { Container, Stat } from "@/components/ui";
@@ -13,12 +13,19 @@ import { OnboardingTour } from "@/components/OnboardingTour";
 import { LiveFeed } from "@/components/LiveFeed";
 import { PillarGrid } from "@/components/PillarLogos";
 import { GROUP_NAME } from "@/lib/pillars";
+import { getEffectiveGameValues, type GameValues } from "@/lib/game-values";
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
-  const [{ welcome }, user, { phase, endsAt }] = await Promise.all([searchParams, getCurrentUser(), getPhase()]);
+  // مقادیر مؤثر بازی (تنظیم برگزارکننده یا پیش‌فرض) برای متن‌های راهنما/سؤالات پرتکرار
+  const [{ welcome }, user, { phase, endsAt }, values] = await Promise.all([
+    searchParams,
+    getCurrentUser(),
+    getPhase(),
+    getEffectiveGameValues(),
+  ]);
 
   if (!user) {
-    return <LoggedOutLanding phase={phase} endsAt={endsAt ? endsAt.toISOString() : null} />;
+    return <LoggedOutLanding phase={phase} endsAt={endsAt ? endsAt.toISOString() : null} values={values} />;
   }
 
   const [idea, teamSize] = await Promise.all([
@@ -37,7 +44,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ w
               <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-brand-navy break-words">{user.nickname} 👋</h1>
             </div>
           </div>
-          <OnboardingTour autoOpen={welcome === "1"} />
+          <OnboardingTour autoOpen={welcome === "1"} penaltyPerCoin={values.penaltyPerCoin} />
         </div>
 
         <div className="grid md:grid-cols-2 gap-4 stagger">
@@ -129,14 +136,15 @@ function nextAction(user: CurrentUser, phase: Phase, hasIdea: boolean): { href: 
 
 const SCORE_ITEMS = SCORE_CATEGORY_ORDER;
 
-const FAQ = [
+// پاسخ تابعی با مقادیر مؤثر بازی ساخته می‌شود
+const FAQ: { q: string; a: string | ((v: GameValues) => string) }[] = [
   {
     q: "کیف بذر و کیف خرید چه فرقی دارند؟",
     a: "کیف بذر فقط در دور سرمایه‌گذاری برای سرمایه‌گذاری روی ایدهٔ تیم‌های دیگر استفاده می‌شود. کیف خرید در روز بازار برای خرید محصول و شرکت در حراج زنده به کار می‌رود.",
   },
   {
     q: "اگر سکه‌ام را خرج نکنم چه می‌شود؟",
-    a: `هر سکهٔ خرج‌نشده در پایان بازی ${fa(DEFAULTS.penaltyPerCoin)} امتیاز جریمه دارد؛ پس بهتر است هر دو کیف را تا آخر بازی خرج کنی.`,
+    a: (v) => `هر سکهٔ خرج‌نشده در پایان بازی ${fa(v.penaltyPerCoin)} امتیاز جریمه دارد؛ پس بهتر است هر دو کیف را تا آخر بازی خرج کنی.`,
   },
   {
     q: "می‌توانم روی تیم خودم سرمایه‌گذاری کنم؟",
@@ -144,7 +152,7 @@ const FAQ = [
   },
   {
     q: "چرا سقف سرمایه‌گذاری/خرید روی هر هدف وجود دارد؟",
-    a: `برای اینکه سرمایه بین تیم‌های بیشتری پخش شود، هر نفر حداکثر ${fa(DEFAULTS.maxPerTarget)} سکه می‌تواند روی یک ایده یا محصول بگذارد.`,
+    a: (v) => `برای اینکه سرمایه بین تیم‌های بیشتری پخش شود، هر نفر حداکثر ${fa(v.maxPerTarget)} سکه می‌تواند روی یک ایده یا محصول بگذارد.`,
   },
   {
     q: "جایگاه‌های تبلیغاتی چطور قیمت‌گذاری می‌شوند؟",
@@ -156,7 +164,7 @@ const FAQ = [
   },
 ];
 
-function LoggedOutLanding({ phase, endsAt }: { phase: Phase; endsAt: string | null }) {
+function LoggedOutLanding({ phase, endsAt, values }: { phase: Phase; endsAt: string | null; values: GameValues }) {
   return (
     <>
       <section className="bg-hero bg-dots relative overflow-hidden">
@@ -251,7 +259,7 @@ function LoggedOutLanding({ phase, endsAt }: { phase: Phase; endsAt: string | nu
                 {f.q}
                 <span className="text-brand-cyan-dark group-open:rotate-45 transition-transform">＋</span>
               </summary>
-              <p className="mt-2 text-sm text-brand-slate">{f.a}</p>
+              <p className="mt-2 text-sm text-brand-slate">{typeof f.a === "function" ? f.a(values) : f.a}</p>
             </details>
           ))}
         </div>

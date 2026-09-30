@@ -22,7 +22,10 @@ export type EntryData = {
   position: string;
   unit: string;
   note: string;
+  phone: string;
   hasAccount: boolean;
+  /** شمارهٔ ثبت‌شده روی حساب کاربر (اگر ساخته باشد) */
+  accountPhone?: string | null;
 };
 
 export type RequestData = {
@@ -32,6 +35,7 @@ export type RequestData = {
   lastName: string;
   position: string;
   unit: string;
+  phone: string;
   status: string;
   statusLabel: string;
   createdAt: string;
@@ -71,6 +75,10 @@ function EntryFields({ idPrefix, values }: { idPrefix: string; values?: Partial<
       <div>
         <label className="label" htmlFor={f("unit")}>واحد سازمانی</label>
         <input id={f("unit")} name="unit" list="wl-unit-options" maxLength={60} className="input" defaultValue={values?.unit} />
+      </div>
+      <div>
+        <label className="label" htmlFor={f("phone")}>موبایل (اختیاری)</label>
+        <input id={f("phone")} name="phone" type="tel" dir="ltr" maxLength={20} className="input" placeholder="09xxxxxxxxx" defaultValue={values?.phone} />
       </div>
       <div>
         <label className="label" htmlFor={f("note")}>یادداشت</label>
@@ -143,7 +151,7 @@ export function BulkAddForm() {
     <form ref={ref} action={action} className="card p-4 sm:p-6 space-y-3 anim-rise">
       <h3 className="font-black text-brand-navy">افزودن گروهی</h3>
       <p className="text-xs text-brand-slate">
-        هر خط یک نفر: فقط ایمیل، یا «ایمیل، نام، نام خانوادگی، سمت، واحد» (با ویرگول یا تب؛ می‌شود مستقیم از اکسل کپی کرد).
+        هر خط یک نفر: فقط ایمیل، یا «ایمیل، نام، نام خانوادگی، سمت، واحد، موبایل» (با ویرگول یا تب؛ می‌شود مستقیم از اکسل کپی کرد).
       </p>
       <label htmlFor="wl-bulk" className="label">فهرست ایمیل‌ها</label>
       <textarea
@@ -152,7 +160,7 @@ export function BulkAddForm() {
         rows={5}
         dir="ltr"
         className="input w-full font-mono text-xs"
-        placeholder={"ali@tapsell.ir\nsara@tapsell.ir, سارا, احمدی, طراح محصول, محصول"}
+        placeholder={"ali@tapsell.ir\nsara@tapsell.ir, سارا, احمدی, طراح محصول, محصول, 09121234567"}
       />
       <button type="submit" disabled={pending} className="btn-cyan">
         {pending ? "در حال افزودن…" : "افزودن همه"}
@@ -203,7 +211,11 @@ export function EntryRow({ entry }: { entry: EntryData }) {
             <span className="chip !py-0.5 !px-2 text-[10px]">هنوز ثبت‌نام نکرده</span>
           )}
         </div>
-        <div className="text-xs text-brand-slate break-words" dir="ltr">{entry.email}</div>
+        <div className="text-xs text-brand-slate break-words" dir="ltr">
+          {entry.email}
+          {entry.phone && <> · {entry.phone}</>}
+          {entry.accountPhone && entry.accountPhone !== entry.phone && <> · حساب: {entry.accountPhone}</>}
+        </div>
         {(entry.position || entry.unit) && (
           <div className="text-xs text-brand-slate">{[entry.position, entry.unit].filter(Boolean).join(" · ")}</div>
         )}
@@ -242,7 +254,10 @@ export function RequestRow({ request }: { request: RequestData }) {
           {name}
           <span className={`chip ${statusChip} !py-0.5 !px-2 text-[10px]`}>{request.statusLabel}</span>
         </div>
-        <div className="text-xs text-brand-slate break-words" dir="ltr">{request.email}</div>
+        <div className="text-xs text-brand-slate break-words" dir="ltr">
+          {request.email}
+          {request.phone && <> · {request.phone}</>}
+        </div>
         <div className="text-xs text-brand-slate">سمت: {request.position} · واحد سازمانی: {request.unit}</div>
         <div className="text-[11px] text-brand-slate">{request.createdAt}</div>
       </div>

@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { getPhase, phaseAtLeast } from "@/lib/phase";
 import { Container, PageHeader, Locked, Coin } from "@/components/ui";
 import { fa, coins } from "@/lib/persian";
-import { ensureAuctions, listAuctions, currentOrNextAuctionId } from "@/lib/auction";
+import { ensureAuctions, listAuctions, currentOrNextAuctionId, getBidBudget } from "@/lib/auction";
 import { AuctionStage } from "./AuctionStage";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +23,8 @@ export default async function AuctionPage() {
 
   await ensureAuctions();
   const [auctions, liveId] = await Promise.all([listAuctions(), currentOrNextAuctionId()]);
+  // بودجهٔ خصوصی کاربر (موجودی/رزرو/قابل‌خرج) برای حراج جاری؛ جدا از وضعیت عمومی و کش مشترک حراج.
+  const initialBudget = phase === "CLOSED" ? null : await getBidBudget(user.id, liveId);
 
   const scheduled = auctions.filter((a) => a.status === "SCHEDULED");
   const ended = auctions.filter((a) => a.status === "ENDED");
@@ -47,6 +49,7 @@ export default async function AuctionPage() {
         <>
           <AuctionStage
             initialId={liveId}
+            initialBudget={initialBudget}
             currentUser={{
               id: user.id,
               nickname: user.nickname,

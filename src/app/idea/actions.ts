@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
+import { teamManageError } from "@/lib/leader";
 import { getPhase } from "@/lib/phase";
 import { runAnalyst } from "@/lib/analyst";
 import { isNextImageHost } from "@/lib/idea";
@@ -51,6 +52,8 @@ async function assertIdeationEditable() {
 export async function saveIdeaAction(prevState: IdeaActionState, formData: FormData): Promise<IdeaActionState> {
   const user = await requireUser();
   if (!user.teamId) return { error: "ابتدا باید عضو یک تیم باشی" };
+  const leaderError = await teamManageError(user);
+  if (leaderError) return { error: leaderError };
 
   const phaseError = await assertIdeationEditable();
   if (phaseError) return { error: phaseError };
@@ -117,6 +120,8 @@ export async function saveIdeaAction(prevState: IdeaActionState, formData: FormD
 export async function unsubmitIdeaAction(): Promise<IdeaActionState> {
   const user = await requireUser();
   if (!user.teamId) return { error: "ابتدا باید عضو یک تیم باشی" };
+  const leaderError = await teamManageError(user);
+  if (leaderError) return { error: leaderError };
 
   const phaseError = await assertIdeationEditable();
   if (phaseError) return { error: phaseError };

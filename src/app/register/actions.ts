@@ -7,7 +7,10 @@ import { hashPassword, createSession, getSessionUserId } from "@/lib/auth";
 import { accessState, canRegister, type AccessState } from "@/lib/whitelist";
 import { getPhase, getSettingInt } from "@/lib/phase";
 import { DEFAULTS, ROLES, POWERS } from "@/lib/constants";
-import { rateLimit, rateLimitMessage, clientIp, REGISTER_IP_RULE } from "@/lib/rate-limit";
+import { rateLimit, rateLimitMessage, clientIp, REGISTER_IP_RULE, OTP_IP_RULE } from "@/lib/rate-limit";
+import { normalizePhone } from "@/lib/phone";
+import { requestOtp, verifyOtp, signPhoneProof, checkPhoneProof } from "@/lib/otp";
+import { toEnDigits } from "@/lib/persian";
 import { DEPARTMENTS } from "./departments";
 import { safeNext } from "./next";
 
@@ -38,18 +41,65 @@ const registerSchema = z.object({
   confidence: z.number().int().min(0).max(150),
 });
 
-export type RegisterInput = z.infer<typeof registerSchema> & { next?: string | null };
+export type RegisterInput = z.infer<typeof registerSchema> & {
+  next?: string | null;
+  /** شمارهٔ موبایل اختیاری؛ فقط همراه گواهی تأیید (phoneProof) پذیرفته می‌شود */
+  phone?: string | null;
+  phoneProof?: string | null;
+};
+
+const PHONE_TAKEN = "این شماره به حساب دیگری وصل است.";
+
+/** شمارهٔ اختیاری ثبت‌نام: خالی → null؛ پر ولی بدون گواهی معتبر → خطا */
+function verifiedPhone(raw: string | null | undefined, proof: string | null | undefined): { phone: string | null } | { error: string } {
+  if (!raw?.trim()) return { phone: null };
+  const phone = normalizePhone(raw);
+  if (!phone) return { error: "شمارهٔ موبایل معتبر نیست." };
+  if (!checkPhoneProof(proof, phone, "REGISTER")) return { error: "شمارهٔ موبایل هنوز تأیید نشده؛ کد پیامکی را وارد کن یا شماره را خالی بگذار." };
+  return { phone };
+}
+
+/** ارسال کد تأیید به شمارهٔ ثبت‌نام */
+export async function requestRegisterOtpAction(rawPhone: string): Promise<{ ok: true; resendSec: number; devCode?: string } | { error: string }> {
+  const phone = normalizePhone(rawPhone);
+  if (!phone) return { error: "شمارهٔ موبایل معتبر نیست؛ مثلاً ۰۹۱۲۱۲۳۴۵۶۷." };
+  const ipLimit = rateLimit("otp:ip", await clientIp(), OTP_IP_RULE());
+  if (!ipLimit.ok) return { error: rateLimitMessage(ipLimit.retryAfterSec) };
+  const taken = await prisma.user.findUnique({ where: { phone }, select: { id: true } });
+  if (taken) return { error: `${PHONE_TAKEN} اگر حساب داری از صفحهٔ ورود با همین شماره وارد شو.` };
+  const res = await requestOtp(phone, "REGISTER");
+  if (!res.ok) return { error: res.error };
+  return { ok: true, resendSec: res.resendSec, devCode: res.devCode };
+}
+
+/** تأیید کد ثبت‌نام؛ در صورت موفقیت گواهی کوتاه‌عمر شماره برمی‌گردد */
+export async function verifyRegisterOtpAction(rawPhone: string, code: string): Promise<{ ok: true; phone: string; proof: string } | { error: string }> {
+  const phone = normalizePhone(rawPhone);
+  if (!phone) return { error: "شمارهٔ موبایل معتبر نیست." };
+  const res = await verifyOtp(phone, "REGISTER", toEnDigits(String(code ?? "")).replace(/\s/g, ""));
+  if (!res.ok) return { error: res.error };
+  return { ok: true, phone, proof: signPhoneProof(phone, "REGISTER") };
+}
 
 const NOT_ALLOWED = "این ایمیل در لیست سفید رویداد نیست؛ اول درخواست دسترسی بده تا برگزارکننده تأیید کند.";
 
 /**
  * بررسی زودهنگام ایمیل در مرحلهٔ اول ویزارد تا کاربر پنج مرحله را پر نکند و آخر کار رد شود.
  */
-export async function checkRegisterEmailAction(rawEmail: string): Promise<{ ok: true } | { error: string; needsAccess?: boolean }> {
+export async function checkRegisterEmailAction(
+  rawEmail: string,
+  rawPhone?: string | null,
+  phoneProof?: string | null
+): Promise<{ ok: true } | { error: string; needsAccess?: boolean }> {
   const email = z.string().trim().toLowerCase().max(120).email().safeParse(rawEmail);
   if (!email.success) return { error: FIELD_ERRORS.email };
   const existing = await prisma.user.findUnique({ where: { email: email.data }, select: { id: true } });
   if (existing) return { error: "این ایمیل قبلاً ثبت‌نام کرده است؛ از صفحهٔ ورود وارد شو." };
+  const ph = verifiedPhone(rawPhone, phoneProof);
+  if ("error" in ph) return { error: ph.error };
+  if (ph.phone && (await prisma.user.findUnique({ where: { phone: ph.phone }, select: { id: true } }))) return { error: PHONE_TAKEN };
+  // شمارهٔ تأییدشده‌ای که در لیست سفید است هم کافی است
+  if (ph.phone && (await canRegister(email.data, ph.phone))) return { ok: true };
   const state: AccessState = await accessState(email.data);
   if (state === "ALLOWED") return { ok: true };
   if (state === "PENDING") return { error: "درخواست دسترسی این ایمیل هنوز در انتظار تأیید برگزارکننده است." };
@@ -79,13 +129,25 @@ export async function registerAction(input: RegisterInput): Promise<{ error: str
   }
   const data = parsed.data;
 
-  if (!(await canRegister(data.email))) {
+  const ph = verifiedPhone(input.phone, input.phoneProof);
+  if ("error" in ph) return { error: ph.error };
+
+  if (!(await canRegister(data.email, ph.phone))) {
     return { error: NOT_ALLOWED, needsAccess: true };
   }
 
   const existing = await prisma.user.findUnique({ where: { email: data.email } });
   if (existing) {
     return { error: "این ایمیل قبلاً ثبت‌نام کرده است." };
+  }
+
+  // شماره: یا همان که کاربر تأیید کرده، یا شماره‌ای که برگزارکننده کنار ایمیلش در لیست سفید ثبت کرده
+  let phone = ph.phone;
+  if (!phone) {
+    const listed = await prisma.allowedEmail.findUnique({ where: { email: data.email }, select: { phone: true } });
+    if (listed?.phone && !(await prisma.user.findUnique({ where: { phone: listed.phone }, select: { id: true } }))) phone = listed.phone;
+  } else if (await prisma.user.findUnique({ where: { phone }, select: { id: true } })) {
+    return { error: PHONE_TAKEN };
   }
 
   const [seedWallet, buyWallet] = await Promise.all([
@@ -101,6 +163,7 @@ export async function registerAction(input: RegisterInput): Promise<{ error: str
     const user = await prisma.user.create({
       data: {
         email: data.email,
+        phone,
         passwordHash,
         nickname: data.nickname,
         department: data.department,
@@ -119,7 +182,8 @@ export async function registerAction(input: RegisterInput): Promise<{ error: str
   } catch (e) {
     // فقط نقض کلید یکتای ایمیل را به پیام «تکراری» ترجمه کن؛ بقیه خطای سرور است
     if (typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002") {
-      return { error: "این ایمیل قبلاً ثبت‌نام کرده است." };
+      const target = String((e as { meta?: { target?: unknown } }).meta?.target ?? "");
+      return { error: target.includes("phone") ? PHONE_TAKEN : "این ایمیل قبلاً ثبت‌نام کرده است." };
     }
     return { error: "ثبت‌نام انجام نشد؛ دوباره تلاش کن." };
   }

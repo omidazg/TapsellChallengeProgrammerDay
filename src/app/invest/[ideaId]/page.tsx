@@ -123,7 +123,7 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
                 نمی‌توانی روی ایدهٔ تیم خودت سرمایه‌گذاری کنی. برای جذب سرمایه، منتظر سرمایه‌گذاران تیم‌های دیگر باش.
               </Alert>
             ) : interactive ? (
-              <InvestPanel ideaId={idea.id} seedWallet={user.seedWallet} maxAllowed={maxAllowed} />
+              <InvestPanel ideaId={idea.id} seedWallet={user.seedWallet} maxAllowed={maxAllowed} maxPerTarget={maxPerTarget} />
             ) : (
               <Alert kind="info">دور سرمایه‌گذاری تمام شده است.</Alert>
             )}

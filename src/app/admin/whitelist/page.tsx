@@ -2,8 +2,9 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { PageHeader, Container, Empty } from "@/components/ui";
-import { fa, jdatetime } from "@/lib/persian";
+import { toEnDigits, fa, jdatetime } from "@/lib/persian";
 import { isWhitelistEnabled, ACCESS_STATUS_LABEL } from "@/lib/whitelist";
+import { normalizePhone } from "@/lib/phone";
 import { WhitelistToggle, AddEntryForm, BulkAddForm, EntryRow, RequestRow, UnitOptions } from "./WhitelistForms";
 
 export const metadata = { title: "لیست سفید · پنل برگزارکننده" };
@@ -21,6 +22,7 @@ export default async function AdminWhitelistPage({ searchParams }: { searchParam
           { lastName: { contains: q } },
           { position: { contains: q } },
           { unit: { contains: q } },
+          ...(normalizePhone(q) ? [{ phone: normalizePhone(q) }] : [{ phone: { contains: toEnDigits(q) } }]),
         ],
       }
     : {};
@@ -35,9 +37,10 @@ export default async function AdminWhitelistPage({ searchParams }: { searchParam
 
   const registered = await prisma.user.findMany({
     where: { email: { in: entries.map((e) => e.email) } },
-    select: { email: true },
+    select: { email: true, phone: true },
   });
   const registeredSet = new Set(registered.map((u) => u.email));
+  const accountPhone = new Map(registered.map((u) => [u.email, u.phone]));
 
   const toRequest = (r: (typeof pending)[number]) => ({
     id: r.id,
@@ -46,6 +49,7 @@ export default async function AdminWhitelistPage({ searchParams }: { searchParam
     lastName: r.lastName,
     position: r.position,
     unit: r.unit,
+    phone: r.phone,
     status: r.status,
     statusLabel: ACCESS_STATUS_LABEL[r.status] ?? r.status,
     createdAt: `درخواست: ${jdatetime(r.createdAt)}${r.reviewedAt ? ` · بررسی: ${jdatetime(r.reviewedAt)}` : ""}`,
@@ -85,7 +89,7 @@ export default async function AdminWhitelistPage({ searchParams }: { searchParam
             </h2>
             <form className="flex items-center gap-2" role="search">
               <label htmlFor="wl-search" className="sr-only">جست‌وجو در لیست سفید</label>
-              <input id="wl-search" name="q" defaultValue={q} className="input !py-1.5 w-56" placeholder="ایمیل، نام، سمت یا واحد…" />
+              <input id="wl-search" name="q" defaultValue={q} className="input !py-1.5 w-56" placeholder="ایمیل، نام، موبایل، سمت یا واحد…" />
               <button type="submit" className="btn-ghost !py-1.5 !px-3 text-sm">جست‌وجو</button>
               {q && (
                 <Link href="/admin/whitelist" className="text-xs font-bold text-brand-cyan-dark">پاک کردن</Link>
@@ -106,6 +110,8 @@ export default async function AdminWhitelistPage({ searchParams }: { searchParam
                   position: e.position,
                   unit: e.unit,
                   note: e.note,
+                  phone: e.phone ?? "",
+                  accountPhone: accountPhone.get(e.email) ?? null,
                   hasAccount: registeredSet.has(e.email),
                 }}
               />

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { askChat } from "@/lib/ai";
 import { buildAssistantContext } from "@/lib/assistant-context";
+import { getEffectiveGameValues } from "@/lib/game-values";
 import { ASSISTANT_IP_RULE, rateLimit, rateLimitMessage } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "پیام نامعتبر است." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
 
-  const reply = await askChat(buildAssistantContext(), parsed.data.messages, 600);
+  // مقادیر مؤثر بازی (تنظیم برگزارکننده یا پیش‌فرض) تا پاسخ دستیار با قوانین واقعی یکی باشد
+  const reply = await askChat(buildAssistantContext(await getEffectiveGameValues()), parsed.data.messages, 600);
   if (!reply) {
     return NextResponse.json(
       { error: "دستیار هوش مصنوعی الان در دسترس نیست؛ سؤالت را از برگزارکننده بپرس یا راهنمای بازی (/guide) را ببین." },

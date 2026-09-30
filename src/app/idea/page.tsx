@@ -6,6 +6,8 @@ import { fa, coins } from "@/lib/persian";
 import { IdeaForm, UnsubmitButton } from "./IdeaForm";
 import { AnalystCard } from "./AnalystCard";
 import { Cover } from "./Cover";
+import { teamAccess } from "@/lib/leader";
+import { LeaderNotice } from "@/components/LeaderNotice";
 
 export const metadata = { title: "اتاق ایده" };
 
@@ -38,8 +40,9 @@ export default async function IdeaPage() {
 
   const idea = await prisma.idea.findUnique({ where: { teamId: user.teamId } });
   const isIdeation = phase === "IDEATION";
+  const { canManage, reason } = await teamAccess(user);
 
-  if (isIdeation && !idea?.submittedAt) {
+  if (isIdeation && !idea?.submittedAt && canManage) {
     return (
       <>
         <PageHeader eyebrow="فاز فعلی" title="اتاق ایده" desc="ایدهٔ تیمت را بنویس و پیش از پایان فاز ثبت نهایی کن تا سرمایه‌گذاران آن را ببینند." />
@@ -69,8 +72,12 @@ export default async function IdeaPage() {
     return (
       <>
         <PageHeader eyebrow="فاز فعلی" title="اتاق ایده" />
-        <Container>
-          <Empty title="ایده‌ای ثبت نشده" desc="تیم شما ایده‌ای برای این دوره ثبت نکرده است." />
+        <Container className="space-y-4">
+          {isIdeation && <LeaderNotice reason={reason} />}
+          <Empty
+            title={isIdeation ? "سرپرست هنوز ایده‌ای ننوشته" : "ایده‌ای ثبت نشده"}
+            desc={isIdeation ? "وقتی سرپرست پیش‌نویس ایده را ذخیره کند، همین‌جا می‌بینی." : "تیم شما ایده‌ای برای این دوره ثبت نکرده است."}
+          />
         </Container>
       </>
     );
@@ -82,11 +89,15 @@ export default async function IdeaPage() {
         eyebrow="فاز فعلی"
         title={idea.title}
         desc={idea.oneLiner}
-        action={isIdeation ? <UnsubmitButton /> : undefined}
+        action={isIdeation && canManage && idea.submittedAt ? <UnsubmitButton /> : undefined}
       />
       <Container className="max-w-3xl space-y-6">
-        {isIdeation && (
+        {isIdeation && <LeaderNotice reason={reason} />}
+        {isIdeation && idea.submittedAt && canManage && (
           <Alert kind="ok">ایده ثبت نهایی شده است. تا پایان فاز اتاق ایده می‌توانی برای ویرایش دوباره آن را باز کنی.</Alert>
+        )}
+        {isIdeation && !idea.submittedAt && (
+          <Alert kind="info">این پیش‌نویس سرپرست است و هنوز ثبت نهایی نشده.</Alert>
         )}
 
         {idea.coverUrl && (

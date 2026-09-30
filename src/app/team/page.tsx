@@ -5,6 +5,7 @@ import { getTeamWithMembers, roleCoverage } from "@/lib/team";
 import { PageHeader, Container, Alert } from "@/components/ui";
 import { NoTeamPanel } from "./NoTeamPanel";
 import { TeamPanel } from "./TeamPanel";
+import { syncLeader, getLeaderState } from "@/lib/leader";
 
 export const metadata = { title: "اتاق تیم" };
 
@@ -16,7 +17,8 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
   const { joined } = await searchParams;
 
   if (user.teamId) {
-    const team = await getTeamWithMembers(user.teamId);
+    await syncLeader(user.teamId);
+    const [team, leader] = await Promise.all([getTeamWithMembers(user.teamId), getLeaderState(user.teamId)]);
     return (
       <>
         <PageHeader eyebrow="اتاق تیم" title={team?.name ?? "اتاق تیم"} desc="ترکیب تیم، پوشش نقش‌ها و پیشرفت کارها." />
@@ -33,6 +35,7 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
               currentUserId={user.id}
               registrationOpen={registrationOpen}
               formingOpen={formingOpen}
+              leader={{ ...leader, leaderElectedAt: leader.leaderElectedAt?.toISOString() ?? null }}
             />
           )}
         </Container>

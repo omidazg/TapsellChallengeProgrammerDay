@@ -5,9 +5,16 @@ import { Avatar } from "@/components/Avatar";
 import { ROLES, POWERS, type RoleKey, type PowerKey } from "@/lib/constants";
 import { fa } from "@/lib/persian";
 import { computeBadges } from "@/lib/badges";
+import { prisma } from "@/lib/db";
+import { getPhase, phaseAtLeast } from "@/lib/phase";
+import { shieldPhaseAllowed } from "@/lib/shield";
 import { BadgeGrid } from "./BadgeGrid";
 import { EditProfileForm } from "./EditProfileForm";
+import { LoadoutPicker, type TakenBy } from "@/components/LoadoutPicker";
+import { isLoadoutOpen } from "@/lib/loadout";
 import { ShareCard } from "./ShareCard";
+import { PhoneCard } from "./PhoneCard";
+import { smsEnabled } from "@/lib/sms";
 
 export const metadata = { title: "پروفایل" };
 
@@ -16,6 +23,21 @@ export default async function ProfilePage() {
   const role = user.role as RoleKey;
   const power = user.power as PowerKey;
   const badges = await computeBadges(user.id);
+  const powerNote = await powerStatusNote(user);
+  const [loadoutOpen, mates] = await Promise.all([
+    isLoadoutOpen(),
+    user.teamId
+      ? prisma.user.findMany({
+          where: { teamId: user.teamId, NOT: { id: user.id } },
+          select: { nickname: true, role: true, power: true },
+        })
+      : Promise.resolve([]),
+  ]);
+  const takenBy: TakenBy = { roles: {}, powers: {} };
+  for (const m of mates) {
+    (takenBy.roles[m.role as RoleKey] ??= []).push(m.nickname);
+    (takenBy.powers[m.power as PowerKey] ??= []).push(m.nickname);
+  }
 
   return (
     <>
@@ -28,8 +50,8 @@ export default async function ProfilePage() {
               <h2 className="mt-4 text-xl font-black text-brand-navy">{user.nickname}</h2>
               <div className="mt-2 flex flex-wrap justify-center gap-2">
                 <span className="chip-red">{ROLES[role]?.emoji} {ROLES[role]?.label}</span>
-                <span className={`chip-cyan ${user.powerUsed ? "opacity-60" : ""}`}>
-                  {POWERS[power]?.emoji} {POWERS[power]?.label} {user.powerUsed ? "· استفاده‌شده" : ""}
+                <span className={`chip-cyan ${powerNote.dim ? "opacity-60" : ""}`}>
+                  {POWERS[power]?.emoji} {POWERS[power]?.label} {powerNote.text}
                 </span>
               </div>
               <div className="mt-3 text-xs text-brand-slate">{user.department}</div>
@@ -68,6 +90,34 @@ export default async function ProfilePage() {
               avatarSeed={user.avatarSeed || user.id}
               stats={{ coffee: user.coffee, bugs: user.bugs, sleep: user.sleep, confidence: user.confidence }}
             />
+            <div className="card p-6 anim-rise" id="loadout">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-lg font-black text-brand-navy">نقش و قدرت</h3>
+                {user.teamId && (
+                  <Link href="/team/settings" className="text-sm font-bold text-brand-cyan-dark hover:underline">
+                    ⚙️ هماهنگی با تیم
+                  </Link>
+                )}
+              </div>
+              {loadoutOpen ? (
+                <>
+                  <p className="mb-4 text-sm text-brand-slate">
+                    تا شروع بازی (پایان فاز «ثبت‌نام و تیم») می‌توانی نقش و قدرتت را عوض کنی تا با هم‌تیمی‌هایت ترکیب بهتری بسازید.
+                  </p>
+                  <LoadoutPicker
+                    role={role}
+                    power={power}
+                    powerLocked={user.powerUsed || !!user.shieldTeamId}
+                    takenBy={takenBy}
+                    idPrefix="profile-loadout"
+                  />
+                </>
+              ) : (
+                <p className="text-sm text-brand-slate">
+                  🔒 بازی شروع شده و نقش و قدرتت قفل است: {ROLES[role]?.emoji} {ROLES[role]?.label} · {POWERS[power]?.emoji} {POWERS[power]?.label}
+                </p>
+              )}
+            </div>
             <div className="card p-6 anim-rise">
               <h3 className="mb-4 text-lg font-black text-brand-navy">ویرایش شخصیت</h3>
               <EditProfileForm
@@ -75,6 +125,7 @@ export default async function ProfilePage() {
                 stats={{ coffee: user.coffee, bugs: user.bugs, sleep: user.sleep, confidence: user.confidence }}
               />
             </div>
+            <PhoneCard phone={user.phone} smsEnabled={smsEnabled()} />
             <div className="card p-6 anim-rise">
               <h3 className="mb-1 text-lg font-black text-brand-navy">نشان‌ها</h3>
               <p className="mb-4 text-sm text-brand-slate">نشان‌های روشن را گرفته‌ای؛ نشان‌های خاکستری هنوز قفل‌اند.</p>
@@ -85,4 +136,22 @@ export default async function ProfilePage() {
       </Container>
     </>
   );
+}
+
+/**
+ * متن کنار نشان قدرت. برای بیشتر قدرت‌ها همان «استفاده‌شده» بر اساس powerUsed است؛ اما سپر
+ * بعد از انتخاب «مصرف» نمی‌شود، بلکه تا پایان بازی روی یک تیم فعال می‌ماند.
+ */
+async function powerStatusNote(user: { power: string; powerUsed: boolean; shieldTeamId: string | null }) {
+  if (user.power !== "SHIELD") {
+    return { text: user.powerUsed ? "· استفاده‌شده" : "", dim: user.powerUsed };
+  }
+  if (user.shieldTeamId) {
+    const team = await prisma.team.findUnique({ where: { id: user.shieldTeamId }, select: { name: true } });
+    return { text: team ? `· فعال روی تیم ${team.name}` : "· فعال", dim: false };
+  }
+  const { phase } = await getPhase();
+  if (shieldPhaseAllowed(phase)) return { text: "· هنوز انتخاب نشده", dim: false };
+  if (phaseAtLeast(phase, "MARKET")) return { text: "· بی‌اثر ماند", dim: true };
+  return { text: "", dim: false };
 }

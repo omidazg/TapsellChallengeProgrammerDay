@@ -259,6 +259,22 @@ export async function placeBid(auctionId: string, userId: string, amount: number
   return result;
 }
 
+/**
+ * بودجهٔ پیشنهاد یک کاربر برای یک حراج — دادهٔ خصوصی کاربر؛ هرگز در وضعیت عمومی/کش مشترک حراج قرار نمی‌گیرد.
+ * spendable همان سقفی است که placeBid بررسی می‌کند: کیف خرید منهای رزروِ حراج‌های زندهٔ *دیگر*
+ * (پیشتازی در همین حراج کنار گذاشته می‌شود، چون بالا بردن پیشنهاد خود جایگزینش می‌کند).
+ */
+export type BidBudget = { auctionId: string | null; buyWallet: number; reservedElsewhere: number; spendable: number };
+
+export async function getBidBudget(userId: string, auctionId: string | null): Promise<BidBudget | null> {
+  return prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { buyWallet: true } });
+    if (!user) return null;
+    const reservedElsewhere = await reservedBuyCoins(tx, userId, auctionId ?? undefined);
+    return { auctionId, buyWallet: user.buyWallet, reservedElsewhere, spendable: Math.max(0, user.buyWallet - reservedElsewhere) };
+  });
+}
+
 /** قدرت «نفس دوم»: دو دقیقه تمدید یک حراج زنده، یک‌بار در کل بازی برای هر کاربر. */
 export async function activateSecondWind(auctionId: string, userId: string) {
   const result = await prisma.$transaction(async (tx) => {

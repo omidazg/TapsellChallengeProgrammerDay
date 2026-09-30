@@ -4,7 +4,15 @@ import { useActionState, useState } from "react";
 import { Alert } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { coins } from "@/lib/persian";
-import { renameTeamAction, removeMemberAction, deleteTeamAction, moveMemberAction, type TeamsActionState } from "./actions";
+import {
+  renameTeamAction,
+  removeMemberAction,
+  deleteTeamAction,
+  moveMemberAction,
+  setLeaderAction,
+  resetLeaderAction,
+  type TeamsActionState,
+} from "./actions";
 
 type Member = { id: string; nickname: string; avatarSeed: string; role: string };
 export type TeamRowData = {
@@ -14,6 +22,7 @@ export type TeamRowData = {
   logoSeed: string;
   treasury: number;
   members: Member[];
+  leaderId: string | null;
   ideaSubmitted: boolean;
   productSubmitted: boolean;
 };
@@ -24,6 +33,9 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
   const [removeState, removeAction] = useActionState<TeamsActionState, FormData>(removeMemberAction, {});
   const [deleteState, deleteAction] = useActionState<TeamsActionState, FormData>(deleteTeamAction, {});
   const [moveState, moveAction] = useActionState<TeamsActionState, FormData>(moveMemberAction, {});
+  const [leaderState, leaderAction] = useActionState<TeamsActionState, FormData>(setLeaderAction, {});
+  const [resetState, resetAction] = useActionState<TeamsActionState, FormData>(resetLeaderAction, {});
+  const leader = team.members.find((m) => m.id === team.leaderId) ?? null;
   const otherTeams = allTeams.filter((t) => t.id !== team.id);
 
   return (
@@ -61,7 +73,10 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
         {team.members.map((m) => (
           <div key={m.id} className="flex items-center gap-1.5 rounded-pill bg-brand-ice px-2.5 py-1.5">
             <Avatar seed={m.avatarSeed || m.id} size={22} />
-            <span className="text-sm font-bold text-brand-navy">{m.nickname}</span>
+            <span className="text-sm font-bold text-brand-navy">
+              {m.id === team.leaderId && <span title="سرپرست تیم">👑 </span>}
+              {m.nickname}
+            </span>
             {otherTeams.length > 0 && (
               <form action={moveAction} className="flex items-center gap-1">
                 <input type="hidden" name="userId" value={m.id} />
@@ -97,6 +112,35 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
         ))}
         {team.members.length === 0 && <span className="text-xs text-brand-slate">بدون عضو</span>}
       </div>
+      {team.members.length >= 2 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-brand-slate">سرپرست: {leader ? <b className="text-brand-navy">{leader.nickname}</b> : "در حال رأی‌گیری"}</span>
+          <form action={leaderAction} className="flex items-center gap-1">
+            <input type="hidden" name="teamId" value={team.id} />
+            <label htmlFor={`leader-${team.id}`} className="sr-only">تعیین سرپرست {team.name}</label>
+            <select id={`leader-${team.id}`} name="userId" defaultValue="" className="input !py-0.5 !px-1.5 !text-[11px] !w-auto">
+              <option value="" disabled>تعیین سرپرست…</option>
+              {team.members.map((m) => (
+                <option key={m.id} value={m.id}>{m.nickname}</option>
+              ))}
+            </select>
+            <button type="submit" className="btn-ghost !py-0.5 !px-2 text-xs">اعمال</button>
+          </form>
+          {leader && (
+            <form
+              action={resetAction}
+              onSubmit={(e) => {
+                if (!confirm(`سرپرستی ${team.name} برداشته و رأی‌گیری از نو باز شود؟`)) e.preventDefault();
+              }}
+            >
+              <input type="hidden" name="teamId" value={team.id} />
+              <button type="submit" className="text-brand-red text-xs font-bold hover:underline">رأی‌گیری از نو</button>
+            </form>
+          )}
+        </div>
+      )}
+      {leaderState.error && <Alert kind="error">{leaderState.error}</Alert>}
+      {resetState.error && <Alert kind="error">{resetState.error}</Alert>}
       {removeState.error && <Alert kind="error">{removeState.error}</Alert>}
       {moveState.error && <Alert kind="error">{moveState.error}</Alert>}
       {moveState.ok && <Alert kind="ok">کاربر منتقل شد.</Alert>}
@@ -108,7 +152,7 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
         </form>
       )}
       {deleteState.error && <Alert kind="error">{deleteState.error}</Alert>}
-      {(renameState.ok || removeState.ok || deleteState.ok) && <Alert kind="ok">به‌روزرسانی شد.</Alert>}
+      {(renameState.ok || removeState.ok || deleteState.ok || leaderState.ok || resetState.ok) && <Alert kind="ok">به‌روزرسانی شد.</Alert>}
       <div className="text-[10px] text-brand-slate fa-num">/{team.slug}</div>
     </div>
   );

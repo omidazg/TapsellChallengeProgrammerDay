@@ -47,6 +47,7 @@ export default async function AdminTeamsPage() {
                   logoSeed: t.logoSeed,
                   treasury: t.treasury,
                   members: t.members,
+                  leaderId: t.leaderId,
                   ideaSubmitted: !!t.idea?.submittedAt,
                   productSubmitted: !!t.product?.submittedAt,
                 }}

@@ -26,6 +26,7 @@ export default async function AdminUsersPage() {
               user={{
                 id: u.id,
                 email: u.email,
+                phone: u.phone,
                 nickname: u.nickname,
                 avatarSeed: u.avatarSeed,
                 isAdmin: u.isAdmin,

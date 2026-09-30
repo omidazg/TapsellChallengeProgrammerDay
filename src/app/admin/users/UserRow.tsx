@@ -4,11 +4,13 @@ import { useActionState, useState } from "react";
 import { Alert } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { coins } from "@/lib/persian";
+import { copyText } from "@/lib/clipboard";
 import {
   toggleAdminAction,
   adjustWalletAction,
   resetPasswordAction,
   toggleBlockAction,
+  setUserPhoneAction,
   type UsersActionState,
   type ResetPasswordState,
 } from "./actions";
@@ -16,6 +18,7 @@ import {
 export type UserRowData = {
   id: string;
   email: string;
+  phone: string | null;
   nickname: string;
   avatarSeed: string;
   isAdmin: boolean;
@@ -30,18 +33,17 @@ export function UserRow({ user, isMe }: { user: UserRowData; isMe: boolean }) {
   const [adjustState, adjustAction] = useActionState<UsersActionState, FormData>(adjustWalletAction, {});
   const [resetState, resetAction] = useActionState<ResetPasswordState, FormData>(resetPasswordAction, {});
   const [blockState, blockAction] = useActionState<UsersActionState, FormData>(toggleBlockAction, {});
+  const [phoneState, phoneAction, phonePending] = useActionState<UsersActionState, FormData>(setUserPhoneAction, {});
   const [copied, setCopied] = useState(false);
 
   const canBlock = !isMe && !user.isAdmin;
 
   async function copyPassword(pw: string) {
-    try {
-      await navigator.clipboard.writeText(pw);
+    if (await copyText(pw)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* کلیپ‌بورد در دسترس نیست؛ کاربر می‌تواند رمز را دستی کپی کند */
     }
+    /* در غیر این صورت کاربر می‌تواند رمز را دستی کپی کند */
   }
 
   return (
@@ -53,6 +55,7 @@ export function UserRow({ user, isMe }: { user: UserRowData; isMe: boolean }) {
           {user.blocked && <span className="chip chip-red !py-0.5 !px-2 text-[10px]">مسدود</span>}
         </div>
         <div className="text-xs text-brand-slate break-words">{user.email}</div>
+        {user.phone && <div className="text-xs text-brand-slate" dir="ltr">{user.phone}</div>}
         <div className="text-xs text-brand-slate break-words">{user.teamName ?? "بدون تیم"}</div>
       </div>
       <div className="text-xs text-brand-navy flex flex-wrap gap-3">
@@ -120,7 +123,27 @@ export function UserRow({ user, isMe }: { user: UserRowData; isMe: boolean }) {
         </form>
       )}
 
+      <form action={phoneAction} className="flex items-center gap-1.5">
+        <input type="hidden" name="userId" value={user.id} />
+        <label htmlFor={`phone-${user.id}`} className="sr-only">شمارهٔ موبایل {user.nickname}</label>
+        <input
+          id={`phone-${user.id}`}
+          name="phone"
+          type="tel"
+          dir="ltr"
+          maxLength={20}
+          defaultValue={user.phone ?? ""}
+          placeholder="09xxxxxxxxx"
+          className="input !py-1 !px-2 w-32 text-xs"
+        />
+        <button type="submit" disabled={phonePending} className="btn-ghost !py-1 !px-3 text-xs" aria-label={`ثبت شمارهٔ موبایل ${user.nickname}`}>
+          ثبت موبایل
+        </button>
+      </form>
+
       {toggleState.error && <Alert kind="error">{toggleState.error}</Alert>}
+      {phoneState.error && <Alert kind="error">{phoneState.error}</Alert>}
+      {phoneState.ok && <span className="text-emerald-600 text-xs font-bold">شماره ذخیره شد</span>}
       {adjustState.error && <Alert kind="error">{adjustState.error}</Alert>}
       {adjustState.ok && <span className="text-emerald-600 text-xs font-bold">انجام شد</span>}
       {blockState.error && <Alert kind="error">{blockState.error}</Alert>}

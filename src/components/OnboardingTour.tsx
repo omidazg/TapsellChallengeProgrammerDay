@@ -12,7 +12,8 @@ const STORAGE_KEY = "arena:onboarding-seen";
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-type Step = { title: string; body: React.ReactNode };
+// بدنهٔ تابعی با جریمهٔ مؤثر هر سکه (تنظیم برگزارکننده یا پیش‌فرض) ساخته می‌شود
+type Step = { title: string; body: React.ReactNode | ((penaltyPerCoin: number) => React.ReactNode) };
 
 const STEPS: Step[] = [
   {
@@ -27,10 +28,10 @@ const STEPS: Step[] = [
   },
   {
     title: "دو کیف پول داری؛ سکهٔ خرج‌نشده جریمه دارد",
-    body: (
+    body: (penaltyPerCoin) => (
       <p>
         🌱 «کیف بذر» فقط برای سرمایه‌گذاری روی ایدهٔ تیم‌های دیگر است و 🛒 «کیف خرید» برای خرید محصول و حراج زنده. هر سکهٔ خرج‌نشده در
-        پایان بازی {fa(DEFAULTS.penaltyPerCoin)} امتیاز از تیمت کم می‌کند؛ پس بهتر است هر دو کیف را تا آخر خرج کنی.
+        پایان بازی {fa(penaltyPerCoin)} امتیاز از تیمت کم می‌کند؛ پس بهتر است هر دو کیف را تا آخر خرج کنی.
       </p>
     ),
   },
@@ -62,7 +63,14 @@ const STEPS: Step[] = [
  * یک‌بار به‌صورت خودکار (وقتی `autoOpen` و هنوز در localStorage دیده نشده) باز می‌شود،
  * و یک لینک کوچک برای بازکردن دستی‌اش همیشه در دسترس است.
  */
-export function OnboardingTour({ autoOpen = false }: { autoOpen?: boolean }) {
+export function OnboardingTour({
+  autoOpen = false,
+  penaltyPerCoin = DEFAULTS.penaltyPerCoin,
+}: {
+  autoOpen?: boolean;
+  /** جریمهٔ مؤثر هر سکهٔ خرج‌نشده (از سرور) */
+  penaltyPerCoin?: number;
+}) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -187,7 +195,7 @@ export function OnboardingTour({ autoOpen = false }: { autoOpen?: boolean }) {
             <h2 id={titleId} className="text-lg font-black text-brand-navy">
               {current.title}
             </h2>
-            <div className="mt-2 text-sm text-brand-navy/90 leading-7">{current.body}</div>
+            <div className="mt-2 text-sm text-brand-navy/90 leading-7">{typeof current.body === "function" ? current.body(penaltyPerCoin) : current.body}</div>
 
             <div className="mt-6 flex items-center justify-between gap-3">
               <button type="button" onClick={close} className="btn-ghost !px-4 !py-1.5 text-sm">

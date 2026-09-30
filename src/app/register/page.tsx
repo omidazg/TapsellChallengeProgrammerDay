@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getPhase } from "@/lib/phase";
 import { PageHeader, Container, Locked } from "@/components/ui";
 import { RegisterWizard } from "./RegisterWizard";
+import { smsEnabled } from "@/lib/sms";
 import { safeNext } from "./next";
 
 export const metadata = { title: "خودت را کد بزن" };
@@ -28,7 +29,7 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
     <>
       <PageHeader eyebrow="ثبت‌نام" title="خودت را کد بزن" desc="شخصیت بازی‌ات را بساز، نقش و قدرتت را انتخاب کن و وارد میدان شو." />
       <Container>
-        <RegisterWizard nextUrl={safeNext(next)} />
+        <RegisterWizard nextUrl={safeNext(next)} smsEnabled={smsEnabled()} />
       </Container>
     </>
   );

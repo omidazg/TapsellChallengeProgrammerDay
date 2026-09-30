@@ -1,7 +1,8 @@
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { DEFAULTS, POWERS } from "@/lib/constants";
-import { LEDGER_REASON_LABEL, WALLET_LABEL, getSettingFloat, personalPenalty } from "@/lib/scoring";
+import { POWERS } from "@/lib/constants";
+import { LEDGER_REASON_LABEL, WALLET_LABEL, personalPenalty } from "@/lib/scoring";
+import { getEffectiveGameValues } from "@/lib/game-values";
 import { PageHeader, Container, Stat, Empty, Alert } from "@/components/ui";
 import { fa, coins, jdatetime } from "@/lib/persian";
 import { getPhase, phaseAtLeast, PHASE_LABEL } from "@/lib/phase";
@@ -12,7 +13,8 @@ export const metadata = { title: "کیف پول" };
 
 export default async function WalletPage() {
   const user = await requireUser();
-  const penaltyPerCoin = await getSettingFloat("penalty_per_coin", DEFAULTS.penaltyPerCoin);
+  // جریمه و سقف مؤثر (تنظیم برگزارکننده یا پیش‌فرض) با یک کوئری
+  const { penaltyPerCoin, maxPerTarget } = await getEffectiveGameValues();
 
   const [userLedger, treasuryLedger, team, now] = await Promise.all([
     prisma.ledgerEntry.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
@@ -46,7 +48,7 @@ export default async function WalletPage() {
           <h2 className="text-lg font-black text-brand-navy mb-1">پیش‌نمایش جریمه</h2>
           <p className="text-sm text-brand-slate mb-4">
             هر سکهٔ خرج‌نشده در پایان بازی {fa(penaltyPerCoin)} امتیاز از امتیاز تیمت کم می‌کند؛ اما فقط سکه‌ای که
-            واقعاً می‌شد خرجش کرد. اگر به سقف {fa(DEFAULTS.maxPerTarget)}‌سکه‌ای همهٔ هدف‌ها رسیده باشی، یا باقی‌ماندهٔ
+            واقعاً می‌شد خرجش کرد. اگر به سقف {fa(maxPerTarget)}‌سکه‌ای همهٔ هدف‌ها رسیده باشی، یا باقی‌ماندهٔ
             کیف خریدت از قیمت محصولات کمتر باشد، آن سکه‌ها جریمه نمی‌شوند.
           </p>
           <div className="flex flex-wrap items-center gap-4">

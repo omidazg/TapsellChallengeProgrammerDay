@@ -5,6 +5,8 @@ import { PageHeader, Container, Empty, Locked } from "@/components/ui";
 import { buildChecklist, parseImages, effectiveMaxPrice } from "@/lib/product";
 import { BuildForm } from "./BuildForm";
 import { ChecklistCard } from "./ChecklistCard";
+import { teamAccess } from "@/lib/leader";
+import { LeaderNotice } from "@/components/LeaderNotice";
 
 export const metadata = { title: "مرکز ساخت" };
 
@@ -35,7 +37,9 @@ export default async function BuildPage() {
   }
 
   const product = await prisma.product.findUnique({ where: { teamId: user.teamId } });
-  const editable = phaseIndex(phase) < phaseIndex("MARKET");
+  const phaseEditable = phaseIndex(phase) < phaseIndex("MARKET");
+  const { canManage, reason } = await teamAccess(user);
+  const editable = phaseEditable && canManage;
   const maxPrice = await effectiveMaxPrice();
 
   const checklistInput = {
@@ -56,8 +60,19 @@ export default async function BuildPage() {
       <PageHeader
         eyebrow="فاز فعلی"
         title="مرکز ساخت"
-        desc={editable ? "محصولت را کامل کن و پیش از پایان فاز ساخت، ثبت نهایی کن." : "مرکز ساخت قفل شده است؛ فقط می‌توانی پیش‌نمایش را ببینی."}
+        desc={
+          editable
+            ? "محصولت را کامل کن و پیش از پایان فاز ساخت، ثبت نهایی کن."
+            : phaseEditable
+              ? "فقط سرپرست تیم محصول را ویرایش می‌کند؛ تو همه‌چیز را می‌بینی."
+              : "مرکز ساخت قفل شده است؛ فقط می‌توانی پیش‌نمایش را ببینی."
+        }
       />
+      {phaseEditable && reason && (
+        <Container className="mb-4">
+          <LeaderNotice reason={reason} />
+        </Container>
+      )}
       <Container className="grid lg:grid-cols-[320px_1fr] gap-6 items-start">
         <div className="order-2 lg:order-1">
           <ChecklistCard
@@ -72,6 +87,7 @@ export default async function BuildPage() {
         <div className="order-1 lg:order-2">
         <BuildForm
           editable={editable}
+          lockNote={phaseEditable ? null : undefined}
           submitted={!!product?.submittedAt}
           maxPrice={maxPrice}
           initial={

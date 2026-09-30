@@ -10,6 +10,7 @@ import { PHASES, type Phase } from "./phases";
 import { transitionTo } from "./phase-transition";
 import { ensureAuctions, startNextAuction, settleIfEnded } from "./auction";
 import { closeDueSlots } from "./adslots";
+import { runShieldReminders } from "./shield-reminders";
 import { log } from "./log";
 import { alert } from "./alert";
 
@@ -58,6 +59,8 @@ export async function runScheduledTasks(): Promise<void> {
   try {
     await autoAdvancePhase().catch((e) => reportTickFailure("autoAdvancePhase", e));
     await cleanupOldNotifications().catch((e) => reportTickFailure("cleanupOldNotifications", e));
+    // یادآور یک‌بارهٔ سپر (شروع BUILD و ~۳۰ دقیقه پیش از پایان SEED_ROUND/BUILD)؛ خودش فاز را بررسی می‌کند.
+    await runShieldReminders().catch((e) => reportTickFailure("runShieldReminders", e));
 
     const { phase } = await getPhase();
     if (phase === "AUCTION") {

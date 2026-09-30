@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { Avatar } from "@/components/Avatar";
 import { Alert, Locked } from "@/components/ui";
 import { ROLES, POWERS, type RoleKey, type PowerKey } from "@/lib/constants";
 import { fa, jdatetime } from "@/lib/persian";
+import { copyText } from "@/lib/clipboard";
 import type { RoleCoverage, TeamWithMembers } from "@/lib/team";
 import { inviteAction, leaveTeamAction } from "./actions";
+import { LeaderCard, type LeaderCardState } from "./LeaderCard";
 
 const TEAM_FULL = 3;
 
@@ -17,12 +19,14 @@ export function TeamPanel({
   currentUserId,
   registrationOpen,
   formingOpen,
+  leader,
 }: {
   team: TeamWithMembers;
   coverage: RoleCoverage[];
   currentUserId: string;
   registrationOpen: boolean;
   formingOpen: boolean;
+  leader: LeaderCardState;
 }) {
   const full = team.members.length >= TEAM_FULL;
   const missingRoles = coverage.filter((c) => !c.present);
@@ -43,7 +47,12 @@ export function TeamPanel({
               ))}
             </div>
           </div>
-          {registrationOpen && <LeaveButton />}
+          <div className="flex flex-wrap items-start gap-2">
+            <Link href="/team/settings" className="btn-cyan">
+              ⚙️ {leader.leaderId === currentUserId || team.members.length <= 1 ? "تنظیمات تیم" : "نقش و قدرت اعضا"}
+            </Link>
+            {registrationOpen && <LeaveButton />}
+          </div>
         </div>
 
         {incomplete && (
@@ -59,7 +68,14 @@ export function TeamPanel({
               return (
                 <div key={m.id} className={`card p-4 ${m.id === currentUserId ? "ring-2 ring-brand-cyan" : ""}`}>
                   <Avatar seed={m.avatarSeed || m.id} size={56} />
-                  <div className="mt-2 font-black text-brand-navy break-words">{m.nickname}</div>
+                  <div className="mt-2 font-black text-brand-navy break-words">
+                    {m.nickname}
+                    {m.id === leader.leaderId && (
+                      <span className="chip-ok mr-1.5 text-[11px]" title="سرپرست تیم">
+                        👑 سرپرست
+                      </span>
+                    )}
+                  </div>
                   <div className="mt-1 flex flex-wrap gap-1 text-xs">
                     <span className="chip-red">{ROLES[role]?.emoji} {ROLES[role]?.label}</span>
                     <span className="chip-cyan">{POWERS[power]?.emoji} {POWERS[power]?.label}</span>
@@ -86,6 +102,11 @@ export function TeamPanel({
       </div>
 
       <div className="space-y-4">
+        <LeaderCard
+          state={leader}
+          members={team.members.map((m) => ({ id: m.id, nickname: m.nickname, avatarSeed: m.avatarSeed }))}
+          currentUserId={currentUserId}
+        />
         <div className="card p-5 anim-rise">
           <h3 className="mb-3 font-black text-brand-navy">پیشرفت تیم</h3>
           <ChecklistItem done={!!team.idea?.submittedAt} label="ایده ثبت شده؟" href="/idea" />
@@ -136,22 +157,28 @@ function IncompleteTeamCard({
   );
 }
 
+const noopSubscribe = () => () => {};
+
 function CopyJoinLink({ slug }: { slug: string }) {
   const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
   const inputId = useMemo(() => `join-link-${slug}`, [slug]);
-
-  function link() {
-    if (typeof window === "undefined") return `/join/${slug}`;
-    return `${window.location.origin}/join/${slug}`;
-  }
+  // origin فقط در کلاینت معلوم است؛ روی سرور خالی می‌ماند تا hydration mismatch رخ ندهد.
+  const origin = useSyncExternalStore(
+    noopSubscribe,
+    () => window.location.origin,
+    () => "",
+  );
+  const url = `${origin}/join/${slug}`;
 
   async function copy() {
-    const url = link();
-    try {
-      await navigator.clipboard.writeText(url);
+    const ok = await copyText(`${window.location.origin}/join/${slug}`);
+    if (ok) {
+      setFailed(false);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
-    } catch {
+    } else {
+      setFailed(true);
       const el = document.getElementById(inputId) as HTMLInputElement | null;
       if (el) {
         el.focus();
@@ -167,13 +194,16 @@ function CopyJoinLink({ slug }: { slug: string }) {
         id={inputId}
         readOnly
         dir="ltr"
-        value={link()}
+        value={url}
         onFocus={(e) => e.currentTarget.select()}
         className="input !py-1.5 !px-3 flex-1 min-w-0 sm:min-w-[260px] text-xs"
       />
       <button type="button" onClick={copy} className="btn-cyan !py-1.5 !px-3 text-sm shrink-0">
         {copied ? "کپی شد ✓" : "کپی لینک دعوت"}
       </button>
+      {failed && (
+        <p className="w-full text-xs text-brand-navy/70">کپی خودکار ممکن نشد؛ لینک انتخاب شده، با Ctrl+C کپی کنید.</p>
+      )}
     </div>
   );
 }

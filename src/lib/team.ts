@@ -4,6 +4,7 @@ import { getPhase, phaseIndex } from "./phase";
 import { ROLES, type RoleKey } from "./constants";
 import { notifyUser } from "./notifications";
 import { fa } from "./persian";
+import { syncLeader } from "./leader";
 
 /** ظرفیت هر تیم */
 export const TEAM_FULL = 3;
@@ -378,8 +379,11 @@ export async function leaveTeam(userId: string): Promise<TeamResult> {
     await tx.adSlotBid.deleteMany({ where: { teamId } });
     await tx.collusionFlag.deleteMany({ where: { OR: [{ teamId }, { otherTeamId: teamId }] } });
     await tx.teamScore.deleteMany({ where: { teamId } });
+    await tx.teamLeaderVote.deleteMany({ where: { teamId } });
     await tx.team.delete({ where: { id: teamId } });
   });
+  // اگر سرپرست رفت، رأی‌گیری از نو باز می‌شود؛ رأی عضو رفته هم پاک می‌شود
+  await syncLeader(teamId);
 
   return { ok: true };
 }
@@ -404,6 +408,8 @@ export async function adminMoveUserToTeam(userId: string, targetTeamId: string):
     if (e instanceof Error && e.message === "FULL") return { error: ERR.targetFull };
     return { error: ERR.raced };
   }
+  if (user.teamId) await syncLeader(user.teamId);
+  await syncLeader(targetTeamId);
   return { ok: true };
 }
 
@@ -434,11 +440,13 @@ export async function adminMergeTeams(teamAId: string, teamBId: string): Promise
       await tx.adSlotBid.deleteMany({ where: { teamId: teamBId } });
       await tx.collusionFlag.deleteMany({ where: { OR: [{ teamId: teamBId }, { otherTeamId: teamBId }] } });
       await tx.teamScore.deleteMany({ where: { teamId: teamBId } });
+      await tx.teamLeaderVote.deleteMany({ where: { teamId: teamBId } });
       await tx.team.delete({ where: { id: teamBId } });
     });
   } catch {
     return { error: ERR.raced };
   }
+  await syncLeader(teamAId);
   return { ok: true };
 }
 

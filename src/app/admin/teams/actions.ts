@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 import { adminMoveUserToTeam, adminMergeTeams, autoComposeTeams } from "@/lib/team";
 import { audit } from "@/lib/audit";
+import { syncLeader, adminSetLeader, adminResetLeader } from "@/lib/leader";
 
 export type TeamsActionState = { error?: string; ok?: boolean };
 
@@ -38,6 +39,7 @@ export async function removeMemberAction(prevState: TeamsActionState, formData: 
 
   const before = await prisma.user.findUnique({ where: { id: parsed.data.userId }, select: { teamId: true } });
   await prisma.user.update({ where: { id: parsed.data.userId }, data: { teamId: null } });
+  if (before?.teamId) await syncLeader(before.teamId);
   await audit(admin.id, "team.remove_member", parsed.data.userId, { fromTeamId: before?.teamId ?? null });
   revalidatePath("/admin/teams");
   return { ok: true };
@@ -54,6 +56,7 @@ export async function deleteTeamAction(prevState: TeamsActionState, formData: Fo
   if (!team) return { error: "تیم پیدا نشد" };
   if (team.members.length > 0) return { error: "فقط تیم خالی را می‌توان حذف کرد" };
 
+  await prisma.teamLeaderVote.deleteMany({ where: { teamId: team.id } });
   await prisma.team.delete({ where: { id: team.id } });
   await audit(admin.id, "team.delete", team.id, { name: team.name });
   revalidatePath("/admin/teams");
@@ -123,4 +126,29 @@ export async function autoComposeAction(): Promise<AutoComposeState> {
   return {
     summary: `${lines.join("\n")}\n\n${result.assigned.length} کاربر جا‌به‌جا شد؛ ${result.teamsCreated} تیم تازه ساخته شد.${tail}`,
   };
+}
+
+const leaderSchema = z.object({ teamId: z.string().min(1), userId: z.string().min(1) });
+
+/** تعیین مستقیم سرپرست (مثلاً وقتی رأی‌گیری به نتیجه نمی‌رسد) */
+export async function setLeaderAction(prevState: TeamsActionState, formData: FormData): Promise<TeamsActionState> {
+  const admin = await requireAdmin();
+  const parsed = leaderSchema.safeParse({ teamId: formData.get("teamId"), userId: formData.get("userId") });
+  if (!parsed.success) return { error: "یک عضو را انتخاب کن" };
+  const res = await adminSetLeader(parsed.data.teamId, parsed.data.userId);
+  if (res.error) return { error: res.error };
+  await audit(admin.id, "team.set_leader", parsed.data.teamId, { userId: parsed.data.userId });
+  revalidatePath("/admin/teams");
+  return { ok: true };
+}
+
+/** پاک کردن سرپرست و رأی‌ها تا اعضا دوباره رأی بدهند */
+export async function resetLeaderAction(prevState: TeamsActionState, formData: FormData): Promise<TeamsActionState> {
+  const admin = await requireAdmin();
+  const parsed = teamSchema.safeParse({ teamId: formData.get("teamId") });
+  if (!parsed.success) return { error: "ورودی نامعتبر است" };
+  await adminResetLeader(parsed.data.teamId);
+  await audit(admin.id, "team.reset_leader", parsed.data.teamId, {});
+  revalidatePath("/admin/teams");
+  return { ok: true };
 }

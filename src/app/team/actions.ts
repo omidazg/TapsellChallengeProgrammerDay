@@ -13,6 +13,7 @@ import {
   joinBySlug,
   type TeamResult,
 } from "@/lib/team";
+import { castLeaderVote, withdrawLeaderVote, type VoteResult } from "@/lib/leader";
 
 /** پس از هر تغییر عضویت، صفحه‌هایی که ترکیب تیم را نشان می‌دهند تازه می‌شوند */
 function revalidate(res: TeamResult) {
@@ -66,5 +67,20 @@ export async function joinBySlugAction(slug: string): Promise<TeamResult | never
     revalidatePath("/profile");
     redirect("/team?joined=1");
   }
+  return res;
+}
+
+/** رأی به سرپرست تیم (یا تغییر رأی تا پیش از انتخاب) */
+export async function castLeaderVoteAction(candidateId: string): Promise<VoteResult> {
+  const user = await requireUser();
+  const res = await castLeaderVote(user.id, String(candidateId ?? ""));
+  if (res.ok) revalidatePath("/team");
+  return res;
+}
+
+export async function withdrawLeaderVoteAction(): Promise<VoteResult> {
+  const user = await requireUser();
+  const res = await withdrawLeaderVote(user.id);
+  if (res.ok) revalidatePath("/team");
   return res;
 }

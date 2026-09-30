@@ -2,8 +2,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { isLocalUploadUrl } from "@/lib/product-utils";
 import { requireUser } from "@/lib/auth";
-import { getPhase, getSettingInt, phaseIndex } from "@/lib/phase";
-import { DEFAULTS } from "@/lib/constants";
+import { getPhase, phaseIndex } from "@/lib/phase";
+import { getEffectiveGameValues } from "@/lib/game-values";
 import { PageHeader, Container, Empty, Locked, Coin } from "@/components/ui";
 import { UnspentReminder } from "@/components/UnspentReminder";
 import { fa, coins } from "@/lib/persian";
@@ -39,7 +39,9 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
   const closed = phaseIndex(phase) > phaseIndex("MARKET");
   const readOnly = browsingOnly || closed;
   const sort = (SORTS.find((s) => s.key === sp.sort)?.key ?? "all") as MarketSort;
-  const maxPerTarget = await getSettingInt("max_per_target", DEFAULTS.maxPerTarget);
+  // سقف و جریمهٔ مؤثر (تنظیم برگزارکننده یا پیش‌فرض) با یک کوئری
+  const values = await getEffectiveGameValues();
+  const maxPerTarget = values.maxPerTarget;
   const [products, adWinners] = await Promise.all([
     getMarketProducts(sort, { userId: user.id, maxPerTarget }),
     readOnly ? Promise.resolve([]) : getCurrentAdSlotWinners(),
@@ -80,7 +82,7 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
             phaseLabel="فاز «روز بازار»"
             endsAt={endsAt ? endsAt.toISOString() : null}
             coinsLeft={user.buyWallet}
-            penaltyPerCoin={DEFAULTS.penaltyPerCoin}
+            penaltyPerCoin={values.penaltyPerCoin}
           />
         )}
 

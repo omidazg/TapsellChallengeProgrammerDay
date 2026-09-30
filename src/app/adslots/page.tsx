@@ -5,6 +5,8 @@ import { Container, PageHeader, Locked, Alert } from "@/components/ui";
 import { ensureAdSlots, marketStartFromSettings, closeDueSlots, slotsGrid } from "@/lib/adslots";
 import { SlotGrid } from "./SlotGrid";
 import { HypeClaim } from "./HypeClaim";
+import { teamAccess } from "@/lib/leader";
+import { LeaderNotice } from "@/components/LeaderNotice";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +32,7 @@ export default async function AdSlotsPage() {
   }
 
   const cells = await slotsGrid(user.teamId ?? null);
+  const { canManage, reason } = user.teamId ? await teamAccess(user) : { canManage: false, reason: null };
 
   return (
     <Container>
@@ -54,10 +57,12 @@ export default async function AdSlotsPage() {
           <Alert kind="info">خزانهٔ تیم شما صفر است؛ ابتدا از سرمایه‌گذاری یا فروش محصول خزانه را پر کنید.</Alert>
         )}
 
+        {!readOnly && user.teamId && <LeaderNotice reason={reason} />}
+
         {!readOnly && <HypeClaim power={user.power} powerUsed={user.powerUsed} />}
 
         <div className="card p-4 sm:p-6">
-          <SlotGrid cells={cells} myTeamId={readOnly ? null : user.teamId ?? null} treasury={user.team?.treasury ?? 0} />
+          <SlotGrid cells={cells} myTeamId={readOnly ? null : user.teamId ?? null} treasury={user.team?.treasury ?? 0} canBid={canManage} />
         </div>
       </div>
     </Container>

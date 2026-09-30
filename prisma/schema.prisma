@@ -14,6 +14,7 @@ datasource db {
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
+  phone        String?  @unique // موبایل ۰۹xxxxxxxxx برای ورود با کد پیامکی
   passwordHash String
   nickname     String
   role         String // BUILDER | STORYTELLER | DEALMAKER
@@ -59,6 +60,9 @@ model Team {
   slug       String          @unique
   logoSeed   String          @default("")
   treasury   Int             @default(0) // خزانهٔ تیم = سرمایهٔ جذب‌شده
+  // سرپرست تیم با رأی اکثریت اعضا انتخاب می‌شود (src/lib/leader.ts)
+  leaderId        String?
+  leaderElectedAt DateTime?
   createdAt  DateTime        @default(now())
   members    User[]
   idea       Idea?
@@ -385,6 +389,7 @@ model AllowedEmail {
   email     String   @unique
   firstName String   @default("")
   lastName  String   @default("")
+  phone     String?  @unique
   position  String   @default("") // سمت
   unit      String   @default("") // واحد سازمانی
   note      String   @default("")
@@ -398,6 +403,7 @@ model AccessRequest {
   email        String    @unique
   firstName    String
   lastName     String
+  phone        String    @default("")
   position     String // سمت
   unit         String // واحد سازمانی
   status       String    @default("PENDING") // PENDING | APPROVED | REJECTED
@@ -407,4 +413,31 @@ model AccessRequest {
   updatedAt    DateTime  @updatedAt
 
   @@index([status, createdAt])
+}
+
+// ─── رأی‌گیری سرپرست تیم ───
+// هر کاربر در هر لحظه فقط یک رأی دارد (در تیم فعلی‌اش) و تا انتخاب سرپرست می‌تواند آن را عوض کند
+model TeamLeaderVote {
+  id          String   @id @default(cuid())
+  teamId      String
+  voterId     String   @unique
+  candidateId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([teamId])
+}
+
+// ─── کد یک‌بارمصرف پیامکی ───
+model OtpCode {
+  id         String    @id @default(cuid())
+  phone      String
+  purpose    String // LOGIN | REGISTER | PROFILE
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, purpose, createdAt])
 }

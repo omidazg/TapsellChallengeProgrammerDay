@@ -25,6 +25,15 @@ export async function notifyUser(userId: string, n: NotifyInput): Promise<void> 
   firePush([userId], n);
 }
 
+/** یک اعلان یکسان برای فهرستی از کاربران (یک createMany + یک ارسال push). */
+export async function notifyUsers(userIds: string[], n: NotifyInput): Promise<void> {
+  if (userIds.length === 0) return;
+  await prisma.notification.createMany({
+    data: userIds.map((userId) => ({ userId, kind: n.kind, title: n.title, body: n.body ?? "", href: n.href ?? "" })),
+  });
+  firePush(userIds, n);
+}
+
 export async function notifyTeam(teamId: string, n: NotifyInput): Promise<void> {
   const members = await prisma.user.findMany({ where: { teamId }, select: { id: true } });
   if (members.length === 0) return;

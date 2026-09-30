@@ -76,7 +76,7 @@ export default async function InvestPage({ searchParams }: { searchParams: Promi
               phaseLabel="فاز «دور سرمایه‌گذاری»"
               endsAt={endsAt ? endsAt.toISOString() : null}
               coinsLeft={user.seedWallet}
-              penaltyPerCoin={DEFAULTS.penaltyPerCoin}
+              penaltyPerCoin={penaltyPerCoin}
             />
           </div>
         )}

@@ -6,7 +6,8 @@ import { Avatar } from "@/components/Avatar";
 import { Alert, Stat } from "@/components/ui";
 import { ROLES, POWERS, type RoleKey, type PowerKey } from "@/lib/constants";
 import { fa } from "@/lib/persian";
-import { registerAction, checkRegisterEmailAction } from "./actions";
+import { registerAction, checkRegisterEmailAction, requestRegisterOtpAction, verifyRegisterOtpAction } from "./actions";
+import { PhoneVerify } from "@/components/PhoneVerify";
 import { DEPARTMENTS, type Department } from "./departments";
 
 const STEPS = ["حساب کاربری", "نقش", "قدرت", "کد بزن", "پیش‌نمایش"] as const;
@@ -15,12 +16,16 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type Stats = { coffee: number; bugs: number; sleep: number; confidence: number };
 
-export function RegisterWizard({ nextUrl }: { nextUrl?: string | null }) {
+export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: string | null; smsEnabled?: boolean }) {
   const [step, setStep] = useState(0);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [nickname, setNickname] = useState("");
   const [department, setDepartment] = useState<string>("");
+  // شماره اختیاری است؛ فقط پس از تأیید کد پیامکی (با گواهی کوتاه‌عمر سرور) ارسال می‌شود
+  const [phoneInput, setPhoneInput] = useState("");
+  const [phone, setPhone] = useState<string | null>(null);
+  const [phoneProof, setPhoneProof] = useState<string | null>(null);
   const [role, setRole] = useState<RoleKey | null>(null);
   const [power, setPower] = useState<PowerKey | null>(null);
   const [stats, setStats] = useState<Stats>({ coffee: 5, bugs: 50, sleep: 7, confidence: 100 });
@@ -48,10 +53,14 @@ export function RegisterWizard({ nextUrl }: { nextUrl?: string | null }) {
         setError("ایمیل نامعتبر است.");
         return;
       }
+      if (phoneInput.trim() && !phoneProof) {
+        setError("شمارهٔ موبایل را با کد پیامکی تأیید کن، یا فیلدش را خالی بگذار.");
+        return;
+      }
       // لیست سفید را همین‌جا چک کن، نه بعد از پنج مرحله
       setChecking(true);
       try {
-        const res = await checkRegisterEmailAction(email);
+        const res = await checkRegisterEmailAction(email, phone, phoneProof);
         if ("error" in res) {
           setError(res.error);
           setNeedsAccess(!!res.needsAccess);
@@ -105,12 +114,14 @@ export function RegisterWizard({ nextUrl }: { nextUrl?: string | null }) {
         sleep: stats.sleep,
         confidence: stats.confidence,
         next: nextUrl,
+        phone,
+        phoneProof,
       });
       if (res?.error) {
         setError(res.error);
         setNeedsAccess("needsAccess" in res && !!res.needsAccess);
         // خطاهای مربوط به حساب در مرحلهٔ ۱ قابل اصلاح‌اند
-        if (/ایمیل|رمز|نام مستعار|دپارتمان/.test(res.error)) setStep(0);
+        if (/ایمیل|رمز|نام مستعار|دپارتمان|شماره/.test(res.error)) setStep(0);
       }
     });
   }
@@ -208,6 +219,27 @@ export function RegisterWizard({ nextUrl }: { nextUrl?: string | null }) {
                 ))}
               </select>
             </div>
+            {smsEnabled && (
+              <div>
+                <PhoneVerify
+                  label="شمارهٔ موبایل (اختیاری — برای ورود با کد پیامکی)"
+                  initialPhone={phoneInput}
+                  verifiedPhone={phone}
+                  onSend={requestRegisterOtpAction}
+                  onVerify={verifyRegisterOtpAction}
+                  onVerified={(p, proof) => {
+                    setPhone(p);
+                    setPhoneInput(p);
+                    setPhoneProof(proof ?? null);
+                  }}
+                  onPhoneChange={(v) => {
+                    setPhoneInput(v);
+                    setPhone(null);
+                    setPhoneProof(null);
+                  }}
+                />
+              </div>
+            )}
           </div>
         )}
 

@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
+import { teamManageError } from "@/lib/leader";
 import { upsertBid, claimHypeSlot } from "@/lib/adslots";
 
 const bidSchema = z.object({
@@ -13,6 +14,8 @@ const bidSchema = z.object({
 export async function bidOnSlotAction(slotId: string, amount: number) {
   const user = await requireUser();
   if (!user.teamId) return { error: "عضو هیچ تیمی نیستی" };
+  const leaderError = await teamManageError(user);
+  if (leaderError) return { error: leaderError };
   const parsed = bidSchema.safeParse({ slotId, amount });
   if (!parsed.success) return { error: "مبلغ پیشنهاد نامعتبر است" };
   try {

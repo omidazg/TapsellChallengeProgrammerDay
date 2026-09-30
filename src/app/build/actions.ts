@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
+import { teamManageError } from "@/lib/leader";
 import { getPhase, phaseIndex } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
 import { serializeImages, readyToSubmit, MAX_IMAGES, effectiveMaxPrice } from "@/lib/product";
@@ -54,6 +55,8 @@ async function assertEditable() {
 export async function saveProductAction(prevState: ProductActionState, formData: FormData): Promise<ProductActionState> {
   const user = await requireUser();
   if (!user.teamId) return { error: "ابتدا باید عضو یک تیم باشی" };
+  const leaderError = await teamManageError(user);
+  if (leaderError) return { error: leaderError };
 
   const editError = await assertEditable();
   if (editError) return { error: editError };
@@ -151,6 +154,8 @@ export async function saveProductAction(prevState: ProductActionState, formData:
 export async function unsubmitProductAction(): Promise<ProductActionState> {
   const user = await requireUser();
   if (!user.teamId) return { error: "ابتدا باید عضو یک تیم باشی" };
+  const leaderError = await teamManageError(user);
+  if (leaderError) return { error: leaderError };
 
   const editError = await assertEditable();
   if (editError) return { error: editError };

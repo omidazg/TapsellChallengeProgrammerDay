@@ -7,7 +7,9 @@
  *   - فقط دارندهٔ سپر، فقط روی تیم دیگری که واقعاً رویش سرمایه‌گذاری کرده؛
  *   - انتخاب برگشت‌ناپذیر است و دو درخواست هم‌زمان فقط یک هدف ثبت می‌کنند؛
  *   - در امتیازدهی و بعد از تسویه فقط همان جفت (کاربر، تیم) نصف مبلغ اعتبار پرتفوی می‌گیرد،
- *     حتی وقتی سودش صفر است.
+ *     حتی وقتی سودش صفر است؛
+ *   - یادآور سپر (src/lib/shield-reminders.ts) فقط به دارندگان بی‌انتخاب و برای هر رویداد
+ *     (پایان SEED_ROUND، شروع BUILD، پایان BUILD) دقیقاً یک‌بار می‌رسد.
  */
 
 import { createTempDb, isTempDatabaseUrl } from "./lib/temp-db";
@@ -173,6 +175,112 @@ async function main() {
   );
   const settledA = loaded.teams.find((t) => t.teamId === tA.id)?.portfolio;
   check("پرتفوی ثبت‌شدهٔ تیم A بعد از تسویه = ۲۰", settledA === 20, `portfolio=${settledA}`);
+
+  // ---------- ۷) یادآور یک‌بارهٔ سپر برای دارندگانی که هنوز انتخاب نکرده‌اند ----------
+  const { setPhase } = await import("../src/lib/phase");
+  const { transitionTo } = await import("../src/lib/phase-transition");
+  const { runShieldReminders, resetShieldReminders, SHIELD_REMINDER_KIND } = await import("../src/lib/shield-reminders");
+
+  // r1: سپردار با سرمایه‌گذاری واجد شرایط؛ r2: سپردار بدون هیچ سرمایه‌گذاری؛
+  // r3: سپردار فقط با سرمایه‌گذاری روی تیم خودش (واجد شرایط نیست).
+  // shieldUser و racer قبلاً انتخاب کرده‌اند و plain اصلاً سپر ندارد → هرگز یادآور نمی‌گیرند.
+  const r1 = await makeUser("r1", "SHIELD", tD.id);
+  const r2 = await makeUser("r2", "SHIELD", tC.id);
+  const r3 = await makeUser("r3", "SHIELD", tB.id);
+  await prisma.investment.create({ data: { userId: r1.id, ideaId: tC.ideaId, amount: 10 } });
+  await prisma.investment.create({ data: { userId: r3.id, ideaId: tB.ideaId, amount: 10, selfFunded: true } });
+
+  async function reminders(userId: string) {
+    return prisma.notification.findMany({ where: { userId, kind: SHIELD_REMINDER_KIND }, orderBy: { createdAt: "asc" } });
+  }
+  async function counts() {
+    const ids = { r1: r1.id, r2: r2.id, r3: r3.id, chosen: shieldUser.id, racer: racer.id, plain: plain.id };
+    const out: Record<string, number> = {};
+    for (const [k, id] of Object.entries(ids)) out[k] = (await reminders(id)).length;
+    return out;
+  }
+  const inMin = (m: number) => new Date(Date.now() + m * 60_000);
+
+  await resetShieldReminders();
+
+  // الف) SEED_ROUND با زمان زیاد باقی‌مانده: هنوز یادآوری نیست
+  await setPhase("SEED_ROUND", inMin(24 * 60));
+  await runShieldReminders();
+  let c = await counts();
+  check("SEED_ROUND دور از پایان: هیچ یادآوری ارسال نمی‌شود", Object.values(c).every((n) => n === 0), JSON.stringify(c));
+
+  // ب) ۱۰ دقیقه تا پایان SEED_ROUND: هر دارندهٔ بی‌انتخاب دقیقاً یکی، حتی با تیک‌های تکراری/هم‌زمان
+  await setPhase("SEED_ROUND", inMin(10));
+  await runShieldReminders();
+  await runShieldReminders();
+  await Promise.all([runShieldReminders(), runShieldReminders(), runShieldReminders()]);
+  c = await counts();
+  check(
+    "پایان SEED_ROUND: r1/r2/r3 هرکدام دقیقاً یک یادآور؛ انتخاب‌کرده‌ها و بی‌سپر هیچ",
+    c.r1 === 1 && c.r2 === 1 && c.r3 === 1 && c.chosen === 0 && c.racer === 0 && c.plain === 0,
+    JSON.stringify(c)
+  );
+  const [r1Seed] = await reminders(r1.id);
+  const [r2Seed] = await reminders(r2.id);
+  const [r3Seed] = await reminders(r3.id);
+  check("یادآور دارندهٔ واجد شرایط به کیف پول می‌رود", r1Seed?.href === "/wallet" && r1Seed.title === "سپرت را فعال کن 🛡️", JSON.stringify(r1Seed));
+  check(
+    "دارندهٔ بدون سرمایه‌گذاری واجد شرایط (هیچ / فقط تیم خودش) به سرمایه‌گذاری دعوت می‌شود",
+    r2Seed?.href === "/invest" && r3Seed?.href === "/invest",
+    JSON.stringify([r2Seed?.href, r3Seed?.href])
+  );
+
+  // ج) ورود به BUILD (از مسیر transitionTo): فقط دارندهٔ واجد شرایط، یک‌بار
+  await transitionTo("BUILD", inMin(48 * 60));
+  await runShieldReminders();
+  await runShieldReminders();
+  c = await counts();
+  check(
+    "شروع BUILD: r1 یک یادآور تازه (جمعاً ۲)؛ r2/r3 که دیگر نمی‌توانند سرمایه‌گذاری کنند چیزی نمی‌گیرند",
+    c.r1 === 2 && c.r2 === 1 && c.r3 === 1 && c.chosen === 0 && c.racer === 0 && c.plain === 0,
+    JSON.stringify(c)
+  );
+
+  // د) ۱۰ دقیقه تا پایان BUILD: آخرین یادآور، یک‌بار
+  await setPhase("BUILD", inMin(10));
+  await runShieldReminders();
+  await Promise.all([runShieldReminders(), runShieldReminders()]);
+  c = await counts();
+  check(
+    "پایان BUILD: r1 دقیقاً یک یادآور دیگر (جمعاً ۳)، بقیه بدون تغییر",
+    c.r1 === 3 && c.r2 === 1 && c.r3 === 1 && c.chosen === 0 && c.racer === 0 && c.plain === 0,
+    JSON.stringify(c)
+  );
+
+  // هـ) بعد از انتخاب، حتی با پرچم‌های پاک‌شده هم یادآوری نمی‌رسد
+  const r1Choice = await chooseShieldTarget(r1.id, tC.id);
+  check("r1 در BUILD سپر را انتخاب می‌کند", r1Choice.ok, r1Choice.ok ? "" : r1Choice.error);
+  await resetShieldReminders();
+  await runShieldReminders();
+  c = await counts();
+  check("بعد از انتخاب r1 یادآور تازه‌ای نمی‌گیرد", c.r1 === 3, JSON.stringify(c));
+
+  // و) BUILD کوتاه‌تر از پنجرهٔ یادآور: فقط یک اعلان «رو به پایان»، نه دو اعلان پشت‌سرهم
+  const r4 = await makeUser("r4", "SHIELD", tD.id);
+  await prisma.investment.create({ data: { userId: r4.id, ideaId: tB.ideaId, amount: 5 } });
+  await resetShieldReminders();
+  await transitionTo("BUILD", inMin(10));
+  await runShieldReminders();
+  const r4List = await reminders(r4.id);
+  check("BUILD کوتاه: دارنده فقط یک یادآور می‌گیرد", r4List.length === 1, JSON.stringify(r4List.map((n) => n.body)));
+
+  // ز) خارج از فازهای مجاز چیزی ارسال نمی‌شود؛ برگشت به IDEATION پرچم‌ها را پاک می‌کند
+  const before = await prisma.notification.count({ where: { kind: SHIELD_REMINDER_KIND } });
+  await resetShieldReminders();
+  await setPhase("MARKET", inMin(10));
+  await runShieldReminders();
+  const afterMarket = await prisma.notification.count({ where: { kind: SHIELD_REMINDER_KIND } });
+  check("در MARKET هیچ یادآور سپری ارسال نمی‌شود", afterMarket === before, `${before} → ${afterMarket}`);
+  await setPhase("BUILD", inMin(10));
+  await runShieldReminders(); // r4 دوباره (پرچم پاک شده بود) → پرچم‌ها ساخته می‌شوند
+  await transitionTo("IDEATION", null);
+  const flagsLeft = await prisma.setting.count({ where: { key: { startsWith: "shield_reminder:" } } });
+  check("transitionTo(IDEATION) پرچم‌های یادآور را پاک می‌کند", flagsLeft === 0, `flags=${flagsLeft}`);
 
   console.log(`\nنتیجه: ${passed} PASS / ${failed} FAIL`);
   await prisma.$disconnect();

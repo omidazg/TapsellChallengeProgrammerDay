@@ -154,6 +154,8 @@ async function main() {
       update: { value: "" },
       create: { key: "phase_ends_at", value: "" },
     });
+    // پرچم‌های یادآور یک‌بارهٔ سپر (src/lib/shield-reminders.ts) — دور بعدی دوباره ارسال شوند.
+    await tx.setting.deleteMany({ where: { key: { startsWith: "shield_reminder:" } } });
   });
 
   console.log("بازنشانی انجام شد. فاز = REGISTRATION.");

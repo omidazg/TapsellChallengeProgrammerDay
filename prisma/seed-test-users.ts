@@ -43,15 +43,18 @@ const USERS: TestUser[] = [
   { local: "test8", nickname: "آزمایشی ۸", firstName: "نگار", lastName: "بی‌تیم", position: "توسعه‌دهندهٔ فرانت‌اند", department: "فرانت‌اند", role: "STORYTELLER", power: "BARGAIN" },
 ];
 
+/** شماره‌های آزمایشی ۰۹۹۹۹۹۹۹۹xx: هرگز پیامک واقعی نمی‌گیرند (lib/phone.ts) — کد در لاگ سرور/صفحه نمایش داده می‌شود */
+const testPhone = (n: number) => `099999999${String(n).padStart(2, "0")}`;
+
 const TEAMS = {
   A: { name: "تیم آزمایشی الف", slug: "test-team-a" },
   B: { name: "تیم آزمایشی ب", slug: "test-team-b" },
 } as const;
 
 /** در لیست سفید هست ولی حساب ندارد: برای تست مسیر ثبت‌نام */
-const WHITELISTED_ONLY = { email: `newcomer@${DOMAIN}`, firstName: "تازه", lastName: "وارد", position: "کارآموز", unit: "بک‌اند" };
+const WHITELISTED_ONLY = { email: `newcomer@${DOMAIN}`, phone: testPhone(9), firstName: "تازه", lastName: "وارد", position: "کارآموز", unit: "بک‌اند" };
 /** درخواست دسترسی در انتظار: برای تست تأیید/رد ادمین */
-const PENDING_REQUEST = { email: `pending@${DOMAIN}`, firstName: "منتظر", lastName: "تأیید", position: "کارشناس منابع انسانی", unit: "منابع انسانی" };
+const PENDING_REQUEST = { email: `pending@${DOMAIN}`, phone: testPhone(10), firstName: "منتظر", lastName: "تأیید", position: "کارشناس منابع انسانی", unit: "منابع انسانی" };
 
 async function main() {
   if (process.env.NODE_ENV === "production" && process.env.ALLOW_TEST_USERS !== "1") {
@@ -74,16 +77,18 @@ async function main() {
     teamIds[key] = team.id;
   }
 
-  for (const u of USERS) {
+  for (const [i, u] of USERS.entries()) {
     const email = `${u.local}@${DOMAIN}`;
+    const phone = testPhone(i);
     const passwordHash = u.isAdmin ? adminHash : playerHash;
     const teamId = u.team ? teamIds[u.team] : undefined;
     await prisma.user.upsert({
       where: { email },
       // تیم فعلی دست نمی‌خورد تا جابه‌جایی‌های حین تست با اجرای دوباره پاک نشود
-      update: { passwordHash, blockedAt: null, isAdmin: !!u.isAdmin },
+      update: { passwordHash, blockedAt: null, isAdmin: !!u.isAdmin, phone },
       create: {
         email,
+        phone,
         passwordHash,
         nickname: u.nickname,
         department: u.department,
@@ -96,8 +101,8 @@ async function main() {
     });
     await prisma.allowedEmail.upsert({
       where: { email },
-      update: {},
-      create: { email, firstName: u.firstName, lastName: u.lastName, position: u.position, unit: u.department, note: "کاربر آزمایشی" },
+      update: { phone },
+      create: { email, phone, firstName: u.firstName, lastName: u.lastName, position: u.position, unit: u.department, note: "کاربر آزمایشی" },
     });
   }
 
@@ -112,10 +117,16 @@ async function main() {
     create: PENDING_REQUEST,
   });
 
+  // تیم «ب» از قبل سرپرست دارد (test4) تا حالت فقط‌خواندنی دیده شود؛ تیم «الف» برای تست رأی‌گیری بی‌سرپرست می‌ماند
+  const leaderB = await prisma.user.findUnique({ where: { email: `test4@${DOMAIN}` }, select: { id: true, teamId: true } });
+  if (leaderB?.teamId === teamIds.B) {
+    await prisma.team.updateMany({ where: { id: teamIds.B, leaderId: null }, data: { leaderId: leaderB.id, leaderElectedAt: new Date() } });
+  }
+
   console.log("[seed-test-users] done:");
-  for (const u of USERS) {
+  for (const [i, u] of USERS.entries()) {
     const team = u.team ? TEAMS[u.team].name : "بدون تیم";
-    console.log(`  ${u.local}@${DOMAIN}  ${u.isAdmin ? TEST_ADMIN_PASSWORD : TEST_PLAYER_PASSWORD}  ${u.isAdmin ? "ادمین" : team}`);
+    console.log(`  ${u.local}@${DOMAIN}  ${u.isAdmin ? TEST_ADMIN_PASSWORD : TEST_PLAYER_PASSWORD}  ${testPhone(i)}  ${u.isAdmin ? "ادمین" : team}`);
   }
 }
 

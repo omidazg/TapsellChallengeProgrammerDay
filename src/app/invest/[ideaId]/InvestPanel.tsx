@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { coins } from "@/lib/persian";
 import { Alert } from "@/components/ui";
-import { DEFAULTS } from "@/lib/constants";
 import { investAction, type InvestActionState } from "../actions";
 
 // کانفتی جشن فقط پس از سرمایه‌گذاری/استفاده از قدرت موفق لازم است؛ با ssr:false و mount شرطی
@@ -26,10 +25,13 @@ export function InvestPanel({
   ideaId,
   seedWallet,
   maxAllowed,
+  maxPerTarget,
 }: {
   ideaId: string;
   seedWallet: number;
   maxAllowed: number;
+  /** سقف مؤثر سرمایه‌گذاری روی یک ایده (تنظیم برگزارکننده یا پیش‌فرض) */
+  maxPerTarget: number;
 }) {
   const [state, formAction] = useActionState<InvestActionState, FormData>(investAction, {});
   const [amount, setAmount] = useState(1);
@@ -48,7 +50,7 @@ export function InvestPanel({
   if (maxAllowed <= 0) {
     return (
       <Alert kind="info">
-        دیگر امکان سرمایه‌گذاری بیشتر روی این ایده را نداری (به سقف {coins(DEFAULTS.maxPerTarget)} خودت روی این ایده رسیده‌ای
+        دیگر امکان سرمایه‌گذاری بیشتر روی این ایده را نداری (به سقف {coins(maxPerTarget)} خودت روی این ایده رسیده‌ای
         یا کیف بذرت خالی است).
       </Alert>
     );
