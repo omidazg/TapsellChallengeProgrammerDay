@@ -5,7 +5,7 @@
  * (فقط در secure context؛ روی HTTP ساده مرورگرها اصلاً اجازهٔ ثبت نمی‌دهند).
  */
 
-const CACHE_VERSION = "arena-sw-v1";
+const CACHE_VERSION = "arena-sw-v2";
 const OFFLINE_URL = "/offline";
 const PRECACHE_URLS = [OFFLINE_URL, "/icons/icon-192.png"];
 
@@ -14,7 +14,9 @@ self.addEventListener("install", (event) => {
     (async () => {
       const cache = await caches.open(CACHE_VERSION);
       // هر URL جدا cache.add می‌شود تا شکست یکی (مثلاً آیکون هنوز ساخته نشده) کل install را نشکند.
-      await Promise.allSettled(PRECACHE_URLS.map((url) => cache.add(url)));
+      // بدون کوکی: صفحهٔ /offline داخل layout (هدر با نیک‌نیم و موجودی کیف) رندر می‌شود؛ با کوکی،
+      // دادهٔ کاربر واردشده در کش می‌ماند و بعد از خروج هم به نفر بعدی روی همین مرورگر نشان داده می‌شد.
+      await Promise.allSettled(PRECACHE_URLS.map((url) => cache.add(new Request(url, { credentials: "omit" }))));
       await self.skipWaiting();
     })()
   );
@@ -82,7 +84,14 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(
     (async () => {
       const allClients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      const target = new URL(href, self.location.origin).href;
+      let target = new URL("/", self.location.origin).href;
+      try {
+        const url = new URL(href, self.location.origin);
+        // فقط مسیرهای همین سایت؛ href خارجی (یا javascript:) در payload نباید کاربر را به جای دیگری ببرد.
+        if (url.origin === self.location.origin) target = url.href;
+      } catch {
+        /* href نامعتبر → صفحهٔ اصلی */
+      }
 
       for (const client of allClients) {
         if ("focus" in client) {

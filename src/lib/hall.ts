@@ -42,11 +42,12 @@ const HALL_CACHE_KEY = "hall:payload";
 const HALL_CACHE_TTL_MS = 2_000;
 const TOP_TEAMS_COUNT = 5;
 
-async function buildTopTeams(): Promise<{ teams: HallTeam[]; metricLabel: string }> {
+async function buildTopTeams(closed: boolean): Promise<{ teams: HallTeam[]; metricLabel: string }> {
+  // «closed» مثل صفحهٔ جدول از فاز می‌آید (نه از تسویه)؛ وگرنه بین پایان بازی و تسویه، جدول امتیاز کل
+  // و سالن هنوز فروش خالص نشان می‌داد. دادهٔ تسویه‌شده، اگر باشد، ملاک است.
   const settledAt = await getSettledAt();
-  const closed = !!settledAt;
   const [output, teams] = await Promise.all([
-    closed ? loadSettledOutput() : computeScoresCached(),
+    settledAt ? loadSettledOutput() : computeScoresCached(),
     prisma.team.findMany({ select: { id: true, name: true, logoSeed: true } }),
   ]);
   const teamMap = new Map(teams.map((t) => [t.id, t]));
@@ -87,9 +88,9 @@ async function buildLiveAuction(): Promise<HallAuction> {
 }
 
 async function buildHallPayload(): Promise<HallPayload> {
-  const [{ phase, endsAt }, { teams, metricLabel }, auction, ticker, feed] = await Promise.all([
-    getPhase(),
-    buildTopTeams(),
+  const { phase, endsAt } = await getPhase();
+  const [{ teams, metricLabel }, auction, ticker, feed] = await Promise.all([
+    buildTopTeams(phase === "CLOSED"),
     buildLiveAuction(),
     getTicker(15),
     getFeedCached(),

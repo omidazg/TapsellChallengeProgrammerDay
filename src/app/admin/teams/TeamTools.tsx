@@ -22,7 +22,18 @@ function MergeTeamsCard({ teams }: { teams: TeamOption[] }) {
   const [state, action] = useActionState<TeamsActionState, FormData>(mergeTeamsAction, {});
 
   return (
-    <form action={action} className="card p-5 space-y-3 anim-rise">
+    <form
+      action={action}
+      onSubmit={(e) => {
+        const form = e.currentTarget;
+        const a = form.elements.namedItem("teamAId") as HTMLSelectElement | null;
+        const b = form.elements.namedItem("teamBId") as HTMLSelectElement | null;
+        const nameA = a?.selectedOptions[0]?.textContent ?? "";
+        const nameB = b?.selectedOptions[0]?.textContent ?? "";
+        if (!confirm(`اعضای «${nameB}» به «${nameA}» منتقل و تیم «${nameB}» حذف شود؟ این کار برگشت‌ناپذیر است.`)) e.preventDefault();
+      }}
+      className="card p-5 space-y-3 anim-rise"
+    >
       <h3 className="font-black text-brand-navy">ادغام دو تیم</h3>
       <p className="text-xs text-brand-slate">اعضای «تیم دوم» به «تیم اول» منتقل می‌شوند و تیم دوم حذف می‌شود (اگر ایده/محصول نداشته باشد و ظرفیت کافی باشد).</p>
       {state.error && <Alert kind="error">{state.error}</Alert>}
@@ -54,6 +65,7 @@ function AutoComposeCard() {
   const [pending, startTransition] = useTransition();
 
   function run() {
+    if (!confirm("همهٔ کاربران بی‌تیم به تیم‌ها تخصیص داده شوند (و در صورت نیاز تیم تازه ساخته شود)؟")) return;
     setError(null);
     setSummary(null);
     startTransition(async () => {
@@ -93,7 +105,7 @@ function TeamlessUsersCard({ users, teams }: { users: TeamlessUser[]; teams: Tea
             <Avatar seed={u.avatarSeed || u.id} size={22} />
             <span className="text-sm font-bold text-brand-navy">{u.nickname}</span>
             <label htmlFor={`add-${u.id}`} className="sr-only">افزودن {u.nickname} به تیم</label>
-            <select id={`add-${u.id}`} name="targetTeamId" defaultValue="" className="input !py-0.5 !px-1.5 !text-[11px] !w-auto">
+            <select id={`add-${u.id}`} name="targetTeamId" required defaultValue="" className="input !py-0.5 !px-1.5 !text-[11px] !w-auto">
               <option value="" disabled>افزودن به…</option>
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>

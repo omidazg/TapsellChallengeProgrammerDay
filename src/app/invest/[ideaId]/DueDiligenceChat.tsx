@@ -19,7 +19,19 @@ function AskButton({ disabled = false }: { disabled?: boolean }) {
   );
 }
 
-export function DueDiligenceChat({ ideaId, chats, aiOff = false }: { ideaId: string; chats: ChatRow[]; aiOff?: boolean }) {
+export function DueDiligenceChat({
+  ideaId,
+  chats,
+  aiOff = false,
+  closed = false,
+}: {
+  ideaId: string;
+  chats: ChatRow[];
+  aiOff?: boolean;
+  /** پس از پایان دور سرمایه‌گذاری پرسش جدید ممکن نیست؛ تاریخچه فقط خواندنی است */
+  closed?: boolean;
+}) {
+  const disabled = aiOff || closed;
   const formRef = useRef<HTMLFormElement>(null);
   const [state, formAction] = useActionState<ChatActionState, FormData>(dueDiligenceAction, {});
 
@@ -34,6 +46,7 @@ export function DueDiligenceChat({ ideaId, chats, aiOff = false }: { ideaId: str
       {aiOff && <div className="mb-4"><AiUnavailable /></div>}
       {state.aiUnavailable && <div className="mb-4"><AiUnavailable reason={state.aiReason ?? "off"} /></div>}
       {state.error && <Alert kind="error">{state.error}</Alert>}
+      {closed && !aiOff && <p className="mb-4 text-xs text-brand-slate">دور سرمایه‌گذاری تمام شده؛ فقط پرسش‌وپاسخ‌های قبلی قابل مشاهده است.</p>}
 
       {chats.length === 0 ? (
         <p className="mb-4 text-sm text-brand-slate">هنوز سؤالی پرسیده نشده است.</p>
@@ -61,11 +74,11 @@ export function DueDiligenceChat({ ideaId, chats, aiOff = false }: { ideaId: str
           required
           minLength={3}
           maxLength={300}
-          disabled={aiOff}
+          disabled={disabled}
           className="input flex-1 disabled:opacity-50"
           placeholder="سؤالت را از متن ایده بپرس…"
         />
-        <AskButton disabled={aiOff} />
+        <AskButton disabled={disabled} />
       </form>
     </div>
   );

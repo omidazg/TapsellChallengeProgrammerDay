@@ -80,7 +80,7 @@ export default async function AdminSettlementPage() {
             جریمهٔ سکهٔ خرج‌نشدهٔ هر تیم (در این پیش‌نمایش {fa(Math.round(totalPenalty * 10) / 10)} امتیاز)
             در نتیجهٔ تیم ثبت می‌گردد و امتیاز همهٔ تیم‌ها قفل می‌شود.
           </p>
-          <SettleButton settled={!!settledAt} />
+          <SettleButton settled={!!settledAt} phaseClosed={phase === "CLOSED"} />
         </div>
 
         <section>

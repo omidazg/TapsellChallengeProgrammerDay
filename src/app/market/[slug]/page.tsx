@@ -14,14 +14,16 @@ import { PurchasePanel } from "./PurchasePanel";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const product = await getProductBySlug(slug);
-  return { title: product?.name ?? "محصول" };
+  // نام محصول ثبت‌نهایی‌نشده (پیش‌نویس) نباید از طریق <title> نشت کند.
+  return { title: product?.submittedAt ? product.name : "محصول" };
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const user = await requireUser();
   const product = await getProductBySlug(slug);
-  if (!product) notFound();
+  // پیش‌نویس محصول (هنوز ثبت نهایی نشده) فقط برای اعضای همان تیم قابل مشاهده است.
+  if (!product || (!product.submittedAt && user.teamId !== product.teamId)) notFound();
 
   const { phase } = await getPhase();
   if (phaseIndex(phase) < phaseIndex("BUILD")) {
@@ -84,7 +86,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               </div>
             )}
 
-            {product.demoUrl && (
+            {product.demoUrl && /^https?:\/\//i.test(product.demoUrl) && (
               <a href={product.demoUrl} target="_blank" rel="noopener noreferrer" className="btn-navy inline-flex">
                 مشاهدهٔ دمو ↗
               </a>

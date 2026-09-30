@@ -22,14 +22,19 @@ export function HypeClaim({ power, powerUsed }: { power: string; powerUsed: bool
         {error && <Alert kind="error">{error}</Alert>}
         <button
           disabled={pending}
-          onClick={() =>
+          onClick={() => {
+            if (!confirm("قدرت «هیاهو» فقط یک‌بار قابل استفاده است. اولین جایگاه «کارت محصول ویژه» باز برای تیمت گرفته شود؟")) return;
             startTransition(async () => {
               setError(null);
-              const res = await claimHypeAction();
-              if (res?.error) setError(res.error);
-              else router.refresh();
-            })
-          }
+              try {
+                const res = await claimHypeAction();
+                if (res?.error) setError(res.error);
+                else router.refresh();
+              } catch {
+                setError("ارتباط با سرور برقرار نشد؛ دوباره تلاش کن.");
+              }
+            });
+          }}
           className="btn-primary w-full sm:w-auto !px-4 !py-2"
         >
           استفاده از قدرت

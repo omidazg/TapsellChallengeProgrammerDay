@@ -13,6 +13,18 @@ import { LeaderCard, type LeaderCardState } from "./LeaderCard";
 
 const TEAM_FULL = 3;
 
+const noopSubscribe = () => () => {};
+
+/** نشانی کامل لینک پیوستن؛ روی سرور و در hydration مسیر نسبی برمی‌گرداند تا ناهمخوانی رندر پیش نیاید */
+function useJoinLink(slug: string) {
+  const origin = useSyncExternalStore(
+    noopSubscribe,
+    () => window.location.origin,
+    () => ""
+  );
+  return `${origin}/join/${slug}`;
+}
+
 export function TeamPanel({
   team,
   coverage,
@@ -51,7 +63,7 @@ export function TeamPanel({
             <Link href="/team/settings" className="btn-cyan">
               ⚙️ {leader.leaderId === currentUserId || team.members.length <= 1 ? "تنظیمات تیم" : "نقش و قدرت اعضا"}
             </Link>
-            {registrationOpen && <LeaveButton />}
+            {registrationOpen && <LeaveButton lastMember={team.members.length <= 1} />}
           </div>
         </div>
 
@@ -127,6 +139,7 @@ function IncompleteTeamCard({
   formingOpen: boolean;
 }) {
   const pct = Math.round((team.members.length / TEAM_FULL) * 100);
+  const full = team.members.length >= TEAM_FULL;
   const missingText =
     missingRoles.length > 0 ? `نقش ${missingRoles.map((r) => r.label).join("، ")} خالی است.` : "";
 
@@ -136,11 +149,22 @@ function IncompleteTeamCard({
         <h3 className="font-black text-brand-red"><span aria-hidden>⚠️</span> تیمت هنوز کامل نیست{missingText ? `: ${missingText}` : "."}</h3>
         <span className="text-xs font-bold text-brand-navy fa-num">اعضا {fa(team.members.length)}/{fa(TEAM_FULL)}</span>
       </div>
-      <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-white">
+      <div
+        className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-white"
+        role="progressbar"
+        aria-label="تکمیل اعضای تیم"
+        aria-valuemin={0}
+        aria-valuemax={TEAM_FULL}
+        aria-valuenow={team.members.length}
+      >
         <div className="h-full rounded-full bg-brand-red transition-all" style={{ width: `${pct}%` }} />
       </div>
 
-      {formingOpen ? (
+      {full ? (
+        <p className="mt-3 text-sm text-brand-navy">
+          ظرفیت تیم پر است و عضو تازه‌ای نمی‌پذیرد؛ نبودِ این نقش را با تقسیم کار جبران کن یا برای جابه‌جایی با برگزارکننده هماهنگ کن.
+        </p>
+      ) : formingOpen ? (
         <p className="mt-3 text-sm text-brand-navy">
           یک هم‌تیمی دعوت کن یا لینک پیوستن تیمت را برایش بفرست — تا پایان فاز «اتاق ایده» فرصت داری.
         </p>
@@ -150,26 +174,20 @@ function IncompleteTeamCard({
         </p>
       )}
 
-      <div className="mt-3">
-        <CopyJoinLink slug={team.slug} />
-      </div>
+      {formingOpen && !full && (
+        <div className="mt-3">
+          <CopyJoinLink slug={team.slug} />
+        </div>
+      )}
     </div>
   );
 }
-
-const noopSubscribe = () => () => {};
 
 function CopyJoinLink({ slug }: { slug: string }) {
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
   const inputId = useMemo(() => `join-link-${slug}`, [slug]);
-  // origin فقط در کلاینت معلوم است؛ روی سرور خالی می‌ماند تا hydration mismatch رخ ندهد.
-  const origin = useSyncExternalStore(
-    noopSubscribe,
-    () => window.location.origin,
-    () => "",
-  );
-  const url = `${origin}/join/${slug}`;
+  const url = useJoinLink(slug);
 
   async function copy() {
     const ok = await copyText(`${window.location.origin}/join/${slug}`);
@@ -198,7 +216,7 @@ function CopyJoinLink({ slug }: { slug: string }) {
         onFocus={(e) => e.currentTarget.select()}
         className="input !py-1.5 !px-3 flex-1 min-w-0 sm:min-w-[260px] text-xs"
       />
-      <button type="button" onClick={copy} className="btn-cyan !py-1.5 !px-3 text-sm shrink-0">
+      <button type="button" onClick={copy} className="btn-cyan !py-1.5 !px-3 text-sm shrink-0" aria-live="polite">
         {copied ? "کپی شد ✓" : "کپی لینک دعوت"}
       </button>
       {failed && (
@@ -217,11 +235,15 @@ function ChecklistItem({ done, label, href }: { done: boolean; label: string; hr
   );
 }
 
-function LeaveButton() {
+function LeaveButton({ lastMember }: { lastMember: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function leave() {
+    const msg = lastMember
+      ? "تو آخرین عضو این تیمی؛ با خروج، تیم و دعوت‌نامه‌هایش حذف می‌شود. مطمئنی؟"
+      : "مطمئنی می‌خواهی تیم را ترک کنی؟";
+    if (!window.confirm(msg)) return;
     setError(null);
     startTransition(async () => {
       const res = await leaveTeamAction();
@@ -256,11 +278,7 @@ function InviteForm({
   const [error, setError] = useState<string | null>(null);
   const [okEmail, setOkEmail] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-
-  function joinLink() {
-    if (typeof window === "undefined") return `/join/${slug}`;
-    return `${window.location.origin}/join/${slug}`;
-  }
+  const joinLink = useJoinLink(slug);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -294,7 +312,7 @@ function InviteForm({
                 دعوت ثبت شد؛ چون ایمیلی ارسال نمی‌شود، این لینک را برای {okEmail} بفرست:
               </Alert>
               <div dir="ltr" className="break-all rounded-xl bg-brand-ice px-3 py-2 text-xs font-bold text-brand-navy">
-                {joinLink()}
+                {joinLink}
               </div>
             </div>
           )}
@@ -318,10 +336,12 @@ function InviteForm({
       )}
       {pendingInvites.length > 0 && (
         <div className="mt-4 space-y-1.5">
+          <div className="text-xs font-bold text-brand-slate">دعوت‌های در انتظار پاسخ</div>
           {pendingInvites.map((inv) => (
             <div key={inv.id} className="flex flex-wrap items-center justify-between gap-1 rounded-xl bg-brand-ice px-3 py-2 text-xs">
               <span dir="ltr" className="min-w-0 break-all text-brand-navy">{inv.email}</span>
-              <span className="text-brand-slate shrink-0">{jdatetime(inv.createdAt)}</span>
+              {/* ساعت به منطقهٔ زمانی مرورگر وابسته است و ممکن است با رندر سرور فرق کند */}
+              <span className="text-brand-slate shrink-0" suppressHydrationWarning>{jdatetime(inv.createdAt)}</span>
             </div>
           ))}
         </div>

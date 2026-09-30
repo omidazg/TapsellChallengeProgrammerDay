@@ -27,6 +27,7 @@ export async function saveJuryScoreAction(prevState: JuryActionState, formData: 
     where: { id: parsed.data.productId },
     select: { juryQuality: true, juryTeaser: true },
   });
+  if (!before) return { error: "محصول پیدا نشد" };
   await prisma.product.update({
     where: { id: parsed.data.productId },
     data: { juryQuality: parsed.data.juryQuality, juryTeaser: parsed.data.juryTeaser },

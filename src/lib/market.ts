@@ -134,6 +134,11 @@ export async function purchaseProduct(userId: string, productId: string): Promis
 
   try {
     return await prisma.$transaction(async (tx) => {
+      // فاز دوباره داخل همان تراکنش خوانده می‌شود (مثل investCore) تا خریدی که هم‌زمان با بسته‌شدن
+      // بازار توسط ادمین می‌رسد، پس از پایان فاز ثبت نشود.
+      const phaseRow = await tx.setting.findUnique({ where: { key: "phase" } });
+      if (phaseRow?.value !== "MARKET") throw new UserFacingError("خرید فقط در فاز «روز بازار» ممکن است");
+
       const freshUser = await tx.user.findUniqueOrThrow({ where: { id: userId } });
       const isOwnTeam = !!freshUser.teamId && freshUser.teamId === product.teamId;
 
@@ -227,7 +232,8 @@ export async function getCurrentAdSlotWinners(): Promise<AdSlotWinner[]> {
       where: { id: slot.winnerTeamId },
       include: { product: true },
     });
-    if (!team || !team.product) continue;
+    // محصول ثبت‌نهایی‌نشده در بازار نمایش داده نمی‌شود (صفحه‌اش هم 404 است)، پس تبلیغش هم نه.
+    if (!team || !team.product || !team.product.submittedAt) continue;
     winners.push({
       kind: slot.kind as "BANNER" | "FEATURED",
       teamId: team.id,

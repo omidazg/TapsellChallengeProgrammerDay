@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/Avatar";
 import { Alert } from "@/components/ui";
-import { fa, coins, jtime } from "@/lib/persian";
+import { fa, coins, jtime, toEnDigits } from "@/lib/persian";
 import { bidOnSlotAction } from "./actions";
 import { AD_SLOT_KINDS } from "@/lib/constants";
 import type { SlotCell } from "@/lib/adslots";
@@ -86,7 +86,10 @@ function Cell({
   canBid: boolean;
   onDone: () => void;
 }) {
-  const [value, setValue] = useState(cell.myBid ?? 1);
+  // متن خام (رقم فارسی هم قبول است)؛ input عددی رقم فارسی را رد می‌کند.
+  const [raw, setRaw] = useState(String(cell.myBid ?? 1));
+  const digits = toEnDigits(raw.trim());
+  const value = /^\d+$/.test(digits) ? Number(digits) : 0;
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -112,9 +115,13 @@ function Cell({
   async function submit() {
     setError(null);
     startTransition(async () => {
-      const res = await bidOnSlotAction(cell.id, value);
-      if (res?.error) setError(res.error);
-      else onDone();
+      try {
+        const res = await bidOnSlotAction(cell.id, value);
+        if (res?.error) setError(res.error);
+        else onDone();
+      } catch {
+        setError("ارتباط با سرور برقرار نشد؛ دوباره تلاش کن.");
+      }
     });
   }
 
@@ -128,12 +135,15 @@ function Cell({
       ) : myTeamId ? (
         <div className="flex items-center gap-1.5">
           <input
-            type="number"
-            min={1}
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            dir="ltr"
             aria-label={`مبلغ پیشنهاد برای ${AD_SLOT_KINDS[cell.kind as Kind].label} ساعت ${jtime(new Date(cell.hourStart))}`}
-            className="input !py-1.5 !px-2 !text-sm w-20"
-            value={value}
-            onChange={(e) => setValue(Number(e.target.value))}
+            className="input fa-num !py-1.5 !px-2 !text-sm w-20"
+            value={raw}
+            aria-invalid={value <= 0 ? true : undefined}
+            onChange={(e) => setRaw(e.target.value)}
           />
           <button
             disabled={pending || value <= 0}

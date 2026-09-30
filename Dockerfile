@@ -54,6 +54,9 @@ RUN npx prisma generate
 COPY docker/entrypoint.sh /app/docker/entrypoint.sh
 RUN chmod +x /app/docker/entrypoint.sh
 ENV NODE_ENV=production
+# Game times are shown/parsed in Tehran time (jdate/jtime use local hours;
+# Node resolves this zone from its bundled ICU data, no tzdata needed).
+ENV TZ=Asia/Tehran
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
 
 ##############################
@@ -62,6 +65,9 @@ ENTRYPOINT ["/app/docker/entrypoint.sh"]
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+# Game times are shown/parsed in Tehran time (jdate/jtime use local hours;
+# Node resolves this zone from its bundled ICU data, no tzdata needed).
+ENV TZ=Asia/Tehran
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 

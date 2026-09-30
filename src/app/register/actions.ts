@@ -93,6 +93,9 @@ export async function checkRegisterEmailAction(
 ): Promise<{ ok: true } | { error: string; needsAccess?: boolean }> {
   const email = z.string().trim().toLowerCase().max(120).email().safeParse(rawEmail);
   if (!email.success) return { error: FIELD_ERRORS.email };
+  // بدون سقف، این اکشن ابزار بی‌محدودیتِ کشف ایمیل‌های لیست سفید و حساب‌های موجود بود
+  const limit = rateLimit("register-check:ip", await clientIp(), REGISTER_IP_RULE());
+  if (!limit.ok) return { error: rateLimitMessage(limit.retryAfterSec) };
   const existing = await prisma.user.findUnique({ where: { email: email.data }, select: { id: true } });
   if (existing) return { error: "این ایمیل قبلاً ثبت‌نام کرده است؛ از صفحهٔ ورود وارد شو." };
   const ph = verifiedPhone(rawPhone, phoneProof);
@@ -158,7 +161,7 @@ export async function registerAction(input: RegisterInput): Promise<{ error: str
   const passwordHash = await hashPassword(data.password);
   const avatarSeed = `${data.role}-${data.power}-${data.coffee}-${data.bugs}-${data.sleep}-${data.confidence}-${data.nickname}`;
 
-  let userId: string;
+  let session: { id: string; sessionVersion: number };
   try {
     const user = await prisma.user.create({
       data: {
@@ -177,8 +180,9 @@ export async function registerAction(input: RegisterInput): Promise<{ error: str
         seedWallet,
         buyWallet,
       },
+      select: { id: true, sessionVersion: true },
     });
-    userId = user.id;
+    session = user;
   } catch (e) {
     // فقط نقض کلید یکتای ایمیل را به پیام «تکراری» ترجمه کن؛ بقیه خطای سرور است
     if (typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002") {
@@ -188,7 +192,7 @@ export async function registerAction(input: RegisterInput): Promise<{ error: str
     return { error: "ثبت‌نام انجام نشد؛ دوباره تلاش کن." };
   }
 
-  await createSession(userId, 0);
+  await createSession(session.id, session.sessionVersion);
   // بدون next: به صفحهٔ اصلی با پرچم welcome=1 برو تا راهنمای شروع (OnboardingTour) یک‌بار نمایش داده شود.
   // اگر next وجود دارد، طبق قرارداد safeNext همان مسیر محترم شمرده می‌شود و پرچم welcome رد می‌شود.
   redirect(safeNext(input.next) ?? "/?welcome=1");

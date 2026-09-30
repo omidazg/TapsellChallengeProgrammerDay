@@ -7,7 +7,7 @@ import { Alert } from "@/components/ui";
 import { settleNowAction, type SettleActionState } from "../actions";
 import { fa, coins } from "@/lib/persian";
 
-export function SettleButton({ settled }: { settled: boolean }) {
+export function SettleButton({ settled, phaseClosed }: { settled: boolean; phaseClosed: boolean }) {
   const router = useRouter();
   const [refreshing, startRefresh] = useTransition();
   const [state, formAction, pending] = useActionState<SettleActionState, FormData>(
@@ -18,7 +18,15 @@ export function SettleButton({ settled }: { settled: boolean }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-3">
-        <form action={formAction}>
+        <form
+          action={formAction}
+          onSubmit={(e) => {
+            const warn = phaseClosed
+              ? ""
+              : "\n\nهشدار: بازی هنوز در فاز «پایان بازی» نیست؛ سودها همین حالا به کیف خرید واریز و امتیازها قفل می‌شوند و خریدهای بعدی در نتیجه حساب نمی‌شوند.";
+            if (!confirm(`تسویهٔ نهایی اجرا شود؟ این کار برگشت‌ناپذیر است.${warn}`)) e.preventDefault();
+          }}
+        >
           <button type="submit" disabled={pending || settled} className="btn-primary disabled:opacity-50">
             {pending ? "در حال تسویه…" : "تسویهٔ نهایی"}
           </button>

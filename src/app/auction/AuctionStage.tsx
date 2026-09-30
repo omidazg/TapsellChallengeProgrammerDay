@@ -7,7 +7,7 @@ import { Avatar } from "@/components/Avatar";
 import { Alert, Coin } from "@/components/ui";
 import { ConnectionBanner } from "@/components/ConnectionBanner";
 import { usePolling } from "@/hooks/usePolling";
-import { fa, coins } from "@/lib/persian";
+import { fa, coins, toEnDigits } from "@/lib/persian";
 import { placeBidAction, secondWindAction, bidBudgetAction } from "./actions";
 import type { AuctionState, BidBudget } from "@/lib/auction";
 
@@ -24,6 +24,8 @@ const SSE_MAX_ERRORS = 3;
 const SSE_RETRY_MS = 60_000;
 /** حداقل فاصلهٔ اعلان‌های صفحه‌خوان در ناحیهٔ aria-live. */
 const ANNOUNCE_MIN_GAP_MS = 3000;
+/** خطای شبکه/سرور هنگام صدا زدن اکشن (مثلاً ری‌استارت سرور) نباید صفحه را به error boundary بفرستد. */
+const NETWORK_ERROR = "ارتباط با سرور برقرار نشد؛ دوباره تلاش کن.";
 
 type StreamPayload = { id: string | null; state: AuctionState | null };
 
@@ -85,10 +87,12 @@ export function AuctionStage({
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
   const [outbid, setOutbid] = useState(false);
-  const [amount, setAmount] = useState<number | "">("");
+  // متن خام ورودی (ممکن است رقم فارسی داشته باشد)؛ عدد با toEnDigits از آن ساخته می‌شود.
+  const [amount, setAmount] = useState("");
   const wasHighest = useRef(false);
   const lastStatus = useRef<string | null>(null);
   const lastFetchedId = useRef<string | null>(null);
+  const prevAuctionId = useRef<string | null>(initialId);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(() =>
@@ -281,12 +285,16 @@ export function AuctionStage({
       if (!auctionId) return;
       setError(null);
       startTransition(async () => {
-        const res = await placeBidAction(auctionId, value);
-        if ("budget" in res && res.budget && res.budget.auctionId === budgetFor.current) setBudget(res.budget);
-        if ("error" in res && res.error) setError(res.error);
-        else {
-          setOutbid(false);
-          setAmount("");
+        try {
+          const res = await placeBidAction(auctionId, value);
+          if ("budget" in res && res.budget && res.budget.auctionId === budgetFor.current) setBudget(res.budget);
+          if ("error" in res && res.error) setError(res.error);
+          else {
+            setOutbid(false);
+            setAmount("");
+          }
+        } catch {
+          setError(NETWORK_ERROR);
         }
         // چه موفق چه ناموفق: بلافاصله وضعیت تازه را بگیر (SSE هم تغییر را می‌فرستد).
         await fetchState(auctionId).catch(() => null);
@@ -298,13 +306,25 @@ export function AuctionStage({
   const claimSecondWind = useCallback(() => {
     if (!auctionId) return;
     setError(null);
+    if (!confirm("نفس دوم فقط یک‌بار در کل بازی قابل استفاده است. همین حالا این حراج را دو دقیقه تمدید کنم؟")) return;
     startTransition(async () => {
-      const res = await secondWindAction(auctionId);
-      if ("error" in res && res.error) setError(res.error);
-      else router.refresh();
+      try {
+        const res = await secondWindAction(auctionId);
+        if ("error" in res && res.error) setError(res.error);
+        else router.refresh();
+      } catch {
+        setError(NETWORK_ERROR);
+      }
       await fetchState(auctionId).catch(() => null);
     });
   }, [auctionId, fetchState, router]);
+
+  // حراج عوض شد (قبلی تسویه شد و بعدی بلافاصله زنده شد، یا صف تمام شد): ممکن است وضعیت ENDED
+  // حراج قبلی هیچ‌وقت به کلاینت نرسیده باشد؛ پس کیف خرید و فهرست صف/پایان‌یافته‌ها را از سرور تازه کن.
+  useEffect(() => {
+    if (prevAuctionId.current !== auctionId) router.refresh();
+    prevAuctionId.current = auctionId;
+  }, [auctionId, router]);
 
   // وضعیتِ مانده از حراج قبلی نباید نمایش داده شود.
   const current = auctionId && state && state.id === auctionId ? state : null;
@@ -343,6 +363,16 @@ export function AuctionStage({
     </div>
   );
 
+  if (!current && auctionId) {
+    return (
+      <div className="card p-10 text-center" aria-busy="true">
+        {banner}
+        {liveRegion}
+        <p className="text-brand-slate">در حال دریافت وضعیت حراج…</p>
+      </div>
+    );
+  }
+
   if (!current) {
     return (
       <div className="card p-10 text-center anim-pop">
@@ -360,6 +390,8 @@ export function AuctionStage({
   const endsAtMs = current.endsAt ? new Date(current.endsAt).getTime() : null;
   const remaining = endsAtMs ? endsAtMs - now : 0;
   const isLive = current.status === "LIVE";
+  // زمان تمام شده ولی تسویه هنوز نرسیده: دکمه‌ها غیرفعال تا پیشنهاد بی‌فایده (و خطای «تمام شده») ثبت نشود.
+  const biddingOpen = isLive && remaining > 0;
   const urgent = isLive && remaining <= 30_000;
   const isMyTeam = !!currentUser.teamId && current.product.teamId === currentUser.teamId;
   const quickAmounts = QUICK_STEPS.map((step) => current.nextMin + step);
@@ -372,8 +404,10 @@ export function AuctionStage({
   const reservedHere = iLead && current.highest ? current.highest.amount : 0;
   const reserved = reservedElsewhere + reservedHere;
   const cantAffordNext = current.nextMin > spendable;
-  const typed = amount === "" ? null : Number(amount);
-  const canSubmitTyped = !pending && typed !== null && typed >= current.nextMin && typed <= spendable;
+  const typedText = toEnDigits(amount.trim()).replace(/[٬,\s]/g, "");
+  const typed = typedText === "" || !/^\d+$/.test(typedText) ? null : Number(typedText);
+  const canSubmitTyped =
+    biddingOpen && !pending && typed !== null && typed >= current.nextMin && typed <= spendable;
 
   return (
     <div className="grid lg:grid-cols-[1.4fr_1fr] gap-6">
@@ -461,7 +495,7 @@ export function AuctionStage({
                     <button
                       key={v}
                       type="button"
-                      disabled={pending || overWallet}
+                      disabled={pending || overWallet || !biddingOpen}
                       onClick={() => submitBid(v)}
                       aria-label={`ثبت پیشنهاد ${coins(v)}${i === 0 ? " (حداقل مجاز)" : ` (حداقل به‌علاوهٔ ${fa(QUICK_STEPS[i])})`}${
                         overWallet ? "، بیشتر از موجودی قابل‌خرج" : ""
@@ -483,18 +517,19 @@ export function AuctionStage({
                 <label htmlFor="bid-amount" className="sr-only">
                   مبلغ پیشنهاد دلخواه (سکه)
                 </label>
+                {/* type=text تا رقم فارسی هم پذیرفته شود (input عددی رقم فارسی را رد می‌کند). */}
                 <input
                   id="bid-amount"
-                  type="number"
+                  type="text"
                   inputMode="numeric"
-                  className="input flex-1 min-w-0 sm:!w-32 sm:flex-none"
-                  placeholder={fa(current.nextMin)}
+                  autoComplete="off"
+                  dir="ltr"
+                  className="input fa-num flex-1 min-w-0 sm:!w-32 sm:flex-none"
+                  placeholder={fa(current.nextMin, { sep: false })}
                   value={amount}
-                  min={current.nextMin}
-                  max={spendable}
-                  step={1}
                   aria-describedby="bid-hint"
-                  onChange={(e) => setAmount(e.target.value === "" ? "" : Number(e.target.value))}
+                  aria-invalid={amount.trim() !== "" && typed === null ? true : undefined}
+                  onChange={(e) => setAmount(e.target.value)}
                 />
                 <button
                   type="submit"
@@ -534,7 +569,7 @@ export function AuctionStage({
                 <button
                   type="button"
                   onClick={claimSecondWind}
-                  disabled={pending}
+                  disabled={pending || !biddingOpen}
                   aria-label="استفاده از قدرت نفس دوم: دو دقیقه تمدید این حراج"
                   className="btn-navy w-full sm:w-auto !px-4 !py-2"
                 >

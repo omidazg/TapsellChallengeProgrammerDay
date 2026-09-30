@@ -71,7 +71,9 @@ export function usePolling(
     };
 
     document.addEventListener("visibilitychange", onVisibility);
-    if (immediate && !document.hidden) void run();
+    // اجرای اولیه حتی اگر تب هنگام mount پنهان باشد انجام می‌شود تا صفحه روی «در حال بارگذاری» نماند؛
+    // بعد از آن، زمان‌بندی طبق حالت پنهان/پیدا ادامه می‌یابد.
+    if (immediate) void run();
     else schedule();
 
     return () => {

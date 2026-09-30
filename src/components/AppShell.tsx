@@ -27,6 +27,11 @@ const NAV: { href: string; label: string; icon: string }[] = [
   { href: "/guide", label: "راهنما", icon: "📖" },
 ];
 
+// بعد از پایان بازی، صفحهٔ نتایج مهم‌ترین مقصد است و باید از منو در دسترس باشد
+function navFor(phase: Phase) {
+  return phase === "CLOSED" ? [...NAV, { href: "/results", label: "نتایج", icon: "🏁" }] : NAV;
+}
+
 function isActive(path: string, href: string) {
   return path === href || path.startsWith(href + "/");
 }
@@ -148,7 +153,7 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
         {user && (
           <nav className="hidden lg:block border-t border-brand-mist/70" aria-label="ناوبری اصلی">
             <div className="mx-auto max-w-7xl px-4 h-11 flex items-center gap-1 overflow-x-auto no-scrollbar">
-              {NAV.map((n) => (
+              {navFor(phase).map((n) => (
                 <Link
                   key={n.href}
                   href={n.href}
@@ -179,7 +184,7 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
               className="absolute inset-x-0 z-40 border-t border-brand-mist bg-white px-3 py-3 shadow-lift max-h-[calc(100dvh-3.5rem)] overflow-y-auto"
             >
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {[...NAV, { href: "/wallet", label: "کیف پول", icon: "💰" }, { href: "/profile", label: "پروفایل", icon: "🙂" }, ...(user.isAdmin ? [{ href: "/admin", label: "برگزارکننده", icon: "🎛️" }] : [])].map((n) => (
+                {[...navFor(phase), { href: "/wallet", label: "کیف پول", icon: "💰" }, { href: "/profile", label: "پروفایل", icon: "🙂" }, ...(user.isAdmin ? [{ href: "/admin", label: "برگزارکننده", icon: "🎛️" }] : [])].map((n) => (
                   <Link
                     key={n.href}
                     href={n.href}
@@ -196,15 +201,18 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
                 <span>🌱 کیف بذر: {fa(user.seedWallet)}</span>
                 <span>🛒 کیف خرید: {fa(user.buyWallet)}</span>
               </div>
-              <div className="mt-3">
-                <NotificationBell phase={phase} variant="mobile" />
-              </div>
+              {/* فقط وقتی منو باز است mount می‌شود: وگرنه نسخهٔ دوم زنگ هم هر ۲۰ ثانیه poll می‌کرد */}
+              {open && (
+                <div className="mt-3">
+                  <NotificationBell phase={phase} variant="mobile" />
+                </div>
+              )}
               <div className="mt-3 flex items-center justify-between rounded-2xl border border-brand-mist px-4 py-2.5">
                 <span className="text-xs font-bold text-brand-navy">پوستهٔ نمایش</span>
                 <ThemeToggle />
               </div>
               <form action="/logout" method="post" className="mt-3">
-                <button type="submit" className="btn-ghost w-full !text-brand-red !border-red-100 hover:!bg-red-50">🚪 خروج از حساب</button>
+                <button type="submit" className="btn-ghost w-full !text-brand-red !border-red-100 hover:bg-red-50">🚪 خروج از حساب</button>
               </form>
             </nav>
           </div>
@@ -231,21 +239,28 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
         <div>میدان بنیان‌گذاران {GROUP_NAME} · روز برنامه‌نویس {fa(1405, { sep: false })}</div>
       </footer>
 
-      <AskAgent />
+      <AskAgent loggedIn={!!user} />
     </div>
   );
 }
 
 function PhasePill({ phase, endsAt }: { phase: Phase; endsAt: string | null }) {
-  const [now, setNow] = useState(() => Date.now());
+  // null در رندر سرور/هیدریشن: Date.now() سرور و کلاینت (و اختلاف ساعت گوشی‌ها) متن متفاوت
+  // می‌ساخت و hydration mismatch کل پوسته را دوباره در کلاینت رندر می‌کرد.
+  const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(t);
+    const update = () => setNow(Date.now());
+    const first = setTimeout(update, 0);
+    const t = setInterval(update, 30_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
   }, []);
-  const remaining = endsAt ? new Date(endsAt).getTime() - now : null;
+  const remaining = endsAt && now !== null ? new Date(endsAt).getTime() - now : null;
   return (
     <span className="chip-cyan !py-1.5 max-w-[46vw] sm:max-w-none" title={remaining !== null ? `پایان در ${duration(remaining)}` : ""}>
-      <span className="inline-block size-1.5 rounded-full bg-brand-cyan-dark pulse-ring shrink-0" />
+      <span className="inline-block size-1.5 rounded-full bg-brand-cyan-dark pulse-ring shrink-0" aria-hidden />
       <span className="truncate">{PHASE_LABEL[phase]}</span>
       {remaining !== null && remaining > 0 && <span className="hidden sm:inline text-brand-slate font-medium">· {duration(remaining)}</span>}
     </span>

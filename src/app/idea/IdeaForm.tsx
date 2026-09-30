@@ -96,6 +96,8 @@ export function IdeaForm({ initial }: { initial: IdeaInput | null }) {
   const [state, formAction] = useActionState<IdeaActionState, FormData>(saveIdeaAction, {});
   const [coverUrl, setCoverUrl] = useState(initial?.coverUrl ?? "");
   const [revenueShare, setRevenueShare] = useState(initial?.revenueShare ?? 30);
+  // پس از خطا، مقادیر ارسالی برمی‌گردند تا ری‌ست خودکار فرم نوشته‌ها را پاک نکند
+  const v = state.values ?? {};
 
   return (
     <form action={formAction} className="card p-6 space-y-5 anim-rise">
@@ -104,28 +106,28 @@ export function IdeaForm({ initial }: { initial: IdeaInput | null }) {
 
       <div>
         <label className="label" htmlFor="title">عنوان ایده</label>
-        <input id="title" name="title" defaultValue={initial?.title} required className="input" placeholder="مثلاً: صف هوشمند کافه" />
+        <input id="title" name="title" defaultValue={v.title ?? initial?.title} required maxLength={80} className="input" placeholder="مثلاً: صف هوشمند کافه" />
       </div>
 
       <div>
         <label className="label" htmlFor="oneLiner">یک‌خطی (حداکثر ۱۲۰ نویسه)</label>
-        <input id="oneLiner" name="oneLiner" defaultValue={initial?.oneLiner} required maxLength={120} className="input" placeholder="در یک جمله چه می‌سازید؟" />
+        <input id="oneLiner" name="oneLiner" defaultValue={v.oneLiner ?? initial?.oneLiner} required maxLength={120} className="input" placeholder="در یک جمله چه می‌سازید؟" />
       </div>
 
       <div className="grid md:grid-cols-2 gap-5">
         <div>
           <label className="label" htmlFor="problem">مسئله</label>
-          <textarea id="problem" name="problem" defaultValue={initial?.problem} required rows={4} className="input" placeholder="چه مشکلی را حل می‌کنید؟" />
+          <textarea id="problem" name="problem" defaultValue={v.problem ?? initial?.problem} required maxLength={2000} rows={4} className="input" placeholder="چه مشکلی را حل می‌کنید؟" />
         </div>
         <div>
           <label className="label" htmlFor="audience">مخاطب</label>
-          <textarea id="audience" name="audience" defaultValue={initial?.audience} required rows={4} className="input" placeholder="مخاطب هدف شما کیست؟" />
+          <textarea id="audience" name="audience" defaultValue={v.audience ?? initial?.audience} required maxLength={2000} rows={4} className="input" placeholder="مخاطب هدف شما کیست؟" />
         </div>
       </div>
 
       <div>
         <label className="label" htmlFor="buildPlan">در ۴۸ ساعت چه چیزی ساخته می‌شود؟</label>
-        <textarea id="buildPlan" name="buildPlan" defaultValue={initial?.buildPlan} required rows={4} className="input" placeholder="برنامهٔ ساخت را شرح دهید" />
+        <textarea id="buildPlan" name="buildPlan" defaultValue={v.buildPlan ?? initial?.buildPlan} required maxLength={2000} rows={4} className="input" placeholder="برنامهٔ ساخت را شرح دهید" />
       </div>
 
       <div>
@@ -169,7 +171,7 @@ export function IdeaForm({ initial }: { initial: IdeaInput | null }) {
             min={50}
             max={600}
             step={10}
-            defaultValue={initial?.fundingCap ?? 200}
+            defaultValue={v.fundingCap ?? initial?.fundingCap ?? 200}
             required
             className="input"
           />
@@ -200,12 +202,21 @@ export function IdeaForm({ initial }: { initial: IdeaInput | null }) {
   );
 }
 
+function UnsubmitSubmit() {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" disabled={pending} className="btn-ghost">
+      {pending ? "در حال باز کردن…" : "ویرایش"}
+    </button>
+  );
+}
+
 export function UnsubmitButton() {
   const [state, formAction] = useActionState<IdeaActionState, FormData>(unsubmitIdeaAction, {});
   return (
     <form action={formAction}>
       {state.error && <Alert kind="error">{state.error}</Alert>}
-      <button type="submit" className="btn-ghost">ویرایش</button>
+      <UnsubmitSubmit />
     </form>
   );
 }

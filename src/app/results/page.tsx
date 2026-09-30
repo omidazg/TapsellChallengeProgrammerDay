@@ -159,7 +159,7 @@ export default async function ResultsPage() {
             tone="cyan"
           />
           <Stat label="مجموع خرید در بازار" value={coins(purchases.reduce((a, p) => a + p.amount - p.discount, 0))} tone="red" />
-          <Stat label="سکهٔ باقی‌ماندهٔ من (بذر + خرید)" value={coins(myCoinsLeft)} hint="تا پایان بازی خرجش کن تا جریمه نخوری" tone="navy" />
+          <Stat label="سکهٔ باقی‌ماندهٔ من (بذر + خرید)" value={coins(myCoinsLeft)} hint="سکهٔ قابل‌خرجِ باقی‌مانده در جریمهٔ تیم حساب شده است" tone="navy" />
         </section>
 
         <section>
@@ -184,7 +184,7 @@ export default async function ResultsPage() {
                       <tr key={inv.ideaId} className="border-b border-brand-mist last:border-0">
                         <td className="px-4 py-3">{inv.title} <span className="text-brand-slate text-xs">({inv.teamName})</span></td>
                         <td className="px-4 py-3 fa-num">{fa(inv.amount)}</td>
-                        <td className="px-4 py-3 fa-num text-emerald-600 font-bold">{fa(div)}</td>
+                        <td className="px-4 py-3 fa-num text-emerald-700 font-bold">{fa(div)}</td>
                       </tr>
                     );
                   })}
@@ -268,9 +268,9 @@ export default async function ResultsPage() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger">
             {awards.map((a) => (
               <div key={a.key} className="card p-5 text-center anim-pop">
-                <div className="text-3xl mb-2">{a.emoji}</div>
+                <div className="text-3xl mb-2" aria-hidden>{a.emoji}</div>
                 <div className="font-black text-brand-navy">{a.label}</div>
-                <div className="mt-1 text-sm text-brand-slate">{a.teamName || a.userNickname}</div>
+                <div className="mt-1 text-sm text-brand-slate">{a.teamName || a.userNickname || "—"}</div>
               </div>
             ))}
           </div>

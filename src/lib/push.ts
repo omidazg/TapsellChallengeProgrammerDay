@@ -61,6 +61,34 @@ export function __setPushSenderForTest(fn: PushSender | null): void {
   sender = fn ?? defaultSender;
 }
 
+/**
+ * سرور به endpoint هر اشتراک درخواست POST می‌زند؛ اگر هر URL دلخواهی پذیرفته شود،
+ * کاربر می‌تواند سرور را وادار به درخواست به شبکهٔ داخلی (SSRF) کند. پس فقط
+ * سرویس‌های Push شناخته‌شدهٔ مرورگرها (روی https) پذیرفته می‌شوند.
+ * Chrome/Opera/Samsung: FCM — Firefox: Mozilla autopush — Safari: Apple — Edge: WNS.
+ */
+const PUSH_HOST_SUFFIXES = [
+  "fcm.googleapis.com",
+  "android.googleapis.com",
+  "push.services.mozilla.com",
+  "push.apple.com",
+  "notify.windows.com",
+];
+
+export const MAX_PUSH_SUBSCRIPTIONS_PER_USER = 10;
+
+export function isAllowedPushEndpoint(endpoint: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) return false;
+  const host = url.hostname.toLowerCase();
+  return PUSH_HOST_SUFFIXES.some((s) => host === s || host.endsWith(`.${s}`));
+}
+
 const CONCURRENCY = 20;
 
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -86,9 +114,12 @@ export async function sendPushToUsers(userIds: string[], payload: PushPayload): 
     if (userIds.length === 0) return;
     if (!configure()) return;
 
-    const subs = await prisma.pushSubscription.findMany({
-      where: { userId: { in: userIds } },
-    });
+    const subs = (
+      await prisma.pushSubscription.findMany({
+        where: { userId: { in: userIds } },
+      })
+      // ردیف‌های قدیمی پیش از اعتبارسنجی endpoint؛ فرستندهٔ جعلی تست‌ها شبکه نمی‌زند و فیلتر نمی‌شود.
+    ).filter((s) => sender !== defaultSender || isAllowedPushEndpoint(s.endpoint));
     if (subs.length === 0) return;
 
     const body = JSON.stringify({

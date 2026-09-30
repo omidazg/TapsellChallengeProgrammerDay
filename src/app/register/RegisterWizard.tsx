@@ -83,6 +83,13 @@ export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: stri
     }
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
   }
+  // فرم واقعی تا Enter در فیلدها هم مرحله را جلو ببرد
+  function onFormSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (checking || pending) return;
+    if (step < STEPS.length - 1) void next();
+    else submit();
+  }
   function back() {
     setError(null);
     setStep((s) => Math.max(s - 1, 0));
@@ -128,9 +135,13 @@ export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: stri
 
   return (
     <div className="mx-auto max-w-3xl">
-      <ol className="mb-8 flex items-center justify-between stagger">
+      <ol className="mb-2 flex items-center justify-between stagger sm:mb-8">
         {STEPS.map((label, i) => (
-          <li key={label} aria-current={i === step ? "step" : undefined} className="flex flex-1 items-center gap-1.5 sm:gap-2">
+          <li
+            key={label}
+            aria-current={i === step ? "step" : undefined}
+            className={`flex min-w-0 items-center gap-1.5 sm:gap-2 ${i < STEPS.length - 1 ? "flex-1" : ""}`}
+          >
             <span
               className={`flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-black ${
                 i === step ? "bg-brand-red text-white" : i < step ? "bg-brand-cyan text-white" : "bg-brand-ice text-brand-slate"
@@ -138,11 +149,14 @@ export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: stri
             >
               {fa(i + 1)}
             </span>
-            <span className={`inline text-[10px] sm:text-xs font-bold truncate ${i === step ? "text-brand-navy" : "text-brand-slate"}`}>{label}</span>
-            {i < STEPS.length - 1 && <span className="mx-1 h-px flex-1 bg-brand-mist" />}
+            <span className={`hidden text-xs font-bold truncate sm:inline ${i === step ? "text-brand-navy" : "text-brand-slate"}`}>{label}</span>
+            {i < STEPS.length - 1 && <span className="mx-1 h-px min-w-2 flex-1 bg-brand-mist" />}
           </li>
         ))}
       </ol>
+      <p className="mb-8 text-center text-xs font-bold text-brand-navy sm:hidden">
+        مرحلهٔ {fa(step + 1)} از {fa(STEPS.length)} · {STEPS[step]}
+      </p>
 
       {error && (
         <div id="register-error" className="mb-6 anim-pop">
@@ -155,6 +169,7 @@ export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: stri
         </div>
       )}
 
+      <form onSubmit={onFormSubmit} noValidate>
       <div key={step} className="card p-6 md:p-8 anim-rise">
         {step === 0 && (
           <div className="grid gap-4">
@@ -352,17 +367,18 @@ export function RegisterWizard({ nextUrl, smsEnabled = false }: { nextUrl?: stri
         </div>
         <div className="flex flex-col sm:flex-row items-center gap-3">
           {step < STEPS.length - 1 && (
-            <button type="button" onClick={next} disabled={checking} className="btn-cyan w-full sm:w-auto">
-              مرحلهٔ بعد
+            <button type="submit" disabled={checking} className="btn-cyan w-full sm:w-auto">
+              {checking ? "در حال بررسی ایمیل…" : "مرحلهٔ بعد"}
             </button>
           )}
           {step === STEPS.length - 1 && (
-            <button type="button" onClick={submit} disabled={pending} className="btn-primary w-full sm:w-auto">
+            <button type="submit" disabled={pending} className="btn-primary w-full sm:w-auto">
               {pending ? "در حال ثبت…" : "ثبت‌نام و ورود به میدان"}
             </button>
           )}
         </div>
       </div>
+      </form>
       <p className="mt-6 text-center text-sm text-brand-slate">
         قبلاً ثبت‌نام کرده‌ای؟{" "}
         <Link href={nextUrl ? `/login?next=${encodeURIComponent(nextUrl)}` : "/login"} className="font-bold text-brand-cyan-dark">

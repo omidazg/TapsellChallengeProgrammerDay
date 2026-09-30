@@ -85,7 +85,11 @@ export function HallClient() {
         {announcement}
       </div>
 
-      <HallHeader phaseLabel={data?.phaseLabel} remaining={remaining} onToggleFullscreen={toggleFullscreen} isFullscreen={isFullscreen} />
+      <HallHeader
+        phaseLabel={data?.phaseLabel}
+        remaining={remaining}
+        noDeadline={data !== null && !data.endsAt}
+        onToggleFullscreen={toggleFullscreen} isFullscreen={isFullscreen} />
 
       {data === null ? (
         <div className="flex-1 flex items-center justify-center text-2xl text-white/60">در حال بارگذاری نمای سالن…</div>
@@ -105,27 +109,33 @@ export function HallClient() {
 function HallHeader({
   phaseLabel,
   remaining,
+  noDeadline,
   onToggleFullscreen,
   isFullscreen,
 }: {
   phaseLabel?: string;
   remaining: number | null;
+  noDeadline: boolean;
   onToggleFullscreen: () => void;
   isFullscreen: boolean;
 }) {
   return (
-    <header className="flex items-center justify-between gap-4 px-6 py-4 border-b border-white/10 shrink-0">
+    <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 sm:px-6 py-4 border-b border-white/10 shrink-0">
       <div className="flex items-center gap-4 min-w-0">
         <span className="inline-block size-3 rounded-full bg-brand-red pulse-ring shrink-0" aria-hidden />
-        <h1 className="text-2xl sm:text-3xl font-black truncate">میدان بنیان‌گذاران</h1>
+        <h1 className="text-2xl sm:text-3xl font-black break-words">میدان بنیان‌گذاران</h1>
       </div>
-      <div className="flex items-center gap-6 shrink-0">
+      <div className="flex items-center gap-4 sm:gap-6 shrink-0">
         {phaseLabel && (
           <div className="text-left">
             <div className="text-xs sm:text-sm text-brand-cyan font-bold">{phaseLabel}</div>
-            <div className="fa-num text-3xl sm:text-5xl font-black tabular-nums">
-              {remaining !== null ? duration(remaining) : "…"}
-            </div>
+            {noDeadline ? (
+              <div className="text-lg sm:text-2xl font-black text-white/70">بدون زمان‌بندی</div>
+            ) : (
+              <div className="fa-num text-3xl sm:text-5xl font-black tabular-nums">
+                {remaining !== null ? duration(remaining) : "…"}
+              </div>
+            )}
           </div>
         )}
         <button
@@ -223,7 +233,7 @@ function TickerBar({ ticker }: { ticker: HallPayload["ticker"] | null }) {
       {loop.length === 0 ? (
         <div className="px-6 text-white/50 text-base">هنوز خریدی ثبت نشده…</div>
       ) : (
-        <div className="flex items-center gap-10 px-6 whitespace-nowrap animate-[ticker_28s_linear_infinite] text-lg sm:text-xl font-bold">
+        <div className="flex w-max shrink-0 items-center gap-10 px-6 whitespace-nowrap animate-[ticker-loop_28s_linear_infinite] text-lg sm:text-xl font-bold">
           {loop.map((it, i) => (
             <span key={i} className="fa-num">
               {it.buyer} از تیم {it.team} ✦ {fa(it.amount)} سکه

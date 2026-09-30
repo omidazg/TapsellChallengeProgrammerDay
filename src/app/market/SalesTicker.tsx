@@ -46,9 +46,11 @@ export function SalesTicker({ buyWallet }: { buyWallet: number }) {
         {loop.length === 0 ? (
           <div className="flex items-center h-full px-4 text-xs text-brand-slate">هنوز خریدی ثبت نشده…</div>
         ) : (
-          <div className="flex items-center gap-8 h-full px-4 whitespace-nowrap animate-[ticker_22s_linear_infinite]">
+          // فهرست دوبار تکرار شده و ticker-loop دقیقاً ۵۰٪ جابه‌جا می‌کند؛ فاصله با padding هر آیتم است (نه gap)
+          // تا دو نیمه دقیقاً هم‌عرض باشند و حلقه بی‌درز بچرخد. نیمهٔ تکراری از صفحه‌خوان پنهان است.
+          <div className="flex w-max shrink-0 items-center h-full whitespace-nowrap animate-[ticker-loop_22s_linear_infinite] hover:[animation-play-state:paused] motion-reduce:animate-none">
             {loop.map((it, i) => (
-              <span key={i} className="text-sm font-medium text-brand-navy">
+              <span key={i} aria-hidden={i >= items.length || undefined} className="px-4 text-sm font-medium text-brand-navy">
                 {it.buyer} از تیم {it.team} خرید ✦ {fa(it.amount)} سکه
               </span>
             ))}

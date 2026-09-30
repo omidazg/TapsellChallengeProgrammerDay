@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 
@@ -15,7 +15,7 @@ export const UPLOAD_DIR =
 /** پیشوند نشانی عمومی برای فایل‌های آپلودشده (سرویس‌شونده توسط src/app/uploads/[...path]/route.ts) */
 export const UPLOAD_URL_PREFIX = "/uploads/";
 
-const MAX_INPUT_BYTES = 5 * 1024 * 1024; // ۵ مگابایت
+export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // ۵ مگابایت
 const MAX_MEGAPIXELS = 40_000_000; // ۴۰ مگاپیکسل
 const MAX_WIDTH = 1600;
 const THUMB_WIDTH = 480;
@@ -49,10 +49,12 @@ export type SavedImage = { url: string; thumb: string };
  * - نام فایل بر پایهٔ sha256 خروجی است، پس آپلود یکسان همیشه همان فایل را می‌دهد
  *   (تغییرناپذیر — می‌توان آن را برای همیشه کش کرد).
  */
+// userId فعلاً استفاده نمی‌شود (رزرو برای سهمیه/ممیزی per-user)؛ امضا برای فراخوان‌ها و اسکریپت smoke ثابت می‌ماند.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function saveImage(file: File, _userId: string): Promise<SavedImage> {
   if (!(file instanceof File)) throw new UploadError("فایل نامعتبر است");
   if (file.size <= 0) throw new UploadError("فایل خالی است");
-  if (file.size > MAX_INPUT_BYTES) throw new UploadError("حجم فایل نباید بیشتر از ۵ مگابایت باشد");
+  if (file.size > MAX_UPLOAD_BYTES) throw new UploadError("حجم فایل نباید بیشتر از ۵ مگابایت باشد");
 
   const input = Buffer.from(await file.arrayBuffer());
 
@@ -106,5 +108,15 @@ async function writeIfMissing(filePath: string, data: Buffer): Promise<void> {
   } catch {
     // پیدا نشد؛ می‌نویسیم
   }
-  await writeFile(filePath, data);
+  // نوشتن اتمیک (فایل موقت + rename): فایل‌ها با immutable یک‌ساله کش می‌شوند، پس
+  // درخواستی که هم‌زمان با نوشتن برسد نباید نسخهٔ نیمه‌کاره را بخواند و برای همیشه کش کند.
+  // نام موقت با UPLOAD_NAME_RE جور نیست، پس هرگز سرو نمی‌شود.
+  const tmpPath = `${filePath}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(tmpPath, data);
+    await rename(tmpPath, filePath);
+  } catch (e) {
+    await unlink(tmpPath).catch(() => {});
+    throw e;
+  }
 }

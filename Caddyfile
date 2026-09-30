@@ -1,4 +1,11 @@
 {$SITE_ADDRESS} {
+	# سقف بدنهٔ درخواست: بزرگ‌ترین مصرف‌کنندهٔ مشروع server actionها هستند (bodySizeLimit=10mb در
+	# next.config.ts) و آپلود تصویر (۵ مگابایت)؛ بدنه‌های بزرگ‌تر پیش از رسیدن به Node (که کل
+	# بدنه را در حافظه می‌خواند) رد می‌شوند.
+	request_body {
+		max_size 11MB
+	}
+
 	# فایل‌های استاتیک Next.js هش‌دار هستند؛ یک سال کش می‌شوند.
 	@static path /_next/static/* /brand/* /fonts/*
 	header @static {
@@ -21,6 +28,8 @@
 		X-Content-Type-Options nosniff
 		X-Frame-Options SAMEORIGIN
 		Referrer-Policy strict-origin-when-cross-origin
+		# روی HTTP ساده (SITE_ADDRESS=:80) مرورگرها این هدر را نادیده می‌گیرند؛ فقط روی HTTPS اثر دارد.
+		Strict-Transport-Security "max-age=31536000"
 		# Next.js inline scripts + the inline theme-init script in layout.tsx need
 		# 'unsafe-inline' on script-src (no nonce support in this setup). img-src
 		# lists the remotePatterns hosts from next.config.ts (also used directly

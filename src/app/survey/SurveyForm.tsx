@@ -31,7 +31,8 @@ function RatingGroup({
   return (
     <fieldset>
       <legend className="label">{legend}</legend>
-      <div role="radiogroup" aria-label={legend} className="flex flex-wrap gap-2">
+      <p className="-mt-1 mb-2 text-xs text-brand-slate">{fa(1)} = خیلی کم، {fa(5)} = خیلی زیاد</p>
+      <div className="flex flex-wrap gap-2">
         {[1, 2, 3, 4, 5].map((n) => {
           const checked = value === n;
           const id = `${name}-${n}`;
@@ -39,7 +40,7 @@ function RatingGroup({
             <label
               key={n}
               htmlFor={id}
-              className={`flex items-center justify-center size-11 rounded-full border font-black fa-num cursor-pointer transition ${
+              className={`flex items-center justify-center size-11 rounded-full border font-black fa-num cursor-pointer transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-cyan has-[:focus-visible]:ring-offset-2 ${
                 checked ? "bg-brand-navy text-white border-brand-navy" : "border-brand-mist text-brand-navy hover:bg-brand-ice"
               }`}
             >

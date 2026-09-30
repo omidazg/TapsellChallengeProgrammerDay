@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { getPhase, phaseIndex } from "@/lib/phase";
+import { getPhase, phaseIndex, PHASE_LABEL } from "@/lib/phase";
 import { prisma } from "@/lib/db";
 import { PageHeader, Container, Empty, Locked } from "@/components/ui";
 import { buildChecklist, parseImages, effectiveMaxPrice } from "@/lib/product";
@@ -28,7 +28,7 @@ export default async function BuildPage() {
   if (phaseIndex(phase) < phaseIndex("IDEATION")) {
     return (
       <>
-        <PageHeader eyebrow="فاز فعلی" title="مرکز ساخت" />
+        <PageHeader eyebrow={`از فاز «${PHASE_LABEL.IDEATION}» باز می‌شود`} title="مرکز ساخت" />
         <Container>
           <Locked title="هنوز زود است" desc="مرکز ساخت از فاز «اتاق ایده» باز می‌شود." />
         </Container>

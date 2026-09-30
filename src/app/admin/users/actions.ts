@@ -31,7 +31,12 @@ export async function toggleAdminAction(prevState: UsersActionState, formData: F
 const adjustSchema = z.object({
   userId: z.string().min(1),
   wallet: z.enum(["SEED", "BUY"]),
-  amount: z.coerce.number().int().refine((n) => n !== 0, "مقدار نباید صفر باشد"),
+  amount: z.coerce
+    .number({ error: "مقدار سکه باید عدد صحیح باشد" })
+    .int("مقدار سکه باید عدد صحیح باشد")
+    .min(-100_000, "مقدار خیلی بزرگ است")
+    .max(100_000, "مقدار خیلی بزرگ است")
+    .refine((n) => n !== 0, "مقدار نباید صفر باشد"),
 });
 
 /** افزودن/کسر سکه با ثبت در دفتر کل با دلیل ADMIN */
@@ -47,10 +52,20 @@ export async function adjustWalletAction(prevState: UsersActionState, formData: 
   const { userId, wallet, amount } = parsed.data;
   const field = wallet === "SEED" ? "seedWallet" : "buyWallet";
 
-  await prisma.$transaction([
-    prisma.user.update({ where: { id: userId }, data: { [field]: { increment: amount } } }),
-    prisma.ledgerEntry.create({ data: { userId, wallet, delta: amount, reason: "ADMIN" } }),
-  ]);
+  // کسر شرطی: موجودی کیف هرگز منفی نمی‌شود (شرط gte در همان به‌روزرسانی، بدون مسابقه).
+  const result = await prisma.$transaction(async (tx) => {
+    const updated = await tx.user.updateMany({
+      where: { id: userId, ...(amount < 0 ? { [field]: { gte: -amount } } : {}) },
+      data: { [field]: { increment: amount } },
+    });
+    if (updated.count === 0) return false;
+    await tx.ledgerEntry.create({ data: { userId, wallet, delta: amount, reason: "ADMIN" } });
+    return true;
+  });
+  if (!result) {
+    const exists = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    return { error: exists ? "موجودی کیف برای این کسر کافی نیست" : "کاربر پیدا نشد" };
+  }
   await audit(me.id, "user.adjust_wallet", userId, { wallet, amount });
 
   revalidatePath("/admin/users");

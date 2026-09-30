@@ -7,7 +7,17 @@ import { rateLimit, rateLimitMessage, clientIp, ACCESS_REQUEST_IP_RULE } from "@
 import { canRegister } from "@/lib/whitelist";
 import { normalizePhone } from "@/lib/phone";
 
-export type AccessRequestState = { error?: string; ok?: "CREATED" | "UPDATED" | "ALLOWED" | "HAS_ACCOUNT" };
+type AccessRequestFields = { email: string; firstName: string; lastName: string; position: string; unit: string; phone: string };
+
+/**
+ * `values` مقادیر ارسالی را پس از خطا برمی‌گرداند: React 19 پس از هر form action فیلدهای
+ * کنترل‌نشده را ریست می‌کند و بدون آن کاربر باید همه‌چیز را از نو تایپ کند.
+ */
+export type AccessRequestState = {
+  error?: string;
+  ok?: "CREATED" | "UPDATED" | "ALLOWED" | "HAS_ACCOUNT";
+  values?: AccessRequestFields;
+};
 
 const FIELD_ERRORS: Record<string, string> = {
   email: "ایمیل نامعتبر است.",
@@ -32,23 +42,29 @@ const requestSchema = z.object({
 });
 
 export async function submitAccessRequestAction(_prev: AccessRequestState, formData: FormData): Promise<AccessRequestState> {
-  if (await getSessionUserId()) return { error: "شما از قبل وارد شده‌اید." };
+  const str = (k: string) => {
+    const v = formData.get(k);
+    return typeof v === "string" ? v.slice(0, 200) : "";
+  };
+  const values: AccessRequestFields = {
+    email: str("email"),
+    firstName: str("firstName"),
+    lastName: str("lastName"),
+    position: str("position"),
+    unit: str("unit"),
+    phone: str("phone"),
+  };
+
+  if (await getSessionUserId()) return { error: "شما از قبل وارد شده‌اید.", values };
 
   const ip = await clientIp();
   const limit = rateLimit("access-request:ip", ip, ACCESS_REQUEST_IP_RULE());
-  if (!limit.ok) return { error: rateLimitMessage(limit.retryAfterSec) };
+  if (!limit.ok) return { error: rateLimitMessage(limit.retryAfterSec), values };
 
-  const parsed = requestSchema.safeParse({
-    email: formData.get("email"),
-    firstName: formData.get("firstName"),
-    lastName: formData.get("lastName"),
-    position: formData.get("position"),
-    unit: formData.get("unit"),
-    phone: String(formData.get("phone") ?? ""),
-  });
+  const parsed = requestSchema.safeParse(values);
   if (!parsed.success) {
     const key = String(parsed.error.issues[0]?.path[0] ?? "");
-    return { error: FIELD_ERRORS[key] ?? "اطلاعات واردشده نامعتبر است." };
+    return { error: FIELD_ERRORS[key] ?? "اطلاعات واردشده نامعتبر است.", values };
   }
   const data = parsed.data;
 

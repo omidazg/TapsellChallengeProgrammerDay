@@ -19,7 +19,8 @@ const DueDiligenceChat = dynamic(() => import("./DueDiligenceChat").then((m) => 
 export async function generateMetadata({ params }: { params: Promise<{ ideaId: string }> }) {
   const { ideaId } = await params;
   const idea = await getIdeaDetail(ideaId, null);
-  return { title: idea?.title ? `${idea.title} · سرمایه‌گذاری` : "سرمایه‌گذاری" };
+  // عنوان ایدهٔ ثبت‌نشده (پیش‌نویس) نباید از طریق <title> نشت کند.
+  return { title: idea?.title && idea.submittedAt ? `${idea.title} · سرمایه‌گذاری` : "سرمایه‌گذاری" };
 }
 
 export default async function IdeaDetailPage({ params }: { params: Promise<{ ideaId: string }> }) {
@@ -112,7 +113,7 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
             aiOff={aiOff}
           />
 
-          <DueDiligenceChat ideaId={idea.id} chats={idea.chats} aiOff={aiOff} />
+          <DueDiligenceChat ideaId={idea.id} chats={idea.chats} aiOff={aiOff} closed={!interactive} />
         </div>
 
         <div className="space-y-6">

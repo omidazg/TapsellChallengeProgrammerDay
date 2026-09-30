@@ -53,7 +53,8 @@ export default async function AdminPage() {
   const settingFields: SettingField[] = SETTING_KEYS.map((key) => ({
     key,
     label: SETTING_LABELS[key],
-    value: key === "market_starts_at" ? toLocalInputValue(settings[key]) : settings[key],
+    // market_starts_at خام (ISO) فرستاده می‌شود؛ SettingsForm در مرورگر به وقت محلی تبدیلش می‌کند.
+    value: settings[key],
     kind: key === "market_starts_at" ? "datetime" : "number",
     locked: economyLocked && isLockedSettingKey(key),
   }));
@@ -100,13 +101,4 @@ export default async function AdminPage() {
       </Container>
     </>
   );
-}
-
-/** ورودی datetime-local فقط «YYYY-MM-DDTHH:mm» می‌پذیرد. */
-function toLocalInputValue(raw: string): string {
-  if (!raw) return "";
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

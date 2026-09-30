@@ -86,7 +86,11 @@ export async function dueDiligenceAction(_prevState: ChatActionState, formData: 
   const parsed = questionSchema.safeParse(String(formData.get("question") ?? ""));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "سؤال نامعتبر است" };
 
-  const idea = await prisma.idea.findUnique({ where: { id: ideaId } });
+  // فقط در دور سرمایه‌گذاری: پیش از آن متن ایده‌ها هنوز عمومی نیست و پس از آن پرسش فقط بودجهٔ AI را مصرف می‌کند.
+  const { phase } = await getPhase();
+  if (phase !== "SEED_ROUND") return { error: "چت بررسی دقیق فقط در «دور سرمایه‌گذاری» فعال است" };
+
+  const idea = ideaId ? await prisma.idea.findUnique({ where: { id: ideaId } }) : null;
   if (!idea || !idea.submittedAt) return { error: "این ایده یافت نشد" };
 
   // سقف ضدهرزنامه: حداکثر ۵ پرسش در دقیقه برای هر کاربر
@@ -118,7 +122,17 @@ export async function dueDiligenceAction(_prevState: ChatActionState, formData: 
   const normalized = normalizeQuestion(parsed.data);
   const questionHash = createHash("sha256").update(normalized).digest("hex");
   const cacheKey = `ai:dd:${idea.id}:${questionHash}`;
-  const answer = await cached(cacheKey, 60 * 60 * 1000, () => askText(system, parsed.data, 400));
+  // پاسخ null (خطای موقت API/بودجه) نباید یک ساعت کش شود؛ loader با throw کردن، ورودی کش را پاک می‌کند.
+  let answer: string | null = null;
+  try {
+    answer = await cached(cacheKey, 60 * 60 * 1000, async () => {
+      const text = await askText(system, parsed.data, 400);
+      if (!text) throw new Error("ai-unavailable");
+      return text;
+    });
+  } catch {
+    answer = null;
+  }
   if (!answer) return { aiUnavailable: true, aiReason: "off" };
 
   await prisma.dueDiligenceMessage.create({

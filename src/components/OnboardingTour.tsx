@@ -139,6 +139,12 @@ export function OnboardingTour({
       if (items.length === 0) return;
       const firstEl = items[0];
       const lastEl = items[items.length - 1];
+      // اگر دکمهٔ فوکوس‌دار حذف شد (مثلاً «قبلی» در قدم اول)، فوکوس روی body می‌افتد؛ آن را به داخل مودال برگردان
+      if (!node?.contains(document.activeElement)) {
+        e.preventDefault();
+        (e.shiftKey ? lastEl : firstEl).focus();
+        return;
+      }
       if (e.shiftKey && document.activeElement === firstEl) {
         e.preventDefault();
         lastEl.focus();
@@ -186,7 +192,7 @@ export function OnboardingTour({
                 type="button"
                 onClick={close}
                 aria-label="بستن راهنمای شروع"
-                className="rounded-full p-1 text-brand-slate hover:text-brand-navy"
+                className="inline-flex size-9 items-center justify-center rounded-full text-brand-slate hover:text-brand-navy hover:bg-brand-ice"
               >
                 ✕
               </button>

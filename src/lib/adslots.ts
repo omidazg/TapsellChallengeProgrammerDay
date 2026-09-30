@@ -6,13 +6,21 @@ import { pickSecondPriceWinner } from "./economy/bids";
 export type AdSlotKind = keyof typeof AD_SLOT_KINDS;
 const KINDS = Object.keys(AD_SLOT_KINDS) as AdSlotKind[];
 
-/** ساعت شروع روز بازار: از تنظیمات (`market_starts_at`) یا امروز ساعت ۱۲. */
+/** جایگاه‌ها این مدت پیش از شروع ساعتشان بسته می‌شوند (پیشنهاد تازه پذیرفته نمی‌شود). */
+const SLOT_CLOSE_LEAD_MS = 5 * 60 * 1000;
+
+/**
+ * ساعت شروع روز بازار: از تنظیمات (`market_starts_at`)؛ وگرنه ساعت اولین جایگاه موجود
+ * (تا با عوض شدن روز، هر روز یک سری جایگاه تازه ساخته نشود)؛ وگرنه امروز ساعت ۱۲.
+ */
 export async function marketStartFromSettings(): Promise<Date> {
   const raw = await getSetting("market_starts_at", "");
   if (raw) {
     const d = new Date(raw);
     if (!Number.isNaN(d.getTime())) return d;
   }
+  const first = await prisma.adSlot.findFirst({ orderBy: { hourStart: "asc" }, select: { hourStart: true } });
+  if (first) return first.hourStart;
   const d = new Date();
   d.setHours(12, 0, 0, 0);
   return d;
@@ -47,6 +55,8 @@ export async function upsertBid(slotId: string, teamId: string, amount: number) 
     const slot = await tx.adSlot.findUnique({ where: { id: slotId } });
     if (!slot) throw new Error("جایگاه پیدا نشد");
     if (slot.status !== "OPEN") throw new Error("این جایگاه بسته شده است");
+    // همان مهلت closeDueSlots: تا بستن خودکار بعدی، پیشنهاد دیرهنگام پذیرفته نشود.
+    if (slot.hourStart.getTime() - SLOT_CLOSE_LEAD_MS <= Date.now()) throw new Error("مهلت پیشنهاد این جایگاه تمام شده و بسته شده است");
 
     const team = await tx.team.findUnique({ where: { id: teamId } });
     if (!team) throw new Error("تیم پیدا نشد");
@@ -111,7 +121,7 @@ export async function closeSlot(slotId: string) {
 
 /** جایگاه‌های OPEN که ساعتشان نزدیک است (۵ دقیقه پیش از شروع) را می‌بندد. */
 export async function closeDueSlots() {
-  const cutoff = new Date(Date.now() + 5 * 60 * 1000); // now >= hourStart - 5min  <=>  hourStart <= now + 5min
+  const cutoff = new Date(Date.now() + SLOT_CLOSE_LEAD_MS); // now >= hourStart - 5min  <=>  hourStart <= now + 5min
   const due = await prisma.adSlot.findMany({ where: { status: "OPEN", hourStart: { lte: cutoff } } });
   const results = [];
   for (const s of due) results.push(await closeSlot(s.id));
@@ -129,7 +139,7 @@ export async function claimHypeSlot(userId: string) {
 
     // فقط جایگاه‌های ویژه‌ای که هنوز شروع نشده‌اند.
     const slot = await tx.adSlot.findFirst({
-      where: { kind: "FEATURED", status: "OPEN", hourStart: { gt: new Date() } },
+      where: { kind: "FEATURED", status: "OPEN", hourStart: { gt: new Date(Date.now() + SLOT_CLOSE_LEAD_MS) } },
       orderBy: { hourStart: "asc" },
     });
     if (!slot) throw new Error("جایگاه ویژهٔ آزادی باقی نمانده است");

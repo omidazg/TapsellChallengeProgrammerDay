@@ -25,7 +25,9 @@ export function Confetti() {
             left: `${p.left}%`,
             backgroundColor: p.color,
             transform: `rotate(${p.rotate}deg)`,
-            animation: `confetti-fall ${p.duration}s linear ${p.delay}s infinite`,
+            // سه دور و بعد تمام (infinite روی کل صفحهٔ نتایج بی‌پایان حواس‌پرتی و مصرف CPU داشت)؛
+            // both: قبل از شروع بالای صفحه پنهان و بعد از پایان بیرون از صفحه می‌ماند
+            animation: `confetti-fall ${p.duration}s linear ${p.delay}s 3 both`,
           }}
         />
       ))}

@@ -7,6 +7,7 @@ import { verifyPassword, createSession } from "@/lib/auth";
 import {
   rateLimit,
   rateLimitPeek,
+  rateLimitRefund,
   rateLimitMessage,
   clientIp,
   LOGIN_IP_RULE,
@@ -43,23 +44,23 @@ export async function loginAction(input: { email: string; password: string; next
     return { error: "ایمیل یا رمز عبور را کامل وارد کن." };
   }
 
-  // فقط تلاش‌های ناموفق شمرده می‌شوند: در روز رویداد کل سالن پشت یک IP است و
+  // فقط تلاش‌های ناموفق در نهایت شمرده می‌شوند: در روز رویداد کل سالن پشت یک IP است و
   // شمردن ورودهای موفق همه را قفل می‌کند. محافظ اصلی، سقف هر ایمیل است.
+  // هر تلاش پیش از bcrypt ثبت و فقط در صورت موفقیت پس گرفته می‌شود؛ وگرنه ده‌ها تلاش هم‌زمان
+  // پیش از ثبت اولین شکست از سقف رد می‌شدند.
   const ip = await clientIp();
   const email = parsed.data.email;
-  const ipLimit = rateLimitPeek("login:ip", ip, LOGIN_IP_RULE());
+  const ipLimit = rateLimit("login:ip", ip, LOGIN_IP_RULE());
   if (!ipLimit.ok) return { error: rateLimitMessage(ipLimit.retryAfterSec) };
-  const emailLimit = rateLimitPeek("login:email", email, LOGIN_EMAIL_RULE());
-  if (!emailLimit.ok) return { error: rateLimitMessage(emailLimit.retryAfterSec) };
-  const countFailure = () => {
-    rateLimit("login:ip", ip, LOGIN_IP_RULE());
-    rateLimit("login:email", email, LOGIN_EMAIL_RULE());
-  };
+  const emailLimit = rateLimit("login:email", email, LOGIN_EMAIL_RULE());
+  if (!emailLimit.ok) {
+    rateLimitRefund("login:ip", ip);
+    return { error: rateLimitMessage(emailLimit.retryAfterSec) };
+  }
 
   const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
   if (!user) {
     await verifyPassword(parsed.data.password, DUMMY_HASH);
-    countFailure();
     // کسی که حساب ندارد باید بداند قدم بعدی‌اش چیست: ثبت‌نام، صبر برای تأیید، یا درخواست دسترسی
     const state = await accessState(email);
     if (state === "ALLOWED") return { error: "هنوز با این ایمیل حسابی نساخته‌ای؛ ایمیلت مجاز است، ثبت‌نام کن.", access: "NO_ACCOUNT" };
@@ -67,17 +68,13 @@ export async function loginAction(input: { email: string; password: string; next
     if (state === "REJECTED") return { error: "درخواست دسترسی‌ات رد شده است؛ اگر فکر می‌کنی اشتباهی رخ داده، دوباره درخواست بده یا با برگزارکننده تماس بگیر.", access: "REJECTED" };
     return { error: "این ایمیل در لیست سفید رویداد نیست. برای ورود، درخواست دسترسی بده تا برگزارکننده تأیید کند.", access: "NONE" };
   }
-  if (user.blockedAt) {
-    await verifyPassword(parsed.data.password, DUMMY_HASH);
-    countFailure();
-    return { error: BLOCKED };
-  }
   const ok = await verifyPassword(parsed.data.password, user.passwordHash);
-  if (!ok) {
-    countFailure();
-    return { error: GENERIC };
-  }
+  if (!ok) return { error: GENERIC };
+  // وضعیت مسدودی فقط به دارندهٔ رمز درست گفته می‌شود
+  if (user.blockedAt) return { error: BLOCKED };
 
+  rateLimitRefund("login:ip", ip);
+  rateLimitRefund("login:email", email);
   await createSession(user.id, user.sessionVersion);
   // redirect یک NEXT_REDIRECT پرتاب می‌کند؛ باید بیرون از try/catch بماند
   redirect(safeNext(input.next) ?? "/");

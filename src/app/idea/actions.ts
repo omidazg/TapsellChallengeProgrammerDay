@@ -10,7 +10,11 @@ import { runAnalyst } from "@/lib/analyst";
 import { isNextImageHost } from "@/lib/idea";
 import { isValidUploadName, UPLOAD_URL_PREFIX } from "@/lib/uploads";
 
-export type IdeaActionState = { error?: string; ok?: boolean };
+/** `values`: مقادیر ارسالی فرم در صورت خطا، تا ری‌ست خودکار فرم (React 19) نوشته‌های کاربر را پاک نکند */
+export type IdeaActionState = { error?: string; ok?: boolean; values?: Record<string, string> };
+
+/** حداکثر طول فیلدهای متنی بلند ایده (هم در فرم و هم در سرور) */
+const LONG_TEXT_MAX = 2000;
 
 /**
  * نشانی تصویر باید یا یک فایل آپلودشدهٔ محلی (`/uploads/<hash>.webp`) یا یک
@@ -26,9 +30,9 @@ function isAllowedImageUrl(v: string): boolean {
 const ideaSchema = z.object({
   title: z.string().trim().min(1, "عنوان را بنویس").max(80, "عنوان خیلی طولانی است"),
   oneLiner: z.string().trim().min(1, "یک‌خطی را بنویس").max(120, "یک‌خطی باید حداکثر ۱۲۰ نویسه باشد"),
-  problem: z.string().trim().min(1, "مسئله را توضیح بده"),
-  audience: z.string().trim().min(1, "مخاطب را مشخص کن"),
-  buildPlan: z.string().trim().min(1, "برنامهٔ ساخت ۴۸ ساعته را بنویس"),
+  problem: z.string().trim().min(1, "مسئله را توضیح بده").max(LONG_TEXT_MAX, "توضیح مسئله خیلی طولانی است"),
+  audience: z.string().trim().min(1, "مخاطب را مشخص کن").max(LONG_TEXT_MAX, "توضیح مخاطب خیلی طولانی است"),
+  buildPlan: z.string().trim().min(1, "برنامهٔ ساخت ۴۸ ساعته را بنویس").max(LONG_TEXT_MAX, "برنامهٔ ساخت خیلی طولانی است"),
   coverUrl: z
     .string()
     .trim()
@@ -55,8 +59,23 @@ export async function saveIdeaAction(prevState: IdeaActionState, formData: FormD
   const leaderError = await teamManageError(user);
   if (leaderError) return { error: leaderError };
 
+  const values = Object.fromEntries(
+    ["title", "oneLiner", "problem", "audience", "buildPlan", "fundingCap"].map((k) => [k, String(formData.get(k) ?? "")])
+  );
+
   const phaseError = await assertIdeationEditable();
-  if (phaseError) return { error: phaseError };
+  if (phaseError) return { error: phaseError, values };
+
+  const intent = String(formData.get("intent") ?? "draft");
+
+  // ایدهٔ ثبت‌نهایی‌شده فقط پس از «ویرایش» (باز کردن قفل) با پیش‌نویس عوض می‌شود؛
+  // وگرنه یک تب قدیمی می‌تواند محتوا را بی‌صدا و بدون تحلیل دوباره تغییر دهد.
+  if (intent !== "submit") {
+    const existing = await prisma.idea.findUnique({ where: { teamId: user.teamId }, select: { submittedAt: true } });
+    if (existing?.submittedAt) {
+      return { error: "ایده ثبت نهایی شده است؛ برای تغییر، صفحه را تازه کن و ابتدا «ویرایش» را بزن", values };
+    }
+  }
 
   const parsed = ideaSchema.safeParse({
     title: formData.get("title"),
@@ -69,10 +88,9 @@ export async function saveIdeaAction(prevState: IdeaActionState, formData: FormD
     revenueShare: formData.get("revenueShare"),
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "ورودی نامعتبر است" };
+    return { error: parsed.error.issues[0]?.message ?? "ورودی نامعتبر است", values };
   }
 
-  const intent = String(formData.get("intent") ?? "draft");
   const data = parsed.data;
 
   const idea = await prisma.idea.upsert({

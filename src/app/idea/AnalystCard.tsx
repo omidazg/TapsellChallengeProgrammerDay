@@ -27,7 +27,7 @@ export function AnalystCard({
   return (
     <div className="card p-6 anim-rise">
       <div className="flex items-center gap-2 mb-4">
-        <span className="text-2xl">🔬</span>
+        <span className="text-2xl" aria-hidden>🔬</span>
         <h3 className="font-black text-brand-navy">نظر تحلیل‌گر هوش مصنوعی</h3>
       </div>
       <div className="space-y-3">
@@ -39,14 +39,14 @@ export function AnalystCard({
                 <span>{b.label}</span>
                 <span className="fa-num">{fa(v)}٪</span>
               </div>
-              <div className="h-2.5 rounded-pill bg-brand-sky overflow-hidden">
+              <div className="h-2.5 rounded-pill bg-brand-sky overflow-hidden" aria-hidden>
                 <div className={`h-full rounded-pill ${b.color}`} style={{ width: `${v}%` }} />
               </div>
             </div>
           );
         })}
       </div>
-      {summary && <p className="mt-4 text-sm text-brand-navy/90 leading-7 bg-brand-ice rounded-2xl p-4">{summary}</p>}
+      {summary && <p className="mt-4 text-sm text-brand-navy/90 leading-7 bg-brand-ice rounded-2xl p-4 whitespace-pre-line break-words">{summary}</p>}
     </div>
   );
 }

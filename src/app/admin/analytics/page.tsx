@@ -46,10 +46,11 @@ export default async function AdminAnalyticsPage() {
 
         <section>
           <h2 className="mb-3 text-lg font-black text-brand-navy">نظرسنجی پایان بازی</h2>
-          <div className="grid sm:grid-cols-3 gap-3 mb-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
             <Stat label="تعداد پاسخ" value={fa(survey.count)} />
-            <Stat label="میانگین رضایت کلی" value={fa(survey.averages.rating)} tone="cyan" />
-            <Stat label="میانگین سرگرمی" value={fa(survey.averages.fun)} tone="cyan" />
+            <Stat label="میانگین رضایت کلی" value={fa(survey.averages.rating)} hint="از ۵" tone="cyan" />
+            <Stat label="میانگین سرگرمی" value={fa(survey.averages.fun)} hint="از ۵" tone="cyan" />
+            <Stat label="میانگین یادگیری" value={fa(survey.averages.learned)} hint="از ۵" tone="cyan" />
           </div>
           <div className="grid sm:grid-cols-3 gap-4 mb-6">
             <DistPanel title="رضایت کلی" dist={survey.distributions.rating} />

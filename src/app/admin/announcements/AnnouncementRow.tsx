@@ -31,14 +31,24 @@ export function AnnouncementRow({ announcement }: { announcement: AnnouncementRo
       <form action={toggleAction}>
         <input type="hidden" name="id" value={announcement.id} />
         <input type="hidden" name="active" value={announcement.active ? "0" : "1"} />
-        <button type="submit" className={`chip ${announcement.active ? "chip-ok" : "chip-navy"}`}>
+        <button
+          type="submit"
+          className={`chip ${announcement.active ? "chip-ok" : "chip-navy"}`}
+          aria-label={announcement.active ? "فعال است؛ برای غیرفعال‌کردن بزن" : "غیرفعال است؛ برای فعال‌کردن بزن"}
+          title={announcement.active ? "برای غیرفعال‌کردن بزن" : "برای فعال‌کردن بزن"}
+        >
           {announcement.active ? "فعال" : "غیرفعال"}
         </button>
       </form>
 
-      <form action={deleteAction}>
+      <form
+        action={deleteAction}
+        onSubmit={(e) => {
+          if (!confirm("این اطلاعیه برای همیشه حذف شود؟")) e.preventDefault();
+        }}
+      >
         <input type="hidden" name="id" value={announcement.id} />
-        <button type="submit" className="btn-ghost !py-1.5 !px-3 text-xs !text-brand-red !border-red-100 hover:!bg-red-50">
+        <button type="submit" className="btn-ghost !py-1.5 !px-3 text-xs !text-brand-red !border-red-100 hover:bg-red-50">
           حذف
         </button>
       </form>

@@ -32,6 +32,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ path: s
     headers: {
       "Content-Type": "image/webp",
       "Cache-Control": "public, max-age=31536000, immutable",
+      // دفاع لایه‌ای (staging/dev پشت Caddy نیستند): مرورگر نوع را حدس نزند و فایل هرگز به‌عنوان سند اجرا نشود.
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; sandbox",
     },
   });
 }

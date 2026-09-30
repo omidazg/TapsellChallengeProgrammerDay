@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { RetryButton } from "./RetryButton";
 
 export const metadata = { title: "بدون اتصال" };
 
@@ -14,9 +14,7 @@ export default function OfflinePage() {
       <p className="text-brand-slate mb-8">
         به‌نظر می‌رسد اتصال شما قطع شده. وقتی دوباره به اینترنت وصل شدید، این صفحه را ببندید و به میدان بنیان‌گذاران برگردید.
       </p>
-      <Link href="/" className="btn-primary">
-        تلاش دوباره
-      </Link>
+      <RetryButton />
     </div>
   );
 }

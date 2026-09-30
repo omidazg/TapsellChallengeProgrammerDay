@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useSyncExternalStore } from "react";
 import { useFormStatus } from "react-dom";
 import { Alert } from "@/components/ui";
 import { updateSettingsAction, type AdminActionState } from "./actions";
+import { localInputToIso, toLocalInputValue } from "./datetime-local";
 
 // هیچ چیزی از `@/lib/admin` وارد نمی‌شود: آن ماژول به prisma وابسته است
 // و نباید در باندل کلاینت بیاید. فیلدها از صفحهٔ سرور می‌رسند.
@@ -21,6 +22,8 @@ function SubmitButton() {
 
 type SettingsAction = (prevState: AdminActionState, formData: FormData) => Promise<AdminActionState>;
 
+const noopSubscribe = () => () => {};
+
 export function SettingsForm({
   fields,
   action,
@@ -30,7 +33,18 @@ export function SettingsForm({
   action?: SettingsAction;
   title?: string;
 }) {
-  const [state, formAction] = useActionState<AdminActionState, FormData>(action ?? updateSettingsAction, {});
+  const serverAction = action ?? updateSettingsAction;
+  // فیلدهای datetime (مثل زمان شروع روز بازار) به وقت مرورگر وارد می‌شوند؛ پیش از ارسال
+  // به ISO تبدیل می‌شوند تا سرور (کانتینر UTC) آن‌ها را چند ساعت جابه‌جا تفسیر نکند.
+  const [state, formAction] = useActionState<AdminActionState, FormData>(async (prev, formData) => {
+    for (const f of fields) {
+      if (f.kind === "datetime") formData.set(f.key, localInputToIso(String(formData.get(f.key) ?? "")));
+    }
+    return serverAction(prev, formData);
+  }, {});
+  // مقدار datetime (ISO ذخیره‌شده) فقط پس از hydrate به وقت محلی مرورگر تبدیل می‌شود.
+  const hydrated = useSyncExternalStore(noopSubscribe, () => true, () => false);
+  const datetimeValue = (raw: string) => (hydrated && raw ? toLocalInputValue(new Date(raw)) : "");
   const hasLocked = fields.some((f) => f.locked);
   // فیلدهای قفل readOnly‌اند نه disabled: ورودی disabled در FormData ارسال نمی‌شود
   // و parseGameSettings فیلد عددیِ غایب را رد می‌کند. سرور هم مقدار بدون تغییر را می‌پذیرد.
@@ -76,10 +90,11 @@ export function SettingsForm({
                 </label>
                 {f.kind === "datetime" ? (
                   <input
+                    key={hydrated ? "client" : "server"}
                     id={f.key}
                     name={f.key}
                     type="datetime-local"
-                    defaultValue={f.value}
+                    defaultValue={datetimeValue(f.value)}
                     readOnly={f.locked}
                     aria-readonly={f.locked || undefined}
                     className={`input ${f.locked ? lockedCls : ""}`}

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { PHASES, type Phase, getPhase } from "@/lib/phase";
 import { transitionTo } from "@/lib/phase-transition";
-import { settleGame } from "@/lib/settlement";
+import { settleGame, getSettledAt } from "@/lib/settlement";
 import { setSetting, getSettingsMap, SETTING_LABELS } from "@/lib/admin";
 import { parseGameSettings, saveSettings } from "@/lib/settings-schema";
 import { lockedSettingChanges, withoutLockedKeys } from "@/lib/settings-lock";
@@ -30,20 +30,34 @@ export async function setPhaseAction(prevState: AdminActionState, formData: Form
 
   const endsAt = parsed.data.endsAt ? new Date(parsed.data.endsAt) : null;
   if (parsed.data.endsAt && Number.isNaN(endsAt?.getTime())) return { error: "زمان پایان نامعتبر است" };
+  // زمان پایانِ گذشته (مثلاً مقدار قدیمی فاز قبلی که در فرم مانده) باعث می‌شود زمان‌بند خودکار
+  // بلافاصله فاز تازه را هم رد کند؛ یک دقیقه تلورانس برای تأخیر ارسال فرم. (CLOSED پیشروی ندارد.)
+  if (endsAt && parsed.data.phase !== "CLOSED" && endsAt.getTime() < Date.now() - 60_000) {
+    return { error: "زمان پایان گذشته است؛ یک زمان آینده انتخاب کن یا فیلد را خالی بگذار." };
+  }
 
-  const before = await getPhase();
+  const [before, settledAt] = await Promise.all([getPhase(), getSettledAt()]);
+  // پس از تسویهٔ نهایی سودها پرداخت و امتیازها قفل شده‌اند؛ بازکردن دوبارهٔ بازار/حراج
+  // باعث خرج سودهای واریزشده و ناهمخوانی نتایج ثبت‌شده با دفتر کل می‌شود.
+  if (settledAt && parsed.data.phase !== "CLOSED") {
+    return { error: "بازی تسویهٔ نهایی شده است؛ بازگشت به فازهای قبلی ممکن نیست." };
+  }
 
   // transitionTo تنها نقطهٔ ورود تغییر فاز است: اعلان می‌فرستد و در CLOSED تسویه را اجرا می‌کند.
-  await transitionTo(parsed.data.phase, endsAt);
+  const result = await transitionTo(parsed.data.phase, endsAt);
   await audit(admin.id, "phase.set", parsed.data.phase, {
     from: before.phase,
     to: parsed.data.phase,
     endsAt: endsAt ? endsAt.toISOString() : null,
+    ...(result.settleFailed ? { settleFailed: true } : {}),
   });
   revalidatePath("/admin");
   revalidatePath("/admin/settlement");
   revalidatePath("/results");
   revalidatePath("/");
+  if (result.settleFailed) {
+    return { error: "فاز به «پایان بازی» رفت ولی تسویهٔ نهایی با خطا روبه‌رو شد؛ از صفحهٔ «تسویهٔ نهایی» دوباره اجرا کن." };
+  }
   return { ok: true };
 }
 

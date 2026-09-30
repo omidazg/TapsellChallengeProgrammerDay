@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { isAllowedPushEndpoint, MAX_PUSH_SUBSCRIPTIONS_PER_USER } from "@/lib/push";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,10 @@ export async function POST(request: Request) {
   }
 
   const { endpoint, keys } = parsed.data;
+  // فقط سرویس‌های Push شناخته‌شده؛ وگرنه سرور به هر URL دلخواهی (حتی شبکهٔ داخلی) POST می‌زد.
+  if (!isAllowedPushEndpoint(endpoint)) {
+    return NextResponse.json({ error: "سرویس اعلان این مرورگر پشتیبانی نمی‌شود" }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  }
 
   await prisma.pushSubscription.upsert({
     where: { endpoint },
@@ -39,6 +44,17 @@ export async function POST(request: Request) {
     // اگر همین endpoint قبلاً به کاربر دیگری تعلق داشت (مثلاً روی مرورگر مشترک)، به کاربر جاری منتقل می‌شود.
     update: { userId: user.id, p256dh: keys.p256dh, auth: keys.auth },
   });
+
+  // سقف اشتراک برای هر کاربر: هر اعلان به همهٔ اشتراک‌ها فرستاده می‌شود؛ قدیمی‌ترها حذف می‌شوند.
+  const stale = await prisma.pushSubscription.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: "desc" },
+    skip: MAX_PUSH_SUBSCRIPTIONS_PER_USER,
+    select: { id: true },
+  });
+  if (stale.length > 0) {
+    await prisma.pushSubscription.deleteMany({ where: { id: { in: stale.map((s) => s.id) } } });
+  }
 
   return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }

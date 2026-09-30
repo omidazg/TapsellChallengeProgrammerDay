@@ -48,8 +48,8 @@ export default function GlobalError({ error, retry }: { error: Error & { digest?
             تلاش دوباره
           </button>
           {error.digest && (
-            <p style={{ marginTop: 24, fontSize: 11, color: "#6f8fa1" }} dir="ltr">
-              کد خطا برای پشتیبانی: {error.digest}
+            <p style={{ marginTop: 24, fontSize: 11, color: "#9fb8c9" }}>
+              کد خطا برای پشتیبانی: <bdi dir="ltr">{error.digest}</bdi>
             </p>
           )}
         </div>

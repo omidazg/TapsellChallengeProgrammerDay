@@ -37,6 +37,9 @@ export function AccessRequestForm({ email, phone }: { email: string; phone: stri
     );
   }
 
+  const v = state.values;
+  const invalid = state.error ? { "aria-invalid": true, "aria-describedby": "access-error" } : {};
+
   return (
     <form action={formAction} className="card p-6 md:p-8 anim-rise">
       <div className="grid gap-4">
@@ -47,29 +50,29 @@ export function AccessRequestForm({ email, phone }: { email: string; phone: stri
         )}
         <div>
           <label className="label" htmlFor="email">ایمیل سازمانی</label>
-          <input id="email" name="email" type="email" dir="ltr" autoComplete="email" className="input" defaultValue={email} required maxLength={120} />
+          <input id="email" name="email" type="email" dir="ltr" autoComplete="email" className="input" defaultValue={v?.email ?? email} required maxLength={120} {...invalid} />
         </div>
         <div>
           <label className="label" htmlFor="phone">شمارهٔ موبایل</label>
-          <input id="phone" name="phone" type="tel" dir="ltr" inputMode="tel" autoComplete="tel" className="input" placeholder="09xxxxxxxxx" defaultValue={phone} required maxLength={20} />
+          <input id="phone" name="phone" type="tel" dir="ltr" inputMode="tel" autoComplete="tel" className="input" placeholder="09xxxxxxxxx" defaultValue={v?.phone ?? phone} required maxLength={20} {...invalid} />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="label" htmlFor="firstName">نام</label>
-            <input id="firstName" name="firstName" autoComplete="given-name" className="input" required minLength={2} maxLength={40} />
+            <input id="firstName" name="firstName" autoComplete="given-name" className="input" defaultValue={v?.firstName} {...invalid} required minLength={2} maxLength={40} />
           </div>
           <div>
             <label className="label" htmlFor="lastName">نام خانوادگی</label>
-            <input id="lastName" name="lastName" autoComplete="family-name" className="input" required minLength={2} maxLength={40} />
+            <input id="lastName" name="lastName" autoComplete="family-name" className="input" defaultValue={v?.lastName} {...invalid} required minLength={2} maxLength={40} />
           </div>
         </div>
         <div>
           <label className="label" htmlFor="position">سمت</label>
-          <input id="position" name="position" autoComplete="organization-title" className="input" placeholder="مثلاً توسعه‌دهندهٔ بک‌اند" required minLength={2} maxLength={60} />
+          <input id="position" name="position" autoComplete="organization-title" className="input" defaultValue={v?.position} {...invalid} placeholder="مثلاً توسعه‌دهندهٔ بک‌اند" required minLength={2} maxLength={60} />
         </div>
         <div>
           <label className="label" htmlFor="unit">واحد سازمانی</label>
-          <input id="unit" name="unit" list="unit-options" className="input" placeholder="مثلاً فنی / محصول / فروش" required minLength={2} maxLength={60} />
+          <input id="unit" name="unit" list="unit-options" className="input" defaultValue={v?.unit} {...invalid} placeholder="مثلاً فنی / محصول / فروش" required minLength={2} maxLength={60} />
           <datalist id="unit-options">
             {DEPARTMENTS.map((d) => (
               <option key={d} value={d} />

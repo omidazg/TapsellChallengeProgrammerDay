@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { getPhase, phaseIndex } from "@/lib/phase";
+import { getPhase, phaseIndex, PHASE_LABEL } from "@/lib/phase";
 import { prisma } from "@/lib/db";
 import { PageHeader, Container, Empty, Locked, Alert } from "@/components/ui";
 import { fa, coins } from "@/lib/persian";
@@ -30,7 +30,7 @@ export default async function IdeaPage() {
   if (phaseIndex(phase) < phaseIndex("IDEATION")) {
     return (
       <>
-        <PageHeader eyebrow="فاز فعلی" title="اتاق ایده" />
+        <PageHeader eyebrow={`از فاز «${PHASE_LABEL.IDEATION}» باز می‌شود`} title="اتاق ایده" />
         <Container>
           <Locked title="هنوز زود است" desc="اتاق ایده از فاز «اتاق ایده» باز می‌شود." />
         </Container>
@@ -99,6 +99,9 @@ export default async function IdeaPage() {
         {isIdeation && !idea.submittedAt && (
           <Alert kind="info">این پیش‌نویس سرپرست است و هنوز ثبت نهایی نشده.</Alert>
         )}
+        {!isIdeation && !idea.submittedAt && (
+          <Alert kind="error">این ایده پیش از پایان فاز «اتاق ایده» ثبت نهایی نشد و در طبقهٔ سرمایه‌گذاری نمایش داده نمی‌شود.</Alert>
+        )}
 
         {idea.coverUrl && (
           <div className="relative w-full aspect-[8/5] rounded-3xl overflow-hidden border border-brand-mist anim-rise">
@@ -109,15 +112,15 @@ export default async function IdeaPage() {
         <div className="card p-6 space-y-4 anim-rise">
           <div>
             <div className="text-xs font-bold text-brand-slate mb-1">مسئله</div>
-            <p className="text-brand-navy leading-7 break-words">{idea.problem}</p>
+            <p className="text-brand-navy leading-7 break-words whitespace-pre-line">{idea.problem}</p>
           </div>
           <div>
             <div className="text-xs font-bold text-brand-slate mb-1">مخاطب</div>
-            <p className="text-brand-navy leading-7 break-words">{idea.audience}</p>
+            <p className="text-brand-navy leading-7 break-words whitespace-pre-line">{idea.audience}</p>
           </div>
           <div>
             <div className="text-xs font-bold text-brand-slate mb-1">برنامهٔ ساخت ۴۸ ساعته</div>
-            <p className="text-brand-navy leading-7 break-words">{idea.buildPlan}</p>
+            <p className="text-brand-navy leading-7 break-words whitespace-pre-line">{idea.buildPlan}</p>
           </div>
           <div className="flex flex-wrap gap-3 pt-2">
             <span className="chip-navy">هدف جذب سرمایه: {coins(idea.fundingCap)}</span>

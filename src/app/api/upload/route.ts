@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { saveImage, UploadError } from "@/lib/uploads";
+import { MAX_UPLOAD_BYTES, saveImage, UploadError } from "@/lib/uploads";
 import { rateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +18,12 @@ export async function POST(request: Request) {
       { error: "تعداد آپلودهای اخیر زیاد است؛ کمی صبر کن و دوباره تلاش کن" },
       { status: 429, headers: { "Cache-Control": "no-store" } }
     );
+  }
+
+  // پیش از خواندن کل بدنه در حافظه (request.formData)، درخواست‌های آشکارا بزرگ رد می‌شوند.
+  const declaredLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_UPLOAD_BYTES + 64 * 1024) {
+    return NextResponse.json({ error: "حجم فایل نباید بیشتر از ۵ مگابایت باشد" }, { status: 413, headers: { "Cache-Control": "no-store" } });
   }
 
   let formData: FormData;

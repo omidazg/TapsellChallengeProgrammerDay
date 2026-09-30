@@ -21,7 +21,7 @@ export default async function AccessRequestPage({ searchParams }: { searchParams
       <Container>
         <div className="mx-auto max-w-md space-y-4">
           {phase !== "REGISTRATION" && (
-            <Alert kind="info">فاز ثبت‌نام الان بسته است؛ درخواستت ثبت می‌شود ولی ساخت حساب به تصمیم برگزارکننده بستگی دارد.</Alert>
+            <Alert kind="info">فاز ثبت‌نام الان بسته است؛ درخواستت ثبت می‌شود ولی حتی پس از تأیید، ساخت حساب فقط وقتی ممکن است که برگزارکننده ثبت‌نام را دوباره باز کند.</Alert>
           )}
           <AccessRequestForm
             email={typeof email === "string" ? email.slice(0, 120) : ""}

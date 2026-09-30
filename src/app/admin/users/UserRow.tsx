@@ -80,7 +80,18 @@ export function UserRow({ user, isMe }: { user: UserRowData; isMe: boolean }) {
         </button>
       </form>
 
-      <form action={adjustAction} className="flex flex-wrap items-center gap-1.5">
+      <form
+        action={adjustAction}
+        className="flex flex-wrap items-center gap-1.5"
+        onSubmit={(e) => {
+          const fd = new FormData(e.currentTarget);
+          const amount = Number(fd.get("amount"));
+          const walletLabel = fd.get("wallet") === "SEED" ? "کیف بذر" : "کیف خرید";
+          if (!Number.isFinite(amount) || amount === 0) return; // خطای اعتبارسنجی را سرور نشان می‌دهد
+          const verb = amount > 0 ? `${coins(amount)} به ${walletLabel}` : `${coins(-amount)} از ${walletLabel}`;
+          if (!confirm(`${verb} ${user.nickname} ${amount > 0 ? "افزوده" : "کسر"} شود؟ این تغییر در دفتر کل ثبت می‌شود.`)) e.preventDefault();
+        }}
+      >
         <input type="hidden" name="userId" value={user.id} />
         <label htmlFor={`wallet-${user.id}`} className="sr-only">نوع کیف برای {user.nickname}</label>
         <select id={`wallet-${user.id}`} name="wallet" className="input !py-1 !px-2 w-auto text-xs">
@@ -88,8 +99,8 @@ export function UserRow({ user, isMe }: { user: UserRowData; isMe: boolean }) {
           <option value="BUY">خرید</option>
         </select>
         <label htmlFor={`amount-${user.id}`} className="sr-only">مبلغ سکه برای {user.nickname}</label>
-        <input id={`amount-${user.id}`} name="amount" type="number" defaultValue={10} className="input !py-1 !px-2 w-20 text-xs" />
-        <button type="submit" className="btn-ghost !py-1 !px-3 text-xs">افزودن سکه</button>
+        <input id={`amount-${user.id}`} name="amount" type="number" step={1} required defaultValue={10} className="input !py-1 !px-2 w-20 text-xs" />
+        <button type="submit" className="btn-ghost !py-1 !px-3 text-xs" title="برای کسر، عدد منفی وارد کن">افزودن/کسر سکه</button>
       </form>
 
       <form

@@ -40,6 +40,7 @@ export function NotificationBell({ phase, variant = "desktop" }: { phase: Phase;
   const [toast, setToast] = useState<string | null>(null);
   const lastPhase = useRef<Phase>(phase);
   const popRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
   const router = useRouter();
 
   // در تب پنهان متوقف می‌شود و با برگشتن به تب فوراً تازه می‌شود.
@@ -50,7 +51,8 @@ export function NotificationBell({ phase, variant = "desktop" }: { phase: Phase;
       const data: NotificationsResponse = await res.json();
       setUnread(data.unread);
       setItems(data.items);
-      if (lastPhase.current !== data.phase) {
+      // توست فقط از زنگ هدر؛ نسخهٔ منوی موبایل همزمان mount است و توست تکراری می‌ساخت
+      if (variant === "desktop" && lastPhase.current !== data.phase) {
         setToast(`فاز بازی تغییر کرد: ${PHASE_LABEL[data.phase]}`);
       }
       lastPhase.current = data.phase;
@@ -64,28 +66,38 @@ export function NotificationBell({ phase, variant = "desktop" }: { phase: Phase;
     function onClick(e: MouseEvent) {
       if (popRef.current && !popRef.current.contains(e.target as Node)) setOpen(false);
     }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    }
     document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
+  // اثر جانبی (fetch) بیرون از updater؛ updater در StrictMode دوبار اجرا می‌شود
   const onToggle = useCallback(() => {
-    setOpen((o) => {
-      const next = !o;
-      if (next && unread > 0) {
-        fetch("/api/notifications/read", { method: "POST" })
-          .then(() => setUnread(0))
-          .catch(() => {});
-      }
-      return next;
-    });
-  }, [unread]);
+    const next = !open;
+    setOpen(next);
+    if (next && unread > 0) {
+      fetch("/api/notifications/read", { method: "POST" })
+        .then(() => setUnread(0))
+        .catch(() => {});
+    }
+  }, [open, unread]);
 
   return (
     <div className="relative" ref={popRef}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={onToggle}
-        aria-label="اعلان‌ها"
+        aria-label={unread > 0 ? `اعلان‌ها (${fa(unread)} خوانده‌نشده)` : "اعلان‌ها"}
         aria-expanded={open}
         className={
           variant === "desktop"
@@ -103,7 +115,13 @@ export function NotificationBell({ phase, variant = "desktop" }: { phase: Phase;
       </button>
 
       {open && (
-        <div className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-80 max-w-[90vw] card shadow-lift z-50 overflow-hidden anim-pop">
+        // زنگ هدر در RTL سمت چپ صفحه است؛ right-0 پنجره را از لبهٔ چپ بیرون می‌برد. در موبایل
+        // تمام‌عرض (fixed نسبت به هدر که backdrop-filter دارد) و از sm به بعد از لبهٔ چپ زنگ باز می‌شود.
+        <div
+          className={`${
+            variant === "desktop" ? "fixed inset-x-3 top-14 sm:absolute sm:inset-x-auto sm:top-auto sm:left-0 sm:w-80" : "absolute inset-x-0"
+          } mt-2 card shadow-lift z-50 overflow-hidden anim-pop`}
+        >
           <div className="px-4 py-3 border-b border-brand-mist flex items-center justify-between">
             <span className="font-black text-brand-navy text-sm">اعلان‌ها</span>
             <Link href="/notifications" className="text-xs font-bold text-brand-cyan-dark" onClick={() => setOpen(false)}>
@@ -150,7 +168,7 @@ export function NotificationBell({ phase, variant = "desktop" }: { phase: Phase;
 
 function PhaseToast({ message, onRefresh, onClose }: { message: string; onRefresh: () => void; onClose: () => void }) {
   return (
-    <div className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:left-4 z-[60] anim-rise">
+    <div role="status" className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:left-4 z-[60] anim-rise">
       <div className="card px-4 py-3 shadow-lift flex items-center gap-3 max-w-sm">
         <span className="text-xl" aria-hidden>📣</span>
         <div className="flex-1 min-w-0">
@@ -159,7 +177,7 @@ function PhaseToast({ message, onRefresh, onClose }: { message: string; onRefres
         <button type="button" onClick={onRefresh} className="btn-primary !py-1.5 !px-3 text-xs shrink-0">
           به‌روزرسانی
         </button>
-        <button type="button" onClick={onClose} aria-label="بستن" className="text-brand-slate text-lg leading-none shrink-0">
+        <button type="button" onClick={onClose} aria-label="بستن" className="inline-flex items-center justify-center size-8 text-brand-slate text-lg leading-none shrink-0">
           ✕
         </button>
       </div>

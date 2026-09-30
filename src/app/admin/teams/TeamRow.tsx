@@ -29,7 +29,11 @@ export type TeamRowData = {
 
 export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id: string; name: string }[] }) {
   const [renaming, setRenaming] = useState(false);
-  const [renameState, renameAction] = useActionState<TeamsActionState, FormData>(renameTeamAction, {});
+  const [renameState, renameAction] = useActionState<TeamsActionState, FormData>(async (prev, formData) => {
+    const res = await renameTeamAction(prev, formData);
+    if (res.ok) setRenaming(false);
+    return res;
+  }, {});
   const [removeState, removeAction] = useActionState<TeamsActionState, FormData>(removeMemberAction, {});
   const [deleteState, deleteAction] = useActionState<TeamsActionState, FormData>(deleteTeamAction, {});
   const [moveState, moveAction] = useActionState<TeamsActionState, FormData>(moveMemberAction, {});
@@ -78,10 +82,18 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
               {m.nickname}
             </span>
             {otherTeams.length > 0 && (
-              <form action={moveAction} className="flex items-center gap-1">
+              <form
+                action={moveAction}
+                className="flex items-center gap-1"
+                onSubmit={(e) => {
+                  const select = e.currentTarget.elements.namedItem("targetTeamId") as HTMLSelectElement | null;
+                  const target = select?.selectedOptions[0]?.textContent ?? "";
+                  if (!confirm(`${m.nickname} از «${team.name}» به «${target}» منتقل شود؟`)) e.preventDefault();
+                }}
+              >
                 <input type="hidden" name="userId" value={m.id} />
                 <label htmlFor={`move-${m.id}`} className="sr-only">انتقال {m.nickname} به تیم دیگر</label>
-                <select id={`move-${m.id}`} name="targetTeamId" defaultValue="" className="input !py-0.5 !px-1.5 !text-[11px] !w-auto">
+                <select id={`move-${m.id}`} name="targetTeamId" required defaultValue="" className="input !py-0.5 !px-1.5 !text-[11px] !w-auto">
                   <option value="" disabled>انتقال به…</option>
                   {otherTeams.map((t) => (
                     <option key={t.id} value={t.id}>{t.name}</option>
@@ -97,7 +109,12 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
                 </button>
               </form>
             )}
-            <form action={removeAction}>
+            <form
+              action={removeAction}
+              onSubmit={(e) => {
+                if (!confirm(`${m.nickname} از تیم «${team.name}» حذف شود؟ او بی‌تیم می‌شود.`)) e.preventDefault();
+              }}
+            >
               <input type="hidden" name="userId" value={m.id} />
               <button
                 type="submit"
@@ -146,7 +163,12 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
       {moveState.ok && <Alert kind="ok">کاربر منتقل شد.</Alert>}
 
       {team.members.length === 0 && (
-        <form action={deleteAction}>
+        <form
+          action={deleteAction}
+          onSubmit={(e) => {
+            if (!confirm(`تیم خالی «${team.name}» حذف شود؟ این کار برگشت‌ناپذیر است.`)) e.preventDefault();
+          }}
+        >
           <input type="hidden" name="teamId" value={team.id} />
           <button type="submit" className="text-brand-red text-xs font-bold hover:underline">حذف تیم خالی</button>
         </form>

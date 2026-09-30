@@ -68,18 +68,20 @@ export function parseTeaser(url: string): { kind: TeaserKind; embedSrc?: string 
   if (!u) return { kind: "none" };
   try {
     const parsed = new URL(u);
+    // فقط http(s)؛ نشانی‌هایی مثل javascript: یا data: نباید در iframe/video رندر شوند
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { kind: "none" };
     const host = parsed.hostname.replace(/^www\./, "");
     if (host === "youtube.com" || host === "m.youtube.com") {
       const id = parsed.searchParams.get("v");
-      if (id) return { kind: "youtube", embedSrc: `https://www.youtube.com/embed/${id}` };
+      if (id) return { kind: "youtube", embedSrc: `https://www.youtube.com/embed/${encodeURIComponent(id)}` };
       const parts = parsed.pathname.split("/").filter(Boolean);
-      if (parts[0] === "embed" && parts[1]) return { kind: "youtube", embedSrc: `https://www.youtube.com/embed/${parts[1]}` };
-      if (parts[0] === "shorts" && parts[1]) return { kind: "youtube", embedSrc: `https://www.youtube.com/embed/${parts[1]}` };
+      if (parts[0] === "embed" && parts[1]) return { kind: "youtube", embedSrc: `https://www.youtube.com/embed/${encodeURIComponent(parts[1])}` };
+      if (parts[0] === "shorts" && parts[1]) return { kind: "youtube", embedSrc: `https://www.youtube.com/embed/${encodeURIComponent(parts[1])}` };
       return { kind: "video", embedSrc: u };
     }
     if (host === "youtu.be") {
       const id = parsed.pathname.replace(/^\//, "");
-      if (id) return { kind: "youtube", embedSrc: `https://www.youtube.com/embed/${id}` };
+      if (id) return { kind: "youtube", embedSrc: `https://www.youtube.com/embed/${encodeURIComponent(id)}` };
       return { kind: "video", embedSrc: u };
     }
     if (host === "aparat.com") {
@@ -89,7 +91,7 @@ export function parseTeaser(url: string): { kind: TeaserKind; embedSrc?: string 
       if (parts[0] === "v" && parts[1]) hash = parts[1];
       const vhIdx = parts.indexOf("videohash");
       if (vhIdx >= 0 && parts[vhIdx + 1]) hash = parts[vhIdx + 1];
-      if (hash) return { kind: "aparat", embedSrc: `https://www.aparat.com/video/video/embed/videohash/${hash}/vt/frame` };
+      if (hash) return { kind: "aparat", embedSrc: `https://www.aparat.com/video/video/embed/videohash/${encodeURIComponent(hash)}/vt/frame` };
       return { kind: "video", embedSrc: u };
     }
     return { kind: "video", embedSrc: u };

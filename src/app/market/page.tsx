@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { isLocalUploadUrl } from "@/lib/product-utils";
 import { requireUser } from "@/lib/auth";
-import { getPhase, phaseIndex } from "@/lib/phase";
+import { getPhase, phaseIndex, PHASE_LABEL } from "@/lib/phase";
 import { getEffectiveGameValues } from "@/lib/game-values";
 import { PageHeader, Container, Empty, Locked, Coin } from "@/components/ui";
 import { UnspentReminder } from "@/components/UnspentReminder";
@@ -27,7 +27,7 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
   if (phaseIndex(phase) < phaseIndex("BUILD")) {
     return (
       <>
-        <PageHeader eyebrow="فاز فعلی" title="بازار" desc="از تیم‌های دیگر بخر، قلب بده و محصول ویژه‌شان را ببین." />
+        <PageHeader eyebrow={`از فاز «${PHASE_LABEL.BUILD}» باز می‌شود`} title="بازار" desc="از تیم‌های دیگر بخر، قلب بده و محصول ویژه‌شان را ببین." />
         <Container>
           <Locked title="بازار هنوز باز نشده" desc="بازار از فاز «ساخت محصول» به‌صورت پیش‌نمایش، و از فاز «روز بازار» برای خرید باز می‌شود." />
         </Container>

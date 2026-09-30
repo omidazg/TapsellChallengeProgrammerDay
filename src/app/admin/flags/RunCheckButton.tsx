@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { Alert } from "@/components/ui";
+import { fa } from "@/lib/persian";
 import { runCollusionCheckAction, type FlagsActionState } from "./actions";
 
 export function RunCheckButton() {
@@ -11,7 +12,8 @@ export function RunCheckButton() {
       <button type="submit" disabled={pending} className="btn-primary">
         {pending ? "در حال بررسی…" : "بررسی خرید متقابل مشکوک"}
       </button>
-      {state.ok && <Alert kind="ok">بررسی انجام شد.</Alert>}
+      {state.error && <Alert kind="error">{state.error}</Alert>}
+      {state.ok && <Alert kind="ok">بررسی انجام شد؛ {fa(state.flagCount ?? 0)} پرچم در فهرست است.</Alert>}
     </form>
   );
 }

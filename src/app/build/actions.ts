@@ -13,7 +13,19 @@ import { isNextImageHost } from "@/lib/idea";
 import { isValidUploadName, UPLOAD_URL_PREFIX } from "@/lib/uploads";
 import { fa } from "@/lib/persian";
 
-export type ProductActionState = { error?: string; ok?: boolean };
+/** `values`: مقادیر ارسالی فرم در صورت خطا، تا ری‌ست خودکار فرم (React 19) نوشته‌های کاربر را پاک نکند */
+export type ProductActionState = { error?: string; ok?: boolean; values?: Record<string, string> };
+
+/** لینک دمو/تیزر یا خالی است یا یک نشانی http(s)؛ `javascript:` و `data:` و… پذیرفته نمی‌شوند */
+function isHttpOrEmpty(v: string): boolean {
+  if (v === "") return true;
+  try {
+    const u = new URL(v);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 /**
  * نشانی تصویر محصول باید یا یک فایل آپلودشدهٔ محلی (`/uploads/<hash>.webp`) یا
@@ -28,9 +40,21 @@ function isAllowedImageUrl(v: string): boolean {
 const productSchema = z.object({
   name: z.string().trim().min(1, "نام محصول را بنویس").max(80, "نام خیلی طولانی است"),
   tagline: z.string().trim().max(160, "تگ‌لاین خیلی طولانی است").optional().default(""),
-  description: z.string().trim().max(4000).optional().default(""),
-  demoUrl: z.string().trim().max(500).optional().default(""),
-  teaserUrl: z.string().trim().max(500).optional().default(""),
+  description: z.string().trim().max(4000, "توضیح محصول خیلی طولانی است").optional().default(""),
+  demoUrl: z
+    .string()
+    .trim()
+    .max(500, "لینک دمو خیلی طولانی است")
+    .optional()
+    .default("")
+    .refine(isHttpOrEmpty, "لینک دمو باید با http:// یا https:// شروع شود"),
+  teaserUrl: z
+    .string()
+    .trim()
+    .max(500, "لینک تیزر خیلی طولانی است")
+    .optional()
+    .default("")
+    .refine(isHttpOrEmpty, "لینک تیزر باید با http:// یا https:// شروع شود"),
   images: z
     .array(z.string().trim().max(500))
     .max(MAX_IMAGES)
@@ -38,13 +62,17 @@ const productSchema = z.object({
     .default([])
     .refine((arr) => arr.every(isAllowedImageUrl), "یکی از نشانی‌های تصویر مجاز نیست"),
   price: z.coerce.number().int().min(DEFAULTS.minPrice, `قیمت حداقل ${DEFAULTS.minPrice} است`).max(DEFAULTS.maxPrice, `قیمت حداکثر ${DEFAULTS.maxPrice} است`),
-  specialName: z.string().trim().max(80).optional().default(""),
-  specialDesc: z.string().trim().max(400).optional().default(""),
+  specialName: z.string().trim().max(80, "نام نسخهٔ ویژه خیلی طولانی است").optional().default(""),
+  specialDesc: z.string().trim().max(400, "توضیح نسخهٔ ویژه خیلی طولانی است").optional().default(""),
   specialStart: z.coerce.number().int().min(5, "قیمت شروع حداقل ۵ است").max(100, "قیمت شروع حداکثر ۱۰۰ است"),
 });
 
 async function assertEditable() {
   const { phase } = await getPhase();
+  // هم‌راستا با صفحهٔ /build که پیش از «اتاق ایده» قفل است
+  if (phaseIndex(phase) < phaseIndex("IDEATION")) {
+    return "مرکز ساخت از فاز «اتاق ایده» باز می‌شود";
+  }
   if (phaseIndex(phase) >= phaseIndex("MARKET")) {
     return "مرکز ساخت از فاز «روز بازار» قفل شده است";
   }
@@ -58,8 +86,23 @@ export async function saveProductAction(prevState: ProductActionState, formData:
   const leaderError = await teamManageError(user);
   if (leaderError) return { error: leaderError };
 
+  const values = Object.fromEntries(
+    ["name", "tagline", "description", "demoUrl", "specialName", "specialDesc"].map((k) => [k, String(formData.get(k) ?? "")])
+  );
+
   const editError = await assertEditable();
-  if (editError) return { error: editError };
+  if (editError) return { error: editError, values };
+
+  const intent = String(formData.get("intent") ?? "draft");
+
+  // محصول ثبت‌نهایی‌شده فقط پس از «بازکردن برای ویرایش» با پیش‌نویس عوض می‌شود؛
+  // وگرنه یک تب قدیمی می‌تواند محتوا را بی‌صدا و بدون داوری دوباره تغییر دهد.
+  if (intent !== "submit") {
+    const existing = await prisma.product.findUnique({ where: { teamId: user.teamId }, select: { submittedAt: true } });
+    if (existing?.submittedAt) {
+      return { error: "محصول ثبت نهایی شده است؛ برای تغییر، صفحه را تازه کن و ابتدا «بازکردن برای ویرایش» را بزن", values };
+    }
+  }
 
   const images = formData.getAll("images").map((v) => String(v)).filter((v) => v.trim().length > 0);
 
@@ -76,10 +119,9 @@ export async function saveProductAction(prevState: ProductActionState, formData:
     specialStart: formData.get("specialStart"),
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "ورودی نامعتبر است" };
+    return { error: parsed.error.issues[0]?.message ?? "ورودی نامعتبر است", values };
   }
 
-  const intent = String(formData.get("intent") ?? "draft");
   const data = parsed.data;
   const imagesJson = serializeImages(data.images);
 
@@ -88,7 +130,7 @@ export async function saveProductAction(prevState: ProductActionState, formData:
   // اینجا سقفِ پویای تنظیم برگزارکننده هم بررسی می‌شود.
   const maxPrice = await effectiveMaxPrice();
   if (data.price > maxPrice) {
-    return { error: `قیمت حداکثر ${fa(maxPrice)} سکه است (برابر سقف خرید هر نفر از یک محصول)` };
+    return { error: `قیمت حداکثر ${fa(maxPrice)} سکه است (برابر سقف خرید هر نفر از یک محصول)`, values };
   }
 
   if (intent === "submit") {
@@ -107,7 +149,7 @@ export async function saveProductAction(prevState: ProductActionState, formData:
       maxPrice
     );
     if (!readyCheck) {
-      return { error: "پیش از ثبت نهایی، همهٔ موارد چک‌لیست را کامل کن" };
+      return { error: "پیش از ثبت نهایی، همهٔ موارد چک‌لیست را کامل کن", values };
     }
   }
 

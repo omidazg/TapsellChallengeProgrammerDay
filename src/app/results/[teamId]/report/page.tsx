@@ -67,7 +67,7 @@ export default async function TeamReportPage({ params }: { params: Promise<{ tea
           __html: `
           @page { size: A4; margin: 14mm; }
           @media print {
-            header, nav, .skip-link, [data-announcement-bar] { display: none !important; }
+            body > div > header, nav, footer, .skip-link, #announcement-bar-root { display: none !important; }
             body { background: #fff !important; }
           }
         `,
@@ -77,7 +77,7 @@ export default async function TeamReportPage({ params }: { params: Promise<{ tea
       <div className="mx-auto max-w-3xl px-4 sm:px-6 py-8 space-y-8 print:max-w-none print:px-0 print:py-0">
         <div className="flex flex-wrap items-start justify-between gap-4 print:hidden">
           <Link href="/results" className="text-sm text-brand-cyan-dark hover:underline">
-            ← بازگشت به نتایج
+            → بازگشت به نتایج
           </Link>
           <PrintButton />
         </div>
@@ -215,7 +215,7 @@ export default async function TeamReportPage({ params }: { params: Promise<{ tea
                   <tr key={r.userId} className="border-b border-brand-mist last:border-0">
                     <td className="px-3 py-2">{investorNick.get(r.userId) ?? r.userId}</td>
                     <td className="px-3 py-2 fa-num">{fa(r.invested)}</td>
-                    <td className="px-3 py-2 fa-num text-emerald-600 font-bold">{fa(r.dividend)}</td>
+                    <td className="px-3 py-2 fa-num text-emerald-700 font-bold">{fa(r.dividend)}</td>
                   </tr>
                 ))}
               </tbody>

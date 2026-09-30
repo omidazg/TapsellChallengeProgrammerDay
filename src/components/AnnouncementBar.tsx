@@ -1,8 +1,9 @@
 import { getActiveAnnouncements } from "@/lib/notifications";
 
+// متن سفید روی brand-cyan (~۲٫۴:۱) و amber-500 (~۲:۱) خوانا نبود؛ این ترکیب‌ها ≥۴٫۵:۱ هستند
 const LEVEL_CLASS: Record<string, string> = {
-  info: "bg-brand-cyan text-white",
-  warning: "bg-amber-500 text-white",
+  info: "bg-brand-cyan-dark text-white",
+  warning: "bg-amber-400 text-[#002d47]", // رنگ ثابت (نه text-brand-navy که در حالت تیره روشن می‌شود)
   danger: "bg-brand-red text-white",
 };
 
@@ -27,7 +28,7 @@ export async function AnnouncementBar() {
           <span className="flex-1 break-words">{a.text}</span>
           <button
             type="button"
-            className="announcement-dismiss shrink-0 text-base leading-none opacity-80 hover:opacity-100"
+            className="announcement-dismiss shrink-0 -my-1 inline-flex size-8 items-center justify-center rounded-full text-base leading-none opacity-80 hover:opacity-100"
             data-dismiss-id={a.id}
             aria-label="بستن اطلاعیه"
           >
@@ -48,17 +49,21 @@ export async function AnnouncementBar() {
                 var el = document.getElementById("announcement-" + id);
                 if (el) el.style.display = "none";
               });
-              document.querySelectorAll(".announcement-dismiss").forEach(function (btn) {
-                btn.addEventListener("click", function () {
-                  var id = btn.getAttribute("data-dismiss-id");
-                  var el = document.getElementById("announcement-" + id);
-                  if (el) el.style.display = "none";
-                  var cur = dismissed();
-                  if (id && cur.indexOf(id) === -1) {
-                    cur.push(id);
-                    try { localStorage.setItem(KEY, JSON.stringify(cur)); } catch (e) {}
-                  }
-                });
+              // event delegation: این اسکریپت فقط یک‌بار (بارگذاری اول) اجرا می‌شود؛ اطلاعیه‌هایی که
+              // بعداً با router.refresh اضافه می‌شوند هم باید دکمهٔ بستن کارا داشته باشند.
+              if (window.__arenaAnnDismiss) return;
+              window.__arenaAnnDismiss = true;
+              document.addEventListener("click", function (e) {
+                var btn = e.target && e.target.closest ? e.target.closest(".announcement-dismiss") : null;
+                if (!btn) return;
+                var id = btn.getAttribute("data-dismiss-id");
+                var el = document.getElementById("announcement-" + id);
+                if (el) el.style.display = "none";
+                var cur = dismissed();
+                if (id && cur.indexOf(id) === -1) {
+                  cur.push(id);
+                  try { localStorage.setItem(KEY, JSON.stringify(cur)); } catch (e2) {}
+                }
               });
             })();
           `,

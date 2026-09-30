@@ -33,17 +33,15 @@ export async function GET(request: Request) {
         }
       };
 
-      // فاصلهٔ اتصال دوباره در EventSource + یک کامنت اولیه تا سرآیندها فوراً flush شوند.
-      send("retry: 3000\n: connected\n\n");
-
-      const unsubscribe = auctionBroadcaster().subscribe(send);
-      const heartbeat = setInterval(() => send(": ping\n\n"), HEARTBEAT_MS);
-
+      // cleanup پیش از اولین send تعریف می‌شود تا اگر همان اولین enqueue (مثلاً آخرین وضعیتی که
+      // subscribe فوراً می‌فرستد) خطا داد، اشتراک و heartbeat واقعاً آزاد شوند و نشت نکنند.
+      let unsubscribe: (() => void) | null = null;
+      let heartbeat: ReturnType<typeof setInterval> | null = null;
       cleanup = () => {
         if (closed) return;
         closed = true;
-        clearInterval(heartbeat);
-        unsubscribe();
+        if (heartbeat) clearInterval(heartbeat);
+        unsubscribe?.();
         request.signal.removeEventListener("abort", onAbort);
         try {
           controller.close();
@@ -52,8 +50,23 @@ export async function GET(request: Request) {
         }
       };
       const onAbort = () => cleanup?.();
-      if (request.signal.aborted) cleanup();
-      else request.signal.addEventListener("abort", onAbort);
+      if (request.signal.aborted) {
+        cleanup();
+        return;
+      }
+      request.signal.addEventListener("abort", onAbort);
+
+      // فاصلهٔ اتصال دوباره در EventSource + یک کامنت اولیه تا سرآیندها فوراً flush شوند.
+      send("retry: 3000\n: connected\n\n");
+      if (closed) return;
+      const unsub = auctionBroadcaster().subscribe(send);
+      // اگر پیام فوری subscribe شکست خورد، cleanup پیش از مقداردهی unsubscribe اجرا شده است.
+      if (closed) {
+        unsub();
+        return;
+      }
+      unsubscribe = unsub;
+      heartbeat = setInterval(() => send(": ping\n\n"), HEARTBEAT_MS);
     },
     cancel() {
       cleanup?.();

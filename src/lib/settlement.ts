@@ -32,6 +32,9 @@ export async function getSettledAt(): Promise<Date | null> {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** اجرای در جریان settleGame (single-flight در-فرآیندی) */
+let settleInFlight: Promise<SettlementResult> | null = null;
+
 /**
  * تسویهٔ نهایی.
  *
@@ -40,7 +43,18 @@ export async function getSettledAt(): Promise<Date | null> {
  * (دفتر کل سود، افزایش کیف خرید، ثبت TeamScore و کلید settled_at) در یک تراکنش انجام می‌شود.
  * درون همان تراکنش دوباره settled_at بررسی می‌شود تا دو فراخوانی هم‌زمان دوبار پرداخت نکنند.
  */
-export async function settleGame(): Promise<SettlementResult> {
+export function settleGame(): Promise<SettlementResult> {
+  // single-flight در-فرآیندی: کلیک ادمین و پیشروی خودکار زمان‌بند به CLOSED ممکن است هم‌زمان
+  // برسند؛ فراخوانی دوم به همان اجرای در جریان می‌پیوندد، نه اینکه computeScores و تراکنش
+  // دوم را موازی شروع کند (بررسی settled_at داخل تراکنش همچنان لایهٔ دوم محافظت است).
+  if (settleInFlight) return settleInFlight;
+  settleInFlight = settleGameOnce().finally(() => {
+    settleInFlight = null;
+  });
+  return settleInFlight;
+}
+
+async function settleGameOnce(): Promise<SettlementResult> {
   const existing = await getSettledAt();
   if (existing) {
     const teams = await prisma.teamScore.count();

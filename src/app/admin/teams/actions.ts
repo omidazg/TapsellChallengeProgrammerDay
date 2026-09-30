@@ -24,7 +24,13 @@ export async function renameTeamAction(prevState: TeamsActionState, formData: Fo
   if (dup) return { error: "تیمی با این نام از قبل هست" };
 
   const before = await prisma.team.findUnique({ where: { id: parsed.data.teamId }, select: { name: true } });
-  await prisma.team.update({ where: { id: parsed.data.teamId }, data: { name: parsed.data.name } });
+  if (!before) return { error: "تیم پیدا نشد" };
+  try {
+    await prisma.team.update({ where: { id: parsed.data.teamId }, data: { name: parsed.data.name } });
+  } catch {
+    // برخورد هم‌زمان با قید یکتای نام
+    return { error: "تیمی با این نام از قبل هست" };
+  }
   await audit(admin.id, "team.rename", parsed.data.teamId, { before: before?.name ?? null, after: parsed.data.name });
   revalidatePath("/admin/teams");
   return { ok: true };
@@ -38,6 +44,8 @@ export async function removeMemberAction(prevState: TeamsActionState, formData: 
   if (!parsed.success) return { error: "ورودی نامعتبر است" };
 
   const before = await prisma.user.findUnique({ where: { id: parsed.data.userId }, select: { teamId: true } });
+  if (!before) return { error: "کاربر پیدا نشد" };
+  if (!before.teamId) return { error: "این کاربر عضو تیمی نیست" };
   await prisma.user.update({ where: { id: parsed.data.userId }, data: { teamId: null } });
   if (before?.teamId) await syncLeader(before.teamId);
   await audit(admin.id, "team.remove_member", parsed.data.userId, { fromTeamId: before?.teamId ?? null });
@@ -52,12 +60,33 @@ export async function deleteTeamAction(prevState: TeamsActionState, formData: Fo
   const parsed = teamSchema.safeParse({ teamId: formData.get("teamId") });
   if (!parsed.success) return { error: "ورودی نامعتبر است" };
 
-  const team = await prisma.team.findUnique({ where: { id: parsed.data.teamId }, include: { members: true } });
+  const team = await prisma.team.findUnique({
+    where: { id: parsed.data.teamId },
+    include: { members: { select: { id: true } }, idea: { select: { id: true } }, product: { select: { id: true } } },
+  });
   if (!team) return { error: "تیم پیدا نشد" };
   if (team.members.length > 0) return { error: "فقط تیم خالی را می‌توان حذف کرد" };
+  // ایده/محصول به سرمایه‌گذاری‌ها و خریدهای دیگران گره خورده‌اند؛ حذفشان دفتر کل را ناقص می‌کند.
+  if (team.idea || team.product) return { error: "این تیم ایده یا محصول ثبت کرده و قابل حذف نیست" };
 
-  await prisma.teamLeaderVote.deleteMany({ where: { teamId: team.id } });
-  await prisma.team.delete({ where: { id: team.id } });
+  // ردیف‌های وابسته (دعوت‌نامه، پیشنهاد جایگاه، پرچم، امتیاز) کلید خارجی دارند و بدون پاک‌شدن،
+  // حذف تیم با خطای پایگاه‌داده شکست می‌خورد — همان الگوی adminMergeTeams در lib/team.ts.
+  try {
+    await prisma.$transaction(async (tx) => {
+      const count = await tx.user.count({ where: { teamId: team.id } });
+      if (count > 0) throw new Error("NOT_EMPTY");
+      await tx.teamInvite.deleteMany({ where: { teamId: team.id } });
+      await tx.adSlotBid.deleteMany({ where: { teamId: team.id } });
+      await tx.collusionFlag.deleteMany({ where: { OR: [{ teamId: team.id }, { otherTeamId: team.id }] } });
+      await tx.teamLeaderVote.deleteMany({ where: { teamId: team.id } });
+      await tx.teamScore.deleteMany({ where: { teamId: team.id } });
+      await tx.team.delete({ where: { id: team.id } });
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === "NOT_EMPTY") return { error: "فقط تیم خالی را می‌توان حذف کرد" };
+    console.error("deleteTeamAction failed", e);
+    return { error: "حذف تیم ممکن نشد؛ دوباره تلاش کن" };
+  }
   await audit(admin.id, "team.delete", team.id, { name: team.name });
   revalidatePath("/admin/teams");
   return { ok: true };
@@ -108,7 +137,13 @@ export type AutoComposeState = { error?: string; summary?: string };
 /** تشکیل خودکار تیم‌ها برای کاربران بی‌تیم و تکمیل تیم‌های نیمه‌کاره */
 export async function autoComposeAction(): Promise<AutoComposeState> {
   const admin = await requireAdmin();
-  const result = await autoComposeTeams();
+  let result: Awaited<ReturnType<typeof autoComposeTeams>>;
+  try {
+    result = await autoComposeTeams();
+  } catch (e) {
+    console.error("autoComposeAction failed", e);
+    return { error: "تشکیل خودکار تیم‌ها با خطا روبه‌رو شد" };
+  }
   await audit(admin.id, "team.auto_compose", "", {
     assigned: result.assigned.length,
     teamsCreated: result.teamsCreated,

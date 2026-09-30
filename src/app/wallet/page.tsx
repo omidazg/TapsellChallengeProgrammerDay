@@ -51,16 +51,27 @@ export default async function WalletPage() {
             واقعاً می‌شد خرجش کرد. اگر به سقف {fa(maxPerTarget)}‌سکه‌ای همهٔ هدف‌ها رسیده باشی، یا باقی‌ماندهٔ
             کیف خریدت از قیمت محصولات کمتر باشد، آن سکه‌ها جریمه نمی‌شوند.
           </p>
-          <div className="flex flex-wrap items-center gap-4">
-            <div>
-              <div className="text-xs text-brand-slate">اگر بازی همین الان تمام شود</div>
-              <div className="text-3xl font-black text-brand-red fa-num">{fa(round1(now.penalty))} امتیاز</div>
+          {round1(now.penalty) === 0 ? (
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="text-3xl font-black text-emerald-600 fa-num">بدون جریمه</div>
+              <div className="text-xs text-brand-slate">
+                {leftover === 0 || round1(maxPenalty) === 0
+                  ? "الان جریمه‌ای نداری و سکهٔ خرج‌نشده‌ای هم باقی نمانده است."
+                  : `الان جریمه‌ای نداری؛ اما اگر ${coins(leftover)} باقی‌مانده‌ات خرج نشود، تا ${fa(round1(maxPenalty))} امتیاز کم می‌شود.`}
+              </div>
             </div>
-            <div className="text-xs text-brand-slate">
-              {coins(now.spendable)} از {coins(leftover)} باقی‌مانده‌ات هنوز خرج‌شدنی است. اگر هیچ‌کدام را خرج نکنی و
-              بازار پر از محصول شود، جریمه تا {fa(round1(maxPenalty))} امتیاز می‌رسد.
+          ) : (
+            <div className="flex flex-wrap items-center gap-4">
+              <div>
+                <div className="text-xs text-brand-slate">اگر بازی همین الان تمام شود</div>
+                <div className="text-3xl font-black text-brand-red fa-num">{fa(round1(now.penalty))} امتیاز</div>
+              </div>
+              <div className="text-xs text-brand-slate">
+                {coins(now.spendable)} از {coins(leftover)} باقی‌مانده‌ات هنوز خرج‌شدنی است. اگر هیچ‌کدام را خرج نکنی و
+                بازار پر از محصول شود، جریمه تا {fa(round1(maxPenalty))} امتیاز می‌رسد.
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {shield && (

@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { getPhase, getSetting, phaseIndex } from "@/lib/phase";
+import { getPhase, getSetting, phaseIndex, PHASE_LABEL } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
 import { getIdeasForFloor, lowestRaisedIdeaInfo, parseFloorFilter } from "@/lib/idea";
 import { totalInvestedByUser } from "@/lib/invest";
@@ -21,7 +21,7 @@ export default async function InvestPage({ searchParams }: { searchParams: Promi
   if (phaseIndex(phase) < phaseIndex("SEED_ROUND")) {
     return (
       <>
-        <PageHeader eyebrow="فاز فعلی" title="طبقهٔ سرمایه‌گذاری" />
+        <PageHeader eyebrow={`از فاز «${PHASE_LABEL.SEED_ROUND}» باز می‌شود`} title="طبقهٔ سرمایه‌گذاری" />
         <Container>
           <Locked title="هنوز زود است" desc="طبقهٔ سرمایه‌گذاری از فاز «دور سرمایه‌گذاری» باز می‌شود." />
         </Container>

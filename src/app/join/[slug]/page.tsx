@@ -2,12 +2,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getPhase, phaseIndex } from "@/lib/phase";
-import { getTeamPreviewBySlug, TEAM_FULL } from "@/lib/team";
+import { cache } from "react";
+import { getTeamPreviewBySlug as loadTeamPreview, TEAM_FULL } from "@/lib/team";
 import { ROLES, type RoleKey } from "@/lib/constants";
 import { fa } from "@/lib/persian";
 import { PageHeader, Container, Locked, Alert } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { JoinButton } from "./JoinActions";
+
+/** generateMetadata و صفحه در یک درخواست یک کوئری مشترک می‌زنند */
+const getTeamPreviewBySlug = cache(loadTeamPreview);
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -26,6 +30,8 @@ export default async function JoinPage({ params }: { params: Promise<{ slug: str
   const user = await getCurrentUser();
   const { phase } = await getPhase();
   const formingOpen = phaseIndex(phase) <= phaseIndex("IDEATION");
+  // ثبت‌نام حساب جدید فقط در فاز «ثبت‌نام و تیم» باز است (همان شرط /register).
+  const registrationOpen = phase === "REGISTRATION";
 
   return (
     <>
@@ -50,14 +56,24 @@ export default async function JoinPage({ params }: { params: Promise<{ slug: str
           <div className="mt-6">
             {!user ? (
               <div className="card p-6 anim-rise space-y-3 text-center">
-                <p className="text-sm text-brand-navy">برای پیوستن به این تیم، اول باید وارد شوی یا ثبت‌نام کنی.</p>
+                {team.full ? (
+                  <Alert kind="error">این تیم تکمیل است؛ ظرفیت هر تیم {fa(TEAM_FULL)} نفر است و دیگر نمی‌توان به آن پیوست.</Alert>
+                ) : (
+                  <p className="text-sm text-brand-navy">
+                    {registrationOpen
+                      ? "برای پیوستن به این تیم، اول باید وارد شوی یا ثبت‌نام کنی."
+                      : "برای پیوستن به این تیم، اول وارد حسابت شو. مهلت ثبت‌نام حساب جدید تمام شده است."}
+                  </p>
+                )}
                 <div className="flex flex-col sm:flex-row gap-3">
                   <Link href={`/login?next=${encodeURIComponent(`/join/${slug}`)}`} className="btn-primary w-full">
                     ورود
                   </Link>
-                  <Link href={`/register?next=${encodeURIComponent(`/join/${slug}`)}`} className="btn-cyan w-full">
-                    ثبت‌نام
-                  </Link>
+                  {registrationOpen && (
+                    <Link href={`/register?next=${encodeURIComponent(`/join/${slug}`)}`} className="btn-cyan w-full">
+                      ثبت‌نام
+                    </Link>
+                  )}
                 </div>
               </div>
             ) : user.teamId === team.id ? (
@@ -77,7 +93,7 @@ export default async function JoinPage({ params }: { params: Promise<{ slug: str
               />
             ) : team.full ? (
               <div className="card p-6 anim-rise text-center">
-                <Alert kind="error">این تیم پر شده است؛ ظرفیت هر تیم سه نفر است.</Alert>
+                <Alert kind="error">این تیم پر شده است؛ ظرفیت هر تیم {fa(TEAM_FULL)} نفر است.</Alert>
               </div>
             ) : (
               <div className="card p-6 anim-rise space-y-4 text-center">

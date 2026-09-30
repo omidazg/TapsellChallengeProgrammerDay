@@ -119,20 +119,25 @@ async function isTeamFormingPhase() {
 
 /** به اعضای فعلی تیم (به‌جز خود عضو تازه) اطلاع می‌دهد که عضو جدیدی پیوست */
 async function notifyTeamOfNewMember(teamId: string, joinedUserId: string, joinedNickname: string) {
-  const members = await prisma.user.findMany({
-    where: { teamId, NOT: { id: joinedUserId } },
-    select: { id: true },
-  });
-  await Promise.all(
-    members.map((m) =>
-      notifyUser(m.id, {
-        kind: "team_join",
-        title: "عضو جدید به تیم پیوست",
-        body: `${joinedNickname} به تیم پیوست.`,
-        href: "/team",
-      })
-    )
-  );
+  // اعلان فرعی است؛ خطای آن نباید پیوستنِ ثبت‌شده را برای کاربر «ناموفق» نشان دهد
+  try {
+    const members = await prisma.user.findMany({
+      where: { teamId, NOT: { id: joinedUserId } },
+      select: { id: true },
+    });
+    await Promise.all(
+      members.map((m) =>
+        notifyUser(m.id, {
+          kind: "team_join",
+          title: "عضو جدید به تیم پیوست",
+          body: `${joinedNickname} به تیم پیوست.`,
+          href: "/team",
+        })
+      )
+    );
+  } catch (e) {
+    console.error("notifyTeamOfNewMember failed", e);
+  }
 }
 
 /** تیم تازه می‌سازد و کاربر را در همان تراکنش عضو آن می‌کند */
@@ -159,7 +164,10 @@ export async function createTeamForUser(userId: string, name: string): Promise<T
     });
   } catch (e) {
     if (e instanceof Error && e.message === "RACED") return { error: ERR.alreadyInTeam };
-    return { error: ERR.nameTaken };
+    // فقط خطای یکتایی (P2002) یعنی نام تکراری؛ بقیهٔ خطاها را «نام تکراری» جا نزن
+    if ((e as { code?: string })?.code === "P2002") return { error: ERR.nameTaken };
+    console.error("createTeamForUser failed", e);
+    return { error: ERR.raced };
   }
   return { ok: true };
 }
@@ -185,8 +193,22 @@ export async function joinMatchmaking(userId: string): Promise<TeamResult> {
 
   const target = candidates[0];
   if (target) {
-    const moved = await prisma.user.updateMany({ where: { id: userId, teamId: null }, data: { teamId: target.id } });
-    if (moved.count === 0) return { error: ERR.alreadyInTeam };
+    // ظرفیت دوباره داخل تراکنش بررسی می‌شود تا دو درخواست هم‌زمان تیم را از سه نفر بیشتر نکنند
+    try {
+      await prisma.$transaction(async (tx) => {
+        const memberCount = await tx.user.count({ where: { teamId: target.id } });
+        if (memberCount >= TEAM_FULL) throw new Error("FULL");
+        const moved = await tx.user.updateMany({ where: { id: userId, teamId: null }, data: { teamId: target.id } });
+        if (moved.count === 0) throw new Error("RACED");
+        await tx.teamInvite.updateMany({
+          where: { teamId: target.id, email: user.email, status: "PENDING" },
+          data: { status: "ACCEPTED" },
+        });
+      });
+    } catch (e) {
+      if (e instanceof Error && e.message === "RACED") return { error: ERR.alreadyInTeam };
+      return { error: ERR.raced };
+    }
     await notifyTeamOfNewMember(target.id, userId, user.nickname);
     return { ok: true };
   }
@@ -227,12 +249,16 @@ export async function inviteToTeam(userId: string, email: string): Promise<TeamR
   await prisma.teamInvite.create({ data: { teamId: user.teamId, email: target, inviterId: user.id } });
 
   if (invitee) {
-    await notifyUser(invitee.id, {
-      kind: "team_invite",
-      title: "دعوت به تیم",
-      body: `${user.nickname} تو را به تیم «${team?.name ?? ""}» دعوت کرد.`,
-      href: team ? `/join/${team.slug}` : "/team",
-    });
+    try {
+      await notifyUser(invitee.id, {
+        kind: "team_invite",
+        title: "دعوت به تیم",
+        body: `${user.nickname} تو را به تیم «${team?.name ?? ""}» دعوت کرد.`,
+        href: team ? `/join/${team.slug}` : "/team",
+      });
+    } catch (e) {
+      console.error("invite notification failed", e);
+    }
   }
 
   return { ok: true };
@@ -283,6 +309,7 @@ export async function joinBySlug(userId: string, slug: string): Promise<TeamResu
   if (!(await isTeamFormingPhase())) return { error: ERR.phase };
   if (user.teamId) return { error: ERR.alreadyInTeam };
 
+  if (typeof slug !== "string" || !slug) return { error: ERR.teamNotFound };
   const team = await prisma.team.findUnique({ where: { slug } });
   if (!team) return { error: ERR.teamNotFound };
 
@@ -292,6 +319,11 @@ export async function joinBySlug(userId: string, slug: string): Promise<TeamResu
       if (memberCount >= TEAM_FULL) throw new Error("FULL");
       const moved = await tx.user.updateMany({ where: { id: userId, teamId: null }, data: { teamId: team.id } });
       if (moved.count === 0) throw new Error("RACED");
+      // دعوت‌نامهٔ در انتظارِ همین تیم برای این کاربر دیگر «در انتظار» نیست
+      await tx.teamInvite.updateMany({
+        where: { teamId: team.id, email: user.email, status: "PENDING" },
+        data: { status: "ACCEPTED" },
+      });
     });
   } catch (e) {
     const m = e instanceof Error ? e.message : "";

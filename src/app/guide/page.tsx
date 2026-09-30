@@ -376,7 +376,7 @@ function LoginSection() {
 function PowersSection({ values }: { values: GameValues }) {
   const POWER_TIP = powerTips(values);
   return (
-    <Section id="powers" emoji="✨" title="قدرت‌ها" desc="هر بازیکن یک قدرت ویژه دارد که فقط یک‌بار در کل بازی قابل استفاده است.">
+    <Section id="powers" emoji="✨" title="قدرت‌ها" desc="هر بازیکن یک قدرت ویژه دارد؛ «چانه‌زنی» همیشه فعال است و بقیه فقط یک‌بار در کل بازی قابل استفاده‌اند.">
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger">
         {(Object.keys(POWERS) as PowerKey[]).map((p) => (
           <div key={p} className="rounded-2xl border border-brand-mist p-4">

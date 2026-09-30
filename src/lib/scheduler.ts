@@ -103,7 +103,16 @@ async function autoAdvancePhase() {
     nextEndsAt = new Date(Date.now() + hours * 3600 * 1000);
   }
 
-  await transitionTo(next, nextEndsAt);
+  // محافظت در برابر مسابقه با تغییر دستی فاز از پنل برگزارکننده (یا تمدید زمان همان فاز)
+  // بین خواندن بالا و نوشتن: فقط اگر فاز و زمان پایان هنوز همانی است که دیدیم پیش می‌رویم،
+  // و خودِ پیشروی با یک به‌روزرسانی شرطی (compare-and-set روی مقدار فاز) ادعا می‌شود.
+  const fresh = await getPhase();
+  if (fresh.phase !== phase || fresh.endsAt?.getTime() !== endsAt.getTime()) return;
+  const claimed = await prisma.setting.updateMany({ where: { key: "phase", value: phase }, data: { value: next } });
+  if (claimed.count === 0) return;
+
+  const res = await transitionTo(next, nextEndsAt);
+  if (res.settleFailed) reportTickFailure("settleGame", new Error("تسویهٔ خودکار پس از رفتن به CLOSED شکست خورد"));
   console.log(
     `[scheduler] فاز خودکار از ${phase} به ${next} رفت${nextEndsAt ? ` (پایان: ${nextEndsAt.toISOString()})` : ""}`
   );

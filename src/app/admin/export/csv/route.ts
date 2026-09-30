@@ -10,7 +10,10 @@ const BOM = "﻿";
 export const dynamic = "force-dynamic";
 
 function csvCell(v: string | number): string {
-  const s = String(v);
+  let s = String(v);
+  // جلوگیری از تزریق فرمول (CSV injection): نام تیم/نام مستعار را کاربر می‌نویسد و اکسل
+  // سلول متنیِ شروع‌شده با = + - @ (یا تب/CR) را فرمول اجرا می‌کند. عددها (مثل تغییر منفی) دست نمی‌خورند.
+  if (typeof v === "string" && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }

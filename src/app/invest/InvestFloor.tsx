@@ -6,7 +6,7 @@ import { Cover } from "@/app/idea/Cover";
 
 const FILTERS: { key: FloorFilter; label: string }[] = [
   { key: "all", label: "همه" },
-  { key: "lowest", label: "کمتر دیده‌شده" },
+  { key: "lowest", label: "کم‌سرمایه‌ترین" },
   { key: "topAnalyst", label: "بالاترین رتبهٔ تحلیل‌گر" },
 ];
 

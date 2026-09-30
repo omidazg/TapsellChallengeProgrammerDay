@@ -37,12 +37,14 @@ export default async function LeaderboardPage() {
     ? [...output.teams].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
     : [...output.teams].sort((a, b) => b.netSales - a.netSales || b.hearts - a.hearts);
   const podium = ranked.slice(0, 3);
+  // تا وقتی هیچ تیمی امتیاز/فروشی ندارد، مدال و «نزدیک‌ترین رقیب» معنایی ندارد.
+  const noScores = ranked.length > 0 && ranked.every((t) => metricOf(t) === 0);
   const investors = closed ? topInvestors(output).filter((i) => i.invested > 0).slice(0, 10) : [];
 
   const ownTeamId = viewer?.teamId ?? null;
   const ownIndex = ownTeamId ? ranked.findIndex((t) => t.teamId === ownTeamId) : -1;
   let nearestRival: { team?: { name: string; slug: string; logoSeed: string }; delta: number; ahead: boolean } | null = null;
-  if (ownIndex >= 0) {
+  if (ownIndex >= 0 && !noScores) {
     const own = ranked[ownIndex];
     const ownMetric = metricOf(own);
     let best: { t: (typeof ranked)[number]; delta: number } | null = null;
@@ -66,7 +68,14 @@ export default async function LeaderboardPage() {
           </Alert>
         )}
 
-        {ranked.length > 0 && (
+        {noScores && (
+          <div className="card p-6 text-center anim-rise">
+            <div className="font-black text-brand-navy">هنوز رقابت شروع نشده</div>
+            <p className="mt-1 text-sm text-brand-slate">هنوز هیچ تیمی {metricLabel} ثبت نکرده است؛ با اولین امتیازها سکوی برترها اینجا ظاهر می‌شود.</p>
+          </div>
+        )}
+
+        {ranked.length > 0 && !noScores && (
           <div className="grid grid-cols-3 gap-3 items-end stagger">
             {[podium[1], podium[0], podium[2]].map((t, i) =>
               t ? (
@@ -97,7 +106,7 @@ export default async function LeaderboardPage() {
                 <span className="text-brand-slate">نزدیک‌ترین رقیب:</span>
                 <Avatar seed={nearestRival.team?.logoSeed || "?"} size={24} />
                 <span className="font-bold text-brand-navy">{nearestRival.team?.name ?? "—"}</span>
-                <span className={`font-black fa-num ${nearestRival.ahead ? "text-brand-red" : "text-emerald-600"}`}>
+                <span className={`font-black fa-num ${nearestRival.ahead ? "text-brand-red" : "text-emerald-700"}`}>
                   {nearestRival.ahead ? `${fa(Math.round(nearestRival.delta))} جلوتر` : `${fa(Math.round(nearestRival.delta))} عقب‌تر`}
                 </span>
               </div>
@@ -261,13 +270,15 @@ export default async function LeaderboardPage() {
                       const u = userMap.get(inv.userId);
                       return (
                         <tr key={inv.userId} className="border-b border-brand-mist last:border-0">
-                          <td className="px-4 py-3 flex items-center gap-2 font-bold text-brand-navy">
-                            <Avatar seed={u?.avatarSeed || inv.userId} size={26} />
-                            {u?.nickname ?? "—"}
+                          <td className="px-4 py-3 font-bold text-brand-navy">
+                            <span className="flex items-center gap-2">
+                              <Avatar seed={u?.avatarSeed || inv.userId} size={26} />
+                              {u?.nickname ?? "—"}
+                            </span>
                           </td>
                           <td className="px-4 py-3 fa-num">{fa(inv.invested)}</td>
                           <td className="px-4 py-3 fa-num">{fa(inv.dividend)}</td>
-                          <td className="px-4 py-3 font-black fa-num text-emerald-600">{fa(Math.round(inv.roi * 100))}٪</td>
+                          <td className="px-4 py-3 font-black fa-num text-emerald-700">{fa(Math.round(inv.roi * 100))}٪</td>
                         </tr>
                       );
                     })}
@@ -297,10 +308,10 @@ function PodiumCard({
 }) {
   const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : "🥉";
   return (
-    <div className={`card p-4 text-center anim-pop ${tall ? "pt-8 ring-2 ring-amber-300" : ""}`}>
-      <div className="text-3xl">{medal}</div>
+    <div className={`card p-3 sm:p-4 text-center anim-pop ${tall ? "pt-8 ring-2 ring-amber-300" : ""}`}>
+      <div className="text-3xl" role="img" aria-label={`رتبهٔ ${fa(rank)}`}>{medal}</div>
       <Avatar seed={team?.logoSeed || rank.toString()} size={56} className="mx-auto mt-2" />
-      <div className="mt-2 font-black text-brand-navy truncate">{team?.name ?? "—"}</div>
+      <div className="mt-2 font-black text-brand-navy text-sm sm:text-base leading-snug wrap-anywhere line-clamp-2">{team?.name ?? "—"}</div>
       <div className="mt-1 text-brand-red font-black fa-num">{fa(Math.round(value))}</div>
       <div className="text-[11px] text-brand-slate">{metricLabel}</div>
     </div>

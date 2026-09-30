@@ -63,6 +63,11 @@
 }
 [data-theme="dark"] .input::placeholder { color: rgb(159 184 201 / 70%); }
 
+/* کلاس‌های کامپوننتی که با @apply ساخته شده‌اند، کلاس utility (مثل .text-brand-navy) را روی
+   عنصر ندارند، پس override‌های بالا به آن‌ها نمی‌رسد و باید مستقیم هدف گرفته شوند.
+   بدون این، برچسب همهٔ فرم‌ها (.label) در حالت تیره سرمه‌ای روی زمینهٔ تیره می‌ماند. */
+[data-theme="dark"] .label { color: #eaf4fa; }
+
 [data-theme="dark"] .btn-ghost {
   background-color: transparent;
   color: #eaf4fa;
@@ -74,6 +79,16 @@
 [data-theme="dark"] .hover\:bg-brand-mist:hover { background-color: #1c3a54; }
 [data-theme="dark"] .hover\:text-brand-navy:hover { color: #eaf4fa; }
 [data-theme="dark"] .hover\:text-brand-cyan-dark:hover { color: #5fd1ec; }
+[data-theme="dark"] .hover\:bg-red-50:hover { background-color: rgba(225, 1, 38, 0.14); }
+[data-theme="dark"] .group:hover .group-hover\:bg-brand-mist { background-color: #1c3a54; }
+
+/* حاشیه‌ها و جداکننده‌های نیمه‌شفاف */
+[data-theme="dark"] .border-brand-mist\/60,
+[data-theme="dark"] .border-brand-mist\/70 { border-color: rgb(35 66 92 / 70%); }
+[data-theme="dark"] .divide-brand-mist > :not(:last-child) { border-color: #23425c; }
+
+/* پیل/تب فعال (bg-brand-navy) روی سطح تیره تقریباً نامرئی بود */
+[data-theme="dark"] .bg-brand-navy[aria-current="page"] { background-color: #1f5a80; }
 
 /* جدول‌ها (ردیف‌ها فقط با border-brand-mist جدا می‌شوند، بالا پوشش داده شد) */
 
@@ -81,14 +96,18 @@
 [data-theme="dark"] .chip-red { background-color: rgba(225, 1, 38, 0.16); color: #ff9fb1; }
 [data-theme="dark"] .chip-gold { background-color: rgba(245, 165, 36, 0.18); color: #ffcf7a; }
 [data-theme="dark"] .chip-ok { background-color: rgba(73, 186, 134, 0.18); color: #7be3ba; }
-/* chip-cyan (.bg-brand-mist) و chip-navy (.bg-brand-sky) از override بالا تغییر می‌کنند */
+/* chip-cyan و chip-navy با @apply ساخته شده‌اند و override کلاس‌های .bg-brand-* به آن‌ها نمی‌رسد */
+[data-theme="dark"] .chip-cyan { background-color: #1c3a54; color: #5fd1ec; }
+[data-theme="dark"] .chip-navy { background-color: #16324a; color: #eaf4fa; }
 
 [data-theme="dark"] .bg-red-50 { background-color: rgba(225, 1, 38, 0.14); }
 [data-theme="dark"] .bg-emerald-50 { background-color: rgba(73, 186, 134, 0.16); }
 [data-theme="dark"] .bg-amber-50 { background-color: rgba(245, 165, 36, 0.16); }
+[data-theme="dark"] .bg-red-50\/60 { background-color: rgba(225, 1, 38, 0.1); }
 [data-theme="dark"] .border-red-100 { border-color: rgba(225, 1, 38, 0.3); }
 [data-theme="dark"] .border-emerald-100 { border-color: rgba(73, 186, 134, 0.3); }
-[data-theme="dark"] .border-amber-200 { border-color: rgba(245, 165, 36, 0.35); }
+[data-theme="dark"] .border-amber-200,
+[data-theme="dark"] .border-amber-300 { border-color: rgba(245, 165, 36, 0.35); }
 [data-theme="dark"] .text-emerald-600,
 [data-theme="dark"] .text-emerald-700,
 [data-theme="dark"] .text-emerald-800 { color: #7be3ba; }

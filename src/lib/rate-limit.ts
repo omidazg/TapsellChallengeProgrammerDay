@@ -56,6 +56,19 @@ export function rateLimitPeek(bucket: string, key: string, rule: RateRule): Rate
 }
 
 /**
+ * آخرین برخورد ثبت‌شده برای `bucket:key` را پس می‌گیرد.
+ * الگوی «اول ثبت کن، در صورت موفقیت پس بگیر» جلوی دورزدن سقف با درخواست‌های هم‌زمان را می‌گیرد
+ * (با peek، ده‌ها تلاش موازی پیش از ثبت اولین شکست همه از بررسی رد می‌شدند).
+ */
+export function rateLimitRefund(bucket: string, key: string): void {
+  const id = `${bucket}:${key}`;
+  const times = state.store.get(id);
+  if (!times || times.length === 0) return;
+  times.pop();
+  if (times.length === 0) state.store.delete(id);
+}
+
+/**
  * سقف‌هایی که در روز رویداد همهٔ شرکت‌کننده‌ها پشت یک IP (NAT سالن) هستند.
  * با متغیر محیطی قابل تنظیم‌اند تا در صورت نیاز بدون تغییر کد بالا بروند.
  */

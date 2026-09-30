@@ -33,6 +33,11 @@ export function ShareCard({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    // همان فونت وزیرمتن صفحه (next/font نام خانوادهٔ هش‌شده می‌سازد، پس از body خوانده می‌شود)؛
+    // با Tahoma متن فارسی کارت با بقیهٔ سایت ناهمخوان بود. منتظر بارگذاری فونت می‌مانیم.
+    const font = getComputedStyle(document.body).fontFamily || "Tahoma, sans-serif";
+    await document.fonts?.ready;
+
     // پس‌زمینهٔ گرادیانی برند
     const grad = ctx.createLinearGradient(0, 0, W, H);
     grad.addColorStop(0, "#002d47");
@@ -79,14 +84,14 @@ export function ShareCard({
     ctx.direction = "rtl";
     ctx.textAlign = "right";
     ctx.fillStyle = "#ffffff";
-    ctx.font = "900 56px Tahoma, sans-serif";
+    ctx.font = `900 56px ${font}`;
     ctx.fillText(nickname, W - 70, 170);
 
-    ctx.font = "bold 30px Tahoma, sans-serif";
+    ctx.font = `bold 30px ${font}`;
     ctx.fillStyle = "#eaf4fa";
     ctx.fillText(`${ROLES[role].emoji} ${ROLES[role].label}   ·   ${POWERS[power].emoji} ${POWERS[power].label}`, W - 70, 220);
 
-    ctx.font = "24px Tahoma, sans-serif";
+    ctx.font = `24px ${font}`;
     ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.fillText(department, W - 70, 260);
 
@@ -104,10 +109,10 @@ export function ShareCard({
       roundRect(ctx, cx - boxW, 420, boxW, 110, 18);
       ctx.fill();
       ctx.fillStyle = "#ffffff";
-      ctx.font = "900 34px Tahoma, sans-serif";
+      ctx.font = `900 34px ${font}`;
       ctx.textAlign = "center";
       ctx.fillText(fa(value), cx - boxW / 2, 470);
-      ctx.font = "16px Tahoma, sans-serif";
+      ctx.font = `16px ${font}`;
       ctx.fillStyle = "rgba(255,255,255,0.8)";
       ctx.fillText(label, cx - boxW / 2, 500);
       ctx.textAlign = "right";
@@ -115,10 +120,10 @@ export function ShareCard({
 
     // امضای رویداد (به‌جای لوگوی یک پیلار؛ رویداد برای همهٔ پیلارهای گروه پگاه است)
     ctx.textAlign = "right";
-    ctx.font = "900 26px Tahoma, sans-serif";
+    ctx.font = `900 26px ${font}`;
     ctx.fillStyle = "#ffffff";
     ctx.fillText("میدان بنیان‌گذاران", W - 70, H - 72);
-    ctx.font = "bold 18px Tahoma, sans-serif";
+    ctx.font = `bold 18px ${font}`;
     ctx.fillStyle = "rgba(255,255,255,0.8)";
     ctx.fillText("روز برنامه‌نویس گروه پگاه", W - 70, H - 44);
 

@@ -98,7 +98,8 @@ body {
 
 @layer components {
   .btn-primary { @apply btn bg-brand-red text-white hover:bg-brand-red-dark hover:shadow-lift active:scale-[0.98]; }
-  .btn-cyan { @apply btn bg-brand-cyan text-white hover:bg-brand-cyan-dark hover:shadow-lift active:scale-[0.98]; }
+  /* متن سفید روی brand-cyan (#00b8e0) فقط ~۲٫۴:۱ کنتراست داشت؛ cyan-dark حدود ۵:۱ است */
+  .btn-cyan { @apply btn bg-brand-cyan-dark text-white hover:bg-brand-cyan-deep hover:shadow-lift active:scale-[0.98]; }
   .btn-ghost { @apply btn bg-transparent text-brand-navy border border-brand-mist hover:bg-brand-ice; }
   .btn-navy { @apply btn bg-brand-navy text-white hover:bg-[#013b5c] hover:shadow-lift; }
 
@@ -123,8 +124,10 @@ body {
   .btn-primary, .btn-cyan, .btn-ghost, .btn-navy { min-height: 44px; }
 }
 
-/* جلوگیری از اسکرول افقی صفحه در موبایل */
-html, body { overflow-x: hidden; max-width: 100%; }
+/* جلوگیری از اسکرول افقی صفحه در موبایل.
+   clip (نه hidden): overflow-x:hidden روی body آن را scroll container می‌کند و
+   position:sticky هدر و فهرست راهنما را از کار می‌اندازد؛ hidden فقط fallback مرورگرهای قدیمی است. */
+html, body { overflow-x: hidden; overflow-x: clip; max-width: 100%; }
 img, video { max-width: 100%; height: auto; }
 
 /* انیمیشن‌ها */
@@ -133,6 +136,8 @@ img, video { max-width: 100%; height: auto; }
 @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(225,1,38,.45);} 100% { box-shadow: 0 0 0 16px rgba(225,1,38,0);} }
 @keyframes float { 0%,100% { transform: translateY(0);} 50% { transform: translateY(-8px);} }
 @keyframes ticker { from { transform: translateX(0);} to { transform: translateX(100%);} }
+/* نوار خبری RTL با محتوای دوبار تکرارشده: جابه‌جایی به‌اندازهٔ نصف عرض خودِ نوار (w-max) = حلقهٔ بی‌درز */
+@keyframes ticker-loop { from { transform: translateX(0);} to { transform: translateX(50%);} }
 @keyframes confetti-fall { 0% { transform: translateY(-10vh) rotate(0);} 100% { transform: translateY(110vh) rotate(720deg);} }
 
 .anim-rise { animation: rise .5s cubic-bezier(.2,.8,.2,1) both; }

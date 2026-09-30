@@ -59,6 +59,8 @@ export function BuildForm({
   const [specialStart, setSpecialStart] = useState(initial?.specialStart ?? 20);
   const locked = !editable || submitted;
   const teaser = parseTeaser(teaserUrl);
+  // پس از خطا، مقادیر ارسالی برمی‌گردند تا ری‌ست خودکار فرم نوشته‌ها را پاک نکند
+  const v = state.values ?? {};
 
   return (
     <form action={formAction} className="card p-6 space-y-6 anim-rise">
@@ -70,23 +72,23 @@ export function BuildForm({
         <div className="grid md:grid-cols-2 gap-5">
           <div>
             <label className="label" htmlFor="name">نام محصول</label>
-            <input id="name" name="name" defaultValue={initial?.name} required className="input" placeholder="مثلاً: صف‌یار" />
+            <input id="name" name="name" defaultValue={v.name ?? initial?.name} required maxLength={80} className="input" placeholder="مثلاً: صف‌یار" />
           </div>
           <div>
             <label className="label" htmlFor="tagline">تگ‌لاین</label>
-            <input id="tagline" name="tagline" defaultValue={initial?.tagline} maxLength={160} className="input" placeholder="در یک جمله چه می‌کند؟" />
+            <input id="tagline" name="tagline" defaultValue={v.tagline ?? initial?.tagline} maxLength={160} className="input" placeholder="در یک جمله چه می‌کند؟" />
           </div>
         </div>
 
         <div>
           <label className="label" htmlFor="description">توضیح محصول</label>
-          <textarea id="description" name="description" defaultValue={initial?.description} rows={6} className="input" placeholder="محصول را کامل توضیح بده (خط جدید مجاز است)" />
+          <textarea id="description" name="description" defaultValue={v.description ?? initial?.description} maxLength={4000} rows={6} className="input" placeholder="محصول را کامل توضیح بده (خط جدید مجاز است)" />
         </div>
 
         <div className="grid md:grid-cols-2 gap-5">
           <div>
             <label className="label" htmlFor="demoUrl">لینک دمو</label>
-            <input id="demoUrl" name="demoUrl" defaultValue={initial?.demoUrl} className="input" placeholder="https://..." dir="ltr" />
+            <input id="demoUrl" name="demoUrl" type="url" defaultValue={v.demoUrl ?? initial?.demoUrl} maxLength={500} className="input" placeholder="https://..." dir="ltr" />
           </div>
           <div>
             <label className="label" htmlFor="teaserUrl">لینک تیزر (یوتیوب، آپارات یا mp4)</label>
@@ -133,7 +135,7 @@ export function BuildForm({
           <div className="grid md:grid-cols-2 gap-5">
             <div>
               <label className="label" htmlFor="specialName">نام نسخهٔ ویژه</label>
-              <input id="specialName" name="specialName" defaultValue={initial?.specialName} maxLength={80} className="input" placeholder="مثلاً: نسخهٔ طلایی" />
+              <input id="specialName" name="specialName" defaultValue={v.specialName ?? initial?.specialName} maxLength={80} className="input" placeholder="مثلاً: نسخهٔ طلایی" />
             </div>
             <div>
               <label className="label" htmlFor="specialStart">قیمت شروع حراج ({fa(5)} تا {fa(100)}): {coins(specialStart)}</label>
@@ -151,7 +153,7 @@ export function BuildForm({
           </div>
           <div>
             <label className="label" htmlFor="specialDesc">توضیح نسخهٔ ویژه</label>
-            <textarea id="specialDesc" name="specialDesc" defaultValue={initial?.specialDesc} rows={3} className="input" placeholder="این نسخه چه امتیاز اضافه‌ای دارد؟" />
+            <textarea id="specialDesc" name="specialDesc" defaultValue={v.specialDesc ?? initial?.specialDesc} maxLength={400} rows={3} className="input" placeholder="این نسخه چه امتیاز اضافه‌ای دارد؟" />
           </div>
         </div>
       </fieldset>
@@ -169,7 +171,8 @@ function ImagesField({ images, setImages, disabled }: { images: string[]; setIma
   function addImage(url: string) {
     const v = url.trim();
     if (!v) return;
-    setImages((prev) => (prev.length >= MAX_IMAGES ? prev : [...prev, v]));
+    // تصویر تکراری افزوده نمی‌شود (کلید تکراری و شمارش نادرست در چک‌لیست)
+    setImages((prev) => (prev.length >= MAX_IMAGES || prev.includes(v) ? prev : [...prev, v]));
     setDraft("");
   }
   function removeImage(idx: number) {
@@ -196,7 +199,9 @@ function ImagesField({ images, setImages, disabled }: { images: string[]; setIma
 
   return (
     <div>
-      <label className="label">تصاویر (حداقل ۳، حداکثر {fa(MAX_IMAGES)})</label>
+      <label className="label" htmlFor="productImageUrl">
+        تصاویر (حداقل ۳، حداکثر {fa(MAX_IMAGES)}) — {fa(images.length)} تصویر افزوده شده
+      </label>
       {images.map((url) => (
         <input key={url} type="hidden" name="images" value={url} />
       ))}
@@ -234,8 +239,16 @@ function ImagesField({ images, setImages, disabled }: { images: string[]; setIma
 
       <div className="flex flex-wrap gap-3 items-center">
         <input
+          id="productImageUrl"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter در این فیلد نباید کل فرم را ذخیره کند؛ تصویر را اضافه می‌کند
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addImage(draft);
+            }
+          }}
           disabled={disabled || images.length >= MAX_IMAGES}
           className="input flex-1 min-w-[220px]"
           placeholder="https://picsum.photos/seed/.../800/500"
@@ -258,13 +271,13 @@ function ImagesField({ images, setImages, disabled }: { images: string[]; setIma
         <div className="mt-4 flex gap-3 overflow-x-auto no-scrollbar sm:grid sm:grid-cols-4 sm:overflow-visible stagger">
           {images.map((url, idx) => (
             <div key={url + idx} className="relative aspect-square size-24 shrink-0 rounded-xl overflow-hidden border border-brand-mist group anim-pop sm:size-auto sm:w-full sm:shrink">
-              <Image src={url} alt={`تصویر ${idx + 1}`} fill sizes="200px" className="object-cover" unoptimized={!isLocalUploadUrl(url)} />
+              <Image src={url} alt={`تصویر ${fa(idx + 1)}`} fill sizes="200px" className="object-cover" unoptimized={!isLocalUploadUrl(url)} />
               {!disabled && (
                 <button
                   type="button"
                   onClick={() => removeImage(idx)}
                   className="absolute top-1 left-1 size-6 rounded-full bg-brand-navy/80 text-white text-xs flex items-center justify-center hover:bg-brand-red"
-                  aria-label="حذف تصویر"
+                  aria-label={`حذف تصویر ${fa(idx + 1)}`}
                 >
                   ✕
                 </button>

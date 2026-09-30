@@ -40,8 +40,8 @@ export default function ErrorPage({ error, retry }: { error: Error & { digest?: 
           </Link>
         </div>
         {error.digest && (
-          <p className="mt-8 text-xs text-brand-slate/70 fa-num" dir="ltr">
-            کد خطا برای پشتیبانی: {error.digest}
+          <p className="mt-8 text-xs text-brand-slate">
+            کد خطا برای پشتیبانی: <bdi dir="ltr" className="font-mono select-all">{error.digest}</bdi>
           </p>
         )}
       </div>
