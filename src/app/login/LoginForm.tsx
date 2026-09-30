@@ -3,20 +3,25 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { Alert } from "@/components/ui";
-import { loginAction } from "./actions";
+import { loginAction, type LoginResult } from "./actions";
 
 export function LoginForm({ next }: { next?: string | null }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [access, setAccess] = useState<LoginResult["access"]>(undefined);
   const [pending, startTransition] = useTransition();
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setAccess(undefined);
     startTransition(async () => {
       const res = await loginAction({ email, password, next });
-      if (res?.error) setError(res.error);
+      if (res?.error) {
+        setError(res.error);
+        setAccess(res.access);
+      }
     });
   }
 
@@ -26,6 +31,16 @@ export function LoginForm({ next }: { next?: string | null }) {
         {error && (
           <div id="login-error">
             <Alert kind="error">{error}</Alert>
+            {(access === "NONE" || access === "REJECTED") && (
+              <Link href={`/access-request?email=${encodeURIComponent(email.trim())}`} className="btn-cyan mt-3 w-full">
+                درخواست دسترسی
+              </Link>
+            )}
+            {access === "NO_ACCOUNT" && (
+              <Link href={next ? `/register?next=${encodeURIComponent(next)}` : "/register"} className="btn-cyan mt-3 w-full">
+                ثبت‌نام
+              </Link>
+            )}
           </div>
         )}
         <div>
@@ -67,6 +82,12 @@ export function LoginForm({ next }: { next?: string | null }) {
         هنوز حساب نساخته‌ای؟{" "}
         <Link href={next ? `/register?next=${encodeURIComponent(next)}` : "/register"} className="font-bold text-brand-cyan-dark">
           ثبت‌نام کن
+        </Link>
+      </p>
+      <p className="mt-2 text-center text-sm text-brand-slate">
+        ایمیلت در لیست سفید نیست؟{" "}
+        <Link href="/access-request" className="font-bold text-brand-cyan-dark">
+          درخواست دسترسی بده
         </Link>
       </p>
     </form>

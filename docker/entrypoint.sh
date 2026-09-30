@@ -35,4 +35,10 @@ fi
 echo "[migrate] seeding (idempotent)..."
 npx tsx prisma/seed.ts
 
+# کاربران آزمایشی (رمزهای عمومی) فقط وقتی صریحاً خواسته شود — مثلاً روی استیجینگ
+if [ "${SEED_TEST_USERS:-0}" = "1" ]; then
+  echo "[migrate] seeding test users (SEED_TEST_USERS=1)..."
+  ALLOW_TEST_USERS=1 npx tsx prisma/seed-test-users.ts
+fi
+
 echo "[migrate] done."

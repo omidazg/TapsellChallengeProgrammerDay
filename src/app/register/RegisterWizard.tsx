@@ -6,7 +6,7 @@ import { Avatar } from "@/components/Avatar";
 import { Alert, Stat } from "@/components/ui";
 import { ROLES, POWERS, type RoleKey, type PowerKey } from "@/lib/constants";
 import { fa } from "@/lib/persian";
-import { registerAction } from "./actions";
+import { registerAction, checkRegisterEmailAction } from "./actions";
 import { DEPARTMENTS, type Department } from "./departments";
 
 const STEPS = ["حساب کاربری", "نقش", "قدرت", "کد بزن", "پیش‌نمایش"] as const;
@@ -27,6 +27,8 @@ export function RegisterWizard({ nextUrl }: { nextUrl?: string | null }) {
   const [ran, setRan] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsAccess, setNeedsAccess] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const avatarSeed = useMemo(
@@ -34,8 +36,9 @@ export function RegisterWizard({ nextUrl }: { nextUrl?: string | null }) {
     [role, power, stats, nickname]
   );
 
-  function next() {
+  async function next() {
     setError(null);
+    setNeedsAccess(false);
     if (step === 0) {
       if (!email.trim() || !password || password.length < 6 || nickname.trim().length < 2 || !department) {
         setError("همهٔ فیلدها را کامل کن؛ رمز عبور حداقل ۶ نویسه باشد.");
@@ -44,6 +47,21 @@ export function RegisterWizard({ nextUrl }: { nextUrl?: string | null }) {
       if (!EMAIL_RE.test(email.trim())) {
         setError("ایمیل نامعتبر است.");
         return;
+      }
+      // لیست سفید را همین‌جا چک کن، نه بعد از پنج مرحله
+      setChecking(true);
+      try {
+        const res = await checkRegisterEmailAction(email);
+        if ("error" in res) {
+          setError(res.error);
+          setNeedsAccess(!!res.needsAccess);
+          return;
+        }
+      } catch {
+        setError("بررسی ایمیل انجام نشد؛ دوباره تلاش کن.");
+        return;
+      } finally {
+        setChecking(false);
       }
     }
     if (step === 1 && !role) {
@@ -73,6 +91,7 @@ export function RegisterWizard({ nextUrl }: { nextUrl?: string | null }) {
   function submit() {
     if (!role || !power) return;
     setError(null);
+    setNeedsAccess(false);
     startTransition(async () => {
       const res = await registerAction({
         email,
@@ -89,6 +108,7 @@ export function RegisterWizard({ nextUrl }: { nextUrl?: string | null }) {
       });
       if (res?.error) {
         setError(res.error);
+        setNeedsAccess("needsAccess" in res && !!res.needsAccess);
         // خطاهای مربوط به حساب در مرحلهٔ ۱ قابل اصلاح‌اند
         if (/ایمیل|رمز|نام مستعار|دپارتمان/.test(res.error)) setStep(0);
       }
@@ -116,6 +136,11 @@ export function RegisterWizard({ nextUrl }: { nextUrl?: string | null }) {
       {error && (
         <div id="register-error" className="mb-6 anim-pop">
           <Alert kind="error">{error}</Alert>
+          {needsAccess && (
+            <Link href={`/access-request?email=${encodeURIComponent(email.trim())}`} className="btn-cyan mt-3 w-full sm:w-auto">
+              درخواست دسترسی
+            </Link>
+          )}
         </div>
       )}
 
@@ -295,7 +320,7 @@ export function RegisterWizard({ nextUrl }: { nextUrl?: string | null }) {
         </div>
         <div className="flex flex-col sm:flex-row items-center gap-3">
           {step < STEPS.length - 1 && (
-            <button type="button" onClick={next} className="btn-cyan w-full sm:w-auto">
+            <button type="button" onClick={next} disabled={checking} className="btn-cyan w-full sm:w-auto">
               مرحلهٔ بعد
             </button>
           )}

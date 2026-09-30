@@ -25,6 +25,13 @@ export const ACTION_LABELS: Record<string, string> = {
   "user.reset_password": "بازنشانی رمز عبور کاربر",
   "user.block": "مسدودسازی کاربر",
   "user.unblock": "رفع مسدودی کاربر",
+  "whitelist.toggle": "روشن/خاموش‌کردن لیست سفید",
+  "whitelist.add": "افزودن به لیست سفید",
+  "whitelist.bulk_add": "افزودن گروهی به لیست سفید",
+  "whitelist.update": "ویرایش ردیف لیست سفید",
+  "whitelist.delete": "حذف از لیست سفید",
+  "access.approve": "تأیید درخواست دسترسی",
+  "access.reject": "رد درخواست دسترسی",
 };
 
 export function actionLabel(action: string): string {

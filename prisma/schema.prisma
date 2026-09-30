@@ -375,3 +375,34 @@ model SurveyResponse {
   comment   String   @default("")
   createdAt DateTime @default(now())
 }
+
+// ─── لیست سفید ثبت‌نام ───
+// وقتی whitelist_enabled روشن است فقط ایمیل‌های این فهرست می‌توانند حساب بسازند.
+model AllowedEmail {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  firstName String   @default("")
+  lastName  String   @default("")
+  position  String   @default("") // سمت
+  unit      String   @default("") // واحد سازمانی
+  note      String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// درخواست دسترسی کسی که در لیست سفید نیست؛ با تأیید ادمین به AllowedEmail اضافه می‌شود
+model AccessRequest {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  firstName    String
+  lastName     String
+  position     String // سمت
+  unit         String // واحد سازمانی
+  status       String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([status, createdAt])
+}

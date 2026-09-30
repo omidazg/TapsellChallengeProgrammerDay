@@ -70,6 +70,8 @@ export const LOGIN_IP_RULE = (): RateRule => ({ limit: envInt("LOGIN_IP_RATE", 1
 export const LOGIN_EMAIL_RULE = (): RateRule => ({ limit: envInt("LOGIN_EMAIL_RATE", 8), windowMs: 10 * 60 * 1000 });
 /** ثبت‌نام از یک IP؛ در روز رویداد ده‌ها نفر از یک شبکه ثبت‌نام می‌کنند */
 export const REGISTER_IP_RULE = (): RateRule => ({ limit: envInt("REGISTER_IP_RATE", 150), windowMs: 60 * 60 * 1000 });
+/** درخواست دسترسی (لیست سفید) از یک IP */
+export const ACCESS_REQUEST_IP_RULE = (): RateRule => ({ limit: envInt("ACCESS_REQUEST_IP_RATE", 60), windowMs: 60 * 60 * 1000 });
 /**
  * دستیار سؤال‌وجواب: کل سالن پشت یک IP است، پس سقف per-IP باید بالا باشد.
  * محافظ اصلی در برابر هزینه، سقف بودجهٔ روزانهٔ هوش مصنوعی است (lib/ai-budget.ts)،

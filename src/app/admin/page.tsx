@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
+import { prisma } from "@/lib/db";
 import { getPhase, PHASES, PHASE_LABEL } from "@/lib/phase";
 import {
   getAdminCounts,
@@ -26,6 +27,7 @@ const SUBPAGES = [
   { href: "/admin/auction", label: "حراج زنده", emoji: "🔨" },
   { href: "/admin/flags", label: "پرچم‌های تخلف", emoji: "🚩" },
   { href: "/admin/users", label: "کاربران", emoji: "🧑‍💻" },
+  { href: "/admin/whitelist", label: "لیست سفید و درخواست‌های دسترسی", emoji: "✅" },
   { href: "/admin/export", label: "خروجی گزارش‌ها", emoji: "📤" },
   { href: "/admin/settlement", label: "تسویهٔ نهایی", emoji: "🧾" },
   { href: "/admin/announcements", label: "اطلاعیه‌ها", emoji: "📢" },
@@ -36,11 +38,12 @@ const SUBPAGES = [
 
 export default async function AdminPage() {
   await requireAdmin();
-  const [{ phase, endsAt }, counts, settings, schedulerSettings] = await Promise.all([
+  const [{ phase, endsAt }, counts, settings, schedulerSettings, pendingRequests] = await Promise.all([
     getPhase(),
     getAdminCounts(),
     getSettingsMap(),
     getSchedulerSettingsMap(),
+    prisma.accessRequest.count({ where: { status: "PENDING" } }),
   ]);
 
   const phaseOptions = PHASES.map((p) => ({ value: p, label: PHASE_LABEL[p] }));
@@ -74,6 +77,9 @@ export default async function AdminPage() {
             <Link key={s.href} href={s.href} className="card p-5 flex items-center gap-3 hover:shadow-lift transition">
               <span className="text-2xl" aria-hidden>{s.emoji}</span>
               <span className="font-bold text-brand-navy">{s.label}</span>
+              {s.href === "/admin/whitelist" && pendingRequests > 0 && (
+                <span className="chip chip-red ms-auto">{fa(pendingRequests)} درخواست تازه</span>
+              )}
             </Link>
           ))}
         </div>

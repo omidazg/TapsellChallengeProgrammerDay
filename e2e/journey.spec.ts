@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ADMIN_EMAIL, ADMIN_PASSWORD, login, registerUser, setPhaseViaAdmin, uniqueEmail } from "./helpers";
+import { ADMIN_EMAIL, ADMIN_PASSWORD, login, registerUser, setPhaseViaAdmin, uniqueEmail, whitelistEmails } from "./helpers";
 
 /**
  * سفر کامل یک بازیکن: ثبت‌نام → ساخت تیم → ثبت ایده → (ادمین فازها را جلو می‌برد) →
@@ -20,6 +20,8 @@ test("full journey: register → team → idea → phases → invest → buy →
 
   // ---------- ۱) ثبت‌نام دو تیم (تیم من + تیم رقیب برای سرمایه‌گذاری/خرید متقابل) ----------
   const founderEmail = uniqueEmail("founder");
+  const rivalEmail = uniqueEmail("rival");
+  await whitelistEmails(browser, [founderEmail, rivalEmail]);
   await registerUser(page, { email: founderEmail, nickname: "بنیان‌گذار۱" });
   await expect(page).toHaveURL(/\/team/);
 
@@ -33,7 +35,6 @@ test("full journey: register → team → idea → phases → invest → buy →
   // تیم رقیب، در یک کانتکست مرورگر جدا (کوکی‌های جدا)
   const rivalContext = await browser.newContext();
   const rivalPage = await rivalContext.newPage();
-  const rivalEmail = uniqueEmail("rival");
   await registerUser(rivalPage, { email: rivalEmail, nickname: "بنیان‌گذار۲" });
   const rivalTeamName = `تیم رقیب E2E ${Date.now()}`;
   await rivalPage.getByLabel("اسم تیم").fill(rivalTeamName);

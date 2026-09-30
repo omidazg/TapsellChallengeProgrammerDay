@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { verifyPassword, createSession } from "@/lib/auth";
 import { rateLimit, rateLimitPeek, rateLimitMessage, clientIp, LOGIN_IP_RULE, LOGIN_EMAIL_RULE } from "@/lib/rate-limit";
+import { accessState, type AccessState } from "@/lib/whitelist";
 import { safeNext } from "./next";
 
 const loginSchema = z.object({
@@ -22,7 +23,9 @@ const BLOCKED = "این حساب مسدود شده است.";
  */
 const DUMMY_HASH = "$2b$10$/OBLsQLxVqFmbniuCWdlUeg2IcBqHWKNiL39oJV5Ko33qQXDAU55m";
 
-export async function loginAction(input: { email: string; password: string; next?: string | null }): Promise<{ error: string } | never> {
+export type LoginResult = { error: string; access?: Exclude<AccessState, "ALLOWED"> | "NO_ACCOUNT" };
+
+export async function loginAction(input: { email: string; password: string; next?: string | null }): Promise<LoginResult | never> {
   const parsed = loginSchema.safeParse(input);
   if (!parsed.success) {
     return { error: "ایمیل یا رمز عبور را کامل وارد کن." };
@@ -45,7 +48,12 @@ export async function loginAction(input: { email: string; password: string; next
   if (!user) {
     await verifyPassword(parsed.data.password, DUMMY_HASH);
     countFailure();
-    return { error: GENERIC };
+    // کسی که حساب ندارد باید بداند قدم بعدی‌اش چیست: ثبت‌نام، صبر برای تأیید، یا درخواست دسترسی
+    const state = await accessState(email);
+    if (state === "ALLOWED") return { error: "هنوز با این ایمیل حسابی نساخته‌ای؛ ایمیلت مجاز است، ثبت‌نام کن.", access: "NO_ACCOUNT" };
+    if (state === "PENDING") return { error: "درخواست دسترسی‌ات ثبت شده و در انتظار تأیید برگزارکننده است.", access: "PENDING" };
+    if (state === "REJECTED") return { error: "درخواست دسترسی‌ات رد شده است؛ اگر فکر می‌کنی اشتباهی رخ داده، دوباره درخواست بده یا با برگزارکننده تماس بگیر.", access: "REJECTED" };
+    return { error: "این ایمیل در لیست سفید رویداد نیست. برای ورود، درخواست دسترسی بده تا برگزارکننده تأیید کند.", access: "NONE" };
   }
   if (user.blockedAt) {
     await verifyPassword(parsed.data.password, DUMMY_HASH);

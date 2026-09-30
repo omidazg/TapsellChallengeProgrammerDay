@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Browser, type Page } from "@playwright/test";
 
 /** ایمیل و رمز یکتا برای هر اجرا (جلوگیری از برخورد در سرور در حال اجرا) */
 export function uniqueEmail(tag: string) {
@@ -87,4 +87,19 @@ export async function setPhaseViaAdmin(page: Page, phaseLabel: string) {
   // این تابع به صفحه‌های قفل‌شده با فاز می‌روند.
   await expect(select).toHaveValue(/.+/);
   await expect(page.getByRole("button", { name: "در حال اعمال…" })).toBeHidden();
+}
+
+/**
+ * لیست سفید به‌طور پیش‌فرض روشن است؛ ایمیل‌های تازهٔ تست را پیش از ثبت‌نام،
+ * از مسیر واقعی پنل (/admin/whitelist → افزودن گروهی) و در کانتکستی جدا مجاز می‌کند.
+ */
+export async function whitelistEmails(browser: Browser, emails: string[]) {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await login(page, ADMIN_EMAIL, ADMIN_PASSWORD);
+  await page.goto("/admin/whitelist");
+  await page.getByLabel("فهرست ایمیل‌ها").fill(emails.join("\n"));
+  await page.getByRole("button", { name: "افزودن همه" }).click();
+  await expect(page.getByText(/ایمیل اضافه شد/)).toBeVisible();
+  await ctx.close();
 }

@@ -3,7 +3,8 @@
 import { z } from "zod";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { hashPassword, isEmailAllowed, createSession, getSessionUserId } from "@/lib/auth";
+import { hashPassword, createSession, getSessionUserId } from "@/lib/auth";
+import { accessState, canRegister, type AccessState } from "@/lib/whitelist";
 import { getPhase, getSettingInt } from "@/lib/phase";
 import { DEFAULTS, ROLES, POWERS } from "@/lib/constants";
 import { rateLimit, rateLimitMessage, clientIp, REGISTER_IP_RULE } from "@/lib/rate-limit";
@@ -39,7 +40,23 @@ const registerSchema = z.object({
 
 export type RegisterInput = z.infer<typeof registerSchema> & { next?: string | null };
 
-export async function registerAction(input: RegisterInput): Promise<{ error: string } | never> {
+const NOT_ALLOWED = "این ایمیل در لیست سفید رویداد نیست؛ اول درخواست دسترسی بده تا برگزارکننده تأیید کند.";
+
+/**
+ * بررسی زودهنگام ایمیل در مرحلهٔ اول ویزارد تا کاربر پنج مرحله را پر نکند و آخر کار رد شود.
+ */
+export async function checkRegisterEmailAction(rawEmail: string): Promise<{ ok: true } | { error: string; needsAccess?: boolean }> {
+  const email = z.string().trim().toLowerCase().max(120).email().safeParse(rawEmail);
+  if (!email.success) return { error: FIELD_ERRORS.email };
+  const existing = await prisma.user.findUnique({ where: { email: email.data }, select: { id: true } });
+  if (existing) return { error: "این ایمیل قبلاً ثبت‌نام کرده است؛ از صفحهٔ ورود وارد شو." };
+  const state: AccessState = await accessState(email.data);
+  if (state === "ALLOWED") return { ok: true };
+  if (state === "PENDING") return { error: "درخواست دسترسی این ایمیل هنوز در انتظار تأیید برگزارکننده است." };
+  return { error: NOT_ALLOWED, needsAccess: true };
+}
+
+export async function registerAction(input: RegisterInput): Promise<{ error: string; needsAccess?: boolean } | never> {
   // کاربر واردشده نباید بتواند حساب دوم بسازد و نشستش را جابه‌جا کند
   if (await getSessionUserId()) {
     return { error: "شما از قبل وارد شده‌اید." };
@@ -62,8 +79,8 @@ export async function registerAction(input: RegisterInput): Promise<{ error: str
   }
   const data = parsed.data;
 
-  if (!isEmailAllowed(data.email)) {
-    return { error: "این ایمیل مجاز به ثبت‌نام نیست." };
+  if (!(await canRegister(data.email))) {
+    return { error: NOT_ALLOWED, needsAccess: true };
   }
 
   const existing = await prisma.user.findUnique({ where: { email: data.email } });
