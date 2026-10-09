@@ -156,23 +156,25 @@ PAYMENT_FAKE_ALLOWED=1
 
 درگاه واقعی بعداً با پیاده‌سازی رابط `PaymentDriver` در `src/lib/coins.ts` و ثبت آن در `getPaymentDriver()` و `driverByName()` اضافه می‌شود. جزئیات جریان سفارش و نحوهٔ افزودن درگاه در `docs/ops.md` بخش ۹ است.
 
-## ۱۰. سرور ابرآروان (منطقهٔ قیصر)
+## ۱۰. سرور ابرآروان (تهران، دیتاسنتر فروغ)
 
-سرور دوم روی ابرآروان در منطقهٔ قیصر (`ir-southwest1-a`) است: پلن `c6-medium1` (۲ هسته، ۴ گیگ رم، ۲۵ گیگ دیسک، Ubuntu 24.04) با IP `85.198.54.147` و کلید SSH `~/.ssh/tapsell_qeysar`.
+سرور دوم روی ابرآروان در دیتاسنتر فروغ تهران (`ir-thr-fr1`) است: پلن `c5-medium1` (۲ هسته، ۴ گیگ رم، ۲۵ گیگ دیسک، Ubuntu 24.04) با IP `185.231.181.106` و کلید SSH `~/.ssh/tapsell_qeysar`. ورود SSH فقط با کلید است.
 
 ```bash
-SERVER=root@85.198.54.147 KEY=~/.ssh/tapsell_qeysar ./deploy/deploy.sh
+SERVER=root@185.231.181.106 KEY=~/.ssh/tapsell_qeysar ./deploy/deploy.sh
 ```
 
-شبکهٔ این سرور چند محدودیت دارد:
+**پیش از ساخت سرور تازه، دسترسی اینترنت خارجی را تست کنید.** در مهر ۱۴۰۵ سرورهای منطقهٔ قیصر (`ir-southwest1-a`) و دیتاسنتر بامداد و یکی از IPهای سیمین به ghcr.io و npm تقریباً دسترسی نداشتند (چند کیلوبایت بر ثانیه یا هیچ). سرورهای فروغ و یک سرور دیگر سیمین بیش از ۱۰ مگابایت بر ثانیه می‌گرفتند. دسترسی به IP بستگی دارد، پس هر سرور تازه را جدا تست کنید:
 
-- آرشیو پیش‌فرض Ubuntu آن‌قدر کند است که `apt-get update` گیر می‌کند. اسکریپت setup را با آینهٔ داخلی اجرا کنید: `APT_MIRROR=http://mirror.iranserver.com/ubuntu/ bash server-setup.sh`
-- `download.docker.com` کند است. اسکریپت در صورت شکست، خودش بستهٔ `docker.io` و `docker-compose-v2` اوبونتو را نصب می‌کند.
-- سرور IPv6 ندارد، ولی Docker با رکوردهای AAAA سراغ ghcr می‌رود و به IPv4 برنمی‌گردد. اسکریپت IPv6 را خاموش می‌کند. این دو خط هم باید در `/etc/hosts` سرور باشد:
+```bash
+curl -s -o /dev/null -m 20 -w "%{speed_download}
+" https://registry.npmjs.org/next/-/next-15.0.0.tgz
+```
 
-  ```
-  140.82.121.33 ghcr.io
-  185.199.108.154 pkg-containers.githubusercontent.com
-  ```
+اگر سرور مجبور است در شبکهٔ محدود بماند، این تنظیم‌ها کمک می‌کنند:
 
-- دانلود ایمیج از ghcr گاهی وسط کار قطع می‌شود. `deploy.sh` تا ۸ بار دوباره تلاش می‌کند و لایه‌های کامل‌شده دوباره دانلود نمی‌شوند.
+- آرشیو کند Ubuntu: `APT_MIRROR=http://mirror.iranserver.com/ubuntu/ bash server-setup.sh`
+- `download.docker.com` کند: اسکریپت در صورت شکست، خودش `docker.io` و `docker-compose-v2` اوبونتو را نصب می‌کند.
+- سرور بی IPv6: اسکریپت IPv6 را خاموش می‌کند تا Docker سراغ رکوردهای AAAA نرود.
+- قطع شدن دانلود از ghcr: `deploy.sh` تا ۸ بار دوباره تلاش می‌کند.
+- `server-setup.sh --harden` فایل `/etc/ssh/sshd_config.d/00-arena-hardening.conf` را می‌سازد. ایمیج ابرآروان فایل `01-arvan-root-login.conf` را با `PasswordAuthentication yes` دارد و چون sshd اولین مقدار را نگه می‌دارد، تغییر خود `sshd_config` کافی نیست.

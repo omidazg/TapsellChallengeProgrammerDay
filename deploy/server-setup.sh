@@ -119,6 +119,15 @@ if [ "$HARDEN" -eq 1 ]; then
   else
     echo "PasswordAuthentication no" >> "$SSHD_CONFIG"
   fi
+  # sshd keeps the FIRST value it reads and sshd_config includes
+  # sshd_config.d/* near the top, so image drop-ins (ArvanCloud ships
+  # 01-arvan-root-login.conf with "PasswordAuthentication yes") override the
+  # line above. A 00- drop-in sorts ahead of them.
+  if [ -d /etc/ssh/sshd_config.d ]; then
+    printf "PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin prohibit-password\n" \
+      > /etc/ssh/sshd_config.d/00-arena-hardening.conf
+  fi
+  sshd -t
   systemctl reload ssh || systemctl reload sshd || true
   echo "SSH password authentication is now DISABLED. Key-based login only."
 else
