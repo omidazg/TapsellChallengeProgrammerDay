@@ -1,6 +1,6 @@
 import { Container } from "@/components/ui";
 
-// جدول امتیازات: computeScoresCached روی همهٔ تیم‌ها/سرمایه‌گذاران اجرا می‌شود.
+// جدول امتیازات: computeScoresCached روی همهٔ تیم‌ها و حامیان‌شان اجرا می‌شود.
 export default function Loading() {
   return (
     <Container className="pt-16">

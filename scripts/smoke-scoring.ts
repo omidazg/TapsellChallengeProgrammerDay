@@ -1,19 +1,20 @@
 /**
- * دود-تست امتیازدهی پایان بازی.
+ * دود-تست امتیازدهی سه‌معیاره (داوری انسانی ۵۰۰ + حمایت مردمی ۳۰۰ + داوری هوش مصنوعی ۲۰۰).
  * اجرا: npx tsx scripts/smoke-scoring.ts
  *
- * یک پایگاه‌دادهٔ SQLite موقت می‌سازد، ۳ تیم × ۳ کاربر با ایده، محصول،
- * سرمایه‌گذاری متقاطع (و خودی)، خرید، قلب و نمرهٔ داوران می‌سازد، فاز را
- * CLOSED می‌کند و خروجی computeScores/computeAwards/detectAndFlagCollusion را
- * وارسی می‌کند. در پایان داده‌ها پاک و فاز به REGISTRATION برمی‌گردد.
+ * روی یک پایگاه‌دادهٔ SQLite موقت (createTempDb) چهار تیم می‌سازد:
+ *   آلفا (۳ نفر، کسر تقلب ۲۰)، بتا (۲ نفر)، گاما (شرکت فردی، ۱ نفر) و دلتا (۲ نفر، فقط ایده)
+ * و چند حامی بی‌تیم که از ایده‌ها حمایت می‌کنند و محصولات را می‌خرند. سپس خروجی
+ * computeScores / computeAwards / معیار عمومی سالن (تعداد حامی) و detectAndFlagCollusion را
+ * با مقادیری که دستی از فرمول‌ها حساب شده‌اند می‌سنجد.
  */
 
 import { createTempDb, type TempDb } from "./lib/temp-db";
 import { createRequire } from "node:module";
 import path from "node:path";
 
-// `src/lib/db` پکیج `server-only` را import می‌کند که بیرون از Next خطا می‌دهد.
-// آن ماژول را با یک ماژول خالی در کش require جایگزین می‌کنیم.
+// اگر ماژولی پکیج `server-only` را import کند بیرون از Next خطا می‌دهد؛
+// آن را با یک ماژول خالی در کش require جایگزین می‌کنیم.
 const nodeRequire = createRequire(__filename);
 try {
   const id = nodeRequire.resolve("server-only");
@@ -37,326 +38,223 @@ function check(name: string, ok: boolean, detail = "") {
   checks.push({ name, ok, detail });
   console.log(`${ok ? "PASS" : "FAIL"} — ${name}${detail ? ` (${detail})` : ""}`);
 }
-
-/**
- * پایگاه‌دادهٔ موقت را از روی مایگریشن‌ها می‌سازد، نه با کپی از dev.db.
- * کپی از dev.db روی CI می‌شکند: آنجا dev.db وجود ندارد و نتیجه یک فایل
- * خالی بدون جدول می‌شود. createTempDb همیشه migrate deploy می‌زند.
- */
-function makeTempDb() {
-  tempDb = createTempDb("smoke-scoring");
-}
+const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
 
 async function main() {
-  makeTempDb();
+  tempDb = createTempDb("smoke-scoring");
 
   const { prisma } = await import("../src/lib/db");
   const { computeScores, computeAwards } = await import("../src/lib/scoring");
+  const { peopleSupport, juryRawScore, smallTeamBoostPct, defaultConfig } = await import("../src/lib/economy/engine");
   const { detectAndFlagCollusion } = await import("../src/lib/admin");
   const { setPhase } = await import("../src/lib/phase");
-
-  /** پاک کردن همهٔ ردیف‌ها به ترتیب وابستگی کلید خارجی. */
-  async function wipe() {
-    await prisma.collusionFlag.deleteMany({});
-    await prisma.teamScore.deleteMany({});
-    await prisma.ledgerEntry.deleteMany({});
-    await prisma.adSlotBid.deleteMany({});
-    await prisma.adSlot.deleteMany({});
-    await prisma.bid.deleteMany({});
-    await prisma.auction.deleteMany({});
-    await prisma.heart.deleteMany({});
-    await prisma.purchase.deleteMany({});
-    await prisma.product.deleteMany({});
-    await prisma.dueDiligenceMessage.deleteMany({});
-    await prisma.investment.deleteMany({});
-    await prisma.idea.deleteMany({});
-    await prisma.teamInvite.deleteMany({});
-    await prisma.notification.deleteMany({});
-    await prisma.pushSubscription.deleteMany({});
-    await prisma.user.deleteMany({});
-    await prisma.team.deleteMany({});
-    await prisma.setting.deleteMany({});
-  }
-
-  await wipe();
-
-  const TEAMS = [
-    { key: "alpha", name: "تیم آلفا", revenueShare: 30 },
-    { key: "beta", name: "تیم بتا", revenueShare: 50 },
-    { key: "gamma", name: "تیم گاما", revenueShare: 40 },
-  ];
-  const POWER_BY_INDEX = ["HYPE", "BARGAIN", "SHIELD"] as const;
-
-  const teamIds: Record<string, string> = {};
-  const ideaIds: Record<string, string> = {};
-  const productIds: Record<string, string> = {};
-  const userIds: Record<string, string> = {}; // `${teamKey}-${i}`
+  const { invalidate } = await import("../src/lib/ttl-cache");
+  const { getHallPayloadCached } = await import("../src/lib/hall");
+  const { SCORE_WEIGHTS, DEFAULTS } = await import("../src/lib/constants");
 
   try {
-    // ---------- ساخت تیم‌ها، کاربران، ایده‌ها و محصولات ----------
-    for (const [ti, t] of TEAMS.entries()) {
-      const team = await prisma.team.create({
-        data: { name: t.name, slug: `smoke-${t.key}`, treasury: 0 },
-      });
-      teamIds[t.key] = team.id;
+    // ---------- موتور خالص ----------
+    check("جمع وزن سه معیار = ۱۰۰۰", SCORE_WEIGHTS.jury + SCORE_WEIGHTS.people + SCORE_WEIGHTS.ai === 1000);
+    {
+      // شعار بازی: «۱۰ نفر که هر کدام ۱۰ سکه بدهند، ۱۰ برابرِ یک نفر با ۱۰۰ سکه می‌ارزند.»
+      const many = peopleSupport(Array.from({ length: 10 }, (_, i) => ({ userId: `u${i}`, amount: 10 })), 1000);
+      const one = peopleSupport([{ userId: "whale", amount: 100 }], 1000);
+      check("فرمول درجه‌دو: ۱۰×۱۰ سکه = ۱۰ برابر ۱×۱۰۰ سکه (بدون سقف)", near(many.score, 10 * one.score), `${many.score} vs ${one.score}`);
+      const capped = peopleSupport([{ userId: "whale", amount: 100 }], DEFAULTS.supportCap);
+      check("سقف اثر هر نفر (support_cap=۵۰): ۱۰۰ سکهٔ یک نفر = ۵۰", near(capped.score, 50), `=${capped.score}`);
+      const excluded = peopleSupport([{ userId: "m", amount: 30 }, { userId: "x", amount: 9 }], 50, new Set(["m"]));
+      check("سکهٔ اعضای خود تیم حساب نمی‌شود", near(excluded.score, 9) && excluded.supporters === 1 && excluded.coins === 9, JSON.stringify(excluded));
+      check("داوری: میانگین سه پرسش × ۱۰", juryRawScore({ works: 9, value: 8, pitch: 7 }) === 80);
+      check("داوری: پرسش بی‌نمره کنار می‌رود", juryRawScore({ works: 6, value: null, pitch: 8 }) === 70);
+      check("داوری: بدون نمره → null", juryRawScore({ works: null, value: null, pitch: null }) === null && juryRawScore(null) === null);
+      const cfg = defaultConfig();
+      check(
+        "جبران تیم کوچک: فردی ۱۵٪، دونفره ۷٪، سه‌نفره ۰",
+        smallTeamBoostPct(cfg, 1) === 15 && smallTeamBoostPct(cfg, 2) === 7 && smallTeamBoostPct(cfg, 3) === 0
+      );
+    }
 
-      for (let i = 0; i < 3; i++) {
-        // هر تیم دقیقاً یک عضو BARGAIN، یک SHIELD و یک HYPE دارد (به‌ترتیب چرخشی).
-        // سپر اینجا هیچ هدفی انتخاب نمی‌کند (shieldTeamId=null)، پس روی امتیاز بی‌اثر است.
-        const power = t.key === "gamma" ? POWER_BY_INDEX[i] : POWER_BY_INDEX[(i + 1) % 3];
-        const u = await prisma.user.create({
-          data: {
-            email: `smoke-${t.key}-${i}@example.test`,
-            passwordHash: "x",
-            nickname: `${t.name} ${i + 1}`,
-            role: ["BUILDER", "STORYTELLER", "DEALMAKER"][i],
-            power,
-            teamId: team.id,
-            seedWallet: 100,
-            buyWallet: 100,
-          },
-        });
-        userIds[`${t.key}-${i}`] = u.id;
-      }
-
-      const idea = await prisma.idea.create({
+    // ---------- چیدمان ----------
+    let n = 0;
+    const mkUser = async (key: string, teamId: string | null) =>
+      prisma.user.create({
         data: {
-          teamId: team.id,
-          title: `ایدهٔ ${t.name}`,
+          email: `scoring-${key}-${n++}@example.test`,
+          passwordHash: "x",
+          nickname: `کاربر ${key}`,
+          role: "BUILDER",
+          power: "",
+          teamId,
+          seedWallet: 0,
+          buyWallet: 200,
+        },
+      });
+    const mkIdea = async (teamId: string, title: string) =>
+      prisma.idea.create({
+        data: {
+          teamId,
+          title,
           oneLiner: "یک خطی",
           problem: "مسئله",
           audience: "مخاطب",
           buildPlan: "برنامهٔ ساخت",
-          fundingCap: 200,
-          revenueShare: t.revenueShare,
+          fundingCap: 0,
+          revenueShare: 0,
           submittedAt: new Date(),
         },
       });
-      ideaIds[t.key] = idea.id;
 
-      const product = await prisma.product.create({
+    const alpha = await prisma.team.create({ data: { name: "تیم آلفا", slug: "smoke-alpha", cheatPenalty: 20, cheatNote: "آزمون" } });
+    const beta = await prisma.team.create({ data: { name: "تیم بتا", slug: "smoke-beta" } });
+    const gamma = await prisma.team.create({ data: { name: "شرکت فردی گاما", slug: "smoke-gamma", solo: true } });
+    const delta = await prisma.team.create({ data: { name: "تیم دلتا", slug: "smoke-delta" } });
+
+    const a0 = await mkUser("a0", alpha.id);
+    const a1 = await mkUser("a1", alpha.id);
+    const a2 = await mkUser("a2", alpha.id);
+    const b0 = await mkUser("b0", beta.id);
+    await mkUser("b1", beta.id);
+    await mkUser("g0", gamma.id);
+    await mkUser("d0", delta.id);
+    await mkUser("d1", delta.id);
+    const s = await Promise.all([0, 1, 2, 3, 4].map((i) => mkUser(`s${i}`, null)));
+
+    const ideaAlpha = await mkIdea(alpha.id, "ایدهٔ آلفا");
+    const ideaBeta = await mkIdea(beta.id, "ایدهٔ بتا");
+    const ideaGamma = await mkIdea(gamma.id, "ایدهٔ گاما");
+    const ideaDelta = await mkIdea(delta.id, "ایدهٔ دلتا");
+
+    const mkProduct = (teamId: string, name: string, jury: [number, number, number], aiQuality: number | null) =>
+      prisma.product.create({
         data: {
-          teamId: team.id,
-          name: `محصول ${t.name}`,
-          price: 20,
+          teamId,
+          name,
+          price: 10,
           submittedAt: new Date(),
-          juryQuality: [90, 70, 50][ti],
-          juryTeaser: [80, 60, 40][ti],
-          aiQuality: 55,
+          juryWorks: jury[0],
+          juryValue: jury[1],
+          juryPitch: jury[2],
+          aiQuality,
         },
       });
-      productIds[t.key] = product.id;
-    }
+    const pAlpha = await mkProduct(alpha.id, "محصول آلفا", [9, 8, 7], 60);
+    const pBeta = await mkProduct(beta.id, "محصول بتا", [8, 8, 8], 80);
+    const pGamma = await mkProduct(gamma.id, "محصول گاما", [7, 7, 7], null);
+    // دلتا محصولی ثبت نکرده: داوری null، هوش مصنوعی null
 
-    // ---------- سرمایه‌گذاری: متقاطع + خودی ----------
-    const invest = async (teamKey: string, userKey: string, amount: number, selfFunded: boolean) => {
-      await prisma.investment.create({
-        data: { ideaId: ideaIds[teamKey], userId: userIds[userKey], amount, selfFunded },
-      });
-      await prisma.user.update({ where: { id: userIds[userKey] }, data: { seedWallet: { decrement: amount } } });
-    };
+    const support = (ideaId: string, userId: string, amount: number, selfFunded = false) =>
+      prisma.investment.create({ data: { ideaId, userId, amount, selfFunded } });
+    const buy = (productId: string, userId: string, amount: number) =>
+      prisma.purchase.create({ data: { productId, userId, amount } });
 
-    // آلفا: ۴۰ از بتا + ۳۰ از گاما خارجی، ۲۰ خودی
-    await invest("alpha", "beta-0", 40, false);
-    await invest("alpha", "gamma-0", 30, false);
-    await invest("alpha", "alpha-0", 20, true);
-    // بتا: ۳۰ خارجی از آلفا
-    await invest("beta", "alpha-1", 30, false);
-    // گاما: بدون سرمایهٔ خارجی، فقط ۱۰ خودی
-    await invest("gamma", "gamma-1", 10, true);
+    // آلفا: s0 در مجموع ۱۰۰ سکه (حمایت ۶۰ + خرید ۴۰) → با سقف ۵۰ فقط ۵۰ حساب می‌شود.
+    //       حمایت خودیِ قدیمی a0 و خرید a1 از محصول تیم خودش حساب نمی‌شوند.
+    await support(ideaAlpha.id, s[0].id, 60);
+    await buy(pAlpha.id, s[0].id, 40);
+    await support(ideaAlpha.id, a0.id, 20, true);
+    await buy(pAlpha.id, a1.id, 20);
+    // بتا: چهار حامی هر کدام ۱۰ سکه → (۴√۱۰)² = ۱۶۰
+    await support(ideaBeta.id, s[1].id, 10);
+    await support(ideaBeta.id, s[2].id, 10);
+    await buy(pBeta.id, s[3].id, 10);
+    await buy(pBeta.id, s[4].id, 10);
+    // گاما: دو حامی هر کدام ۲۵ → (۵+۵)² = ۱۰۰
+    await support(ideaGamma.id, s[0].id, 25);
+    await buy(pGamma.id, s[1].id, 25);
+    // دلتا: یک حامی ۱۰ → ۱۰
+    await support(ideaDelta.id, s[2].id, 10);
 
-    // ---------- خرید ----------
-    const buy = async (teamKey: string, userKey: string, amount: number) => {
-      await prisma.purchase.create({
-        data: { productId: productIds[teamKey], userId: userIds[userKey], amount },
-      });
-      await prisma.user.update({ where: { id: userIds[userKey] }, data: { buyWallet: { decrement: amount } } });
-    };
-
-    // زوج تبانی: آلفا ↔ بتا با مجموع ≥ ۶۰
-    await buy("alpha", "beta-0", 40); // بتا از آلفا می‌خرد
-    await buy("beta", "alpha-0", 35); // آلفا از بتا می‌خرد
-    await buy("alpha", "gamma-0", 25);
-    await buy("beta", "gamma-1", 20);
-    await buy("gamma", "alpha-2", 15);
-
-    // ---------- قلب ----------
-    await prisma.heart.create({ data: { productId: productIds["alpha"], userId: userIds["beta-1"] } });
-    await prisma.heart.create({ data: { productId: productIds["alpha"], userId: userIds["gamma-2"] } });
-    await prisma.heart.create({ data: { productId: productIds["beta"], userId: userIds["alpha-2"] } });
-
-    // ---------- تنظیمات: جریمهٔ اعشاری برای آزمودن مسیر getSettingFloat ----------
-    const PENALTY_PER_COIN = 1.5;
-    await prisma.setting.create({ data: { key: "penalty_per_coin", value: String(PENALTY_PER_COIN) } });
-
-    // ---------- فاز پایان بازی ----------
-    await setPhase("CLOSED", null);
-    const phaseRow = await prisma.setting.findUnique({ where: { key: "phase" } });
-    check("فاز روی CLOSED تنظیم شد", phaseRow?.value === "CLOSED", String(phaseRow?.value));
+    await setPhase("MARKET", null);
 
     // ---------- امتیازدهی ----------
     const output = await computeScores();
     const byTeam = new Map(output.teams.map((t) => [t.teamId, t]));
-    const alpha = byTeam.get(teamIds["alpha"])!;
-    const beta = byTeam.get(teamIds["beta"])!;
-    const gamma = byTeam.get(teamIds["gamma"])!;
+    const A = byTeam.get(alpha.id)!;
+    const B = byTeam.get(beta.id)!;
+    const G = byTeam.get(gamma.id)!;
+    const D = byTeam.get(delta.id)!;
+    check("هر چهار تیم امتیاز گرفتند", output.teams.length === 4, `تعداد=${output.teams.length}`);
 
-    check("هر سه تیم امتیاز گرفتند", output.teams.length === 3, `تعداد=${output.teams.length}`);
+    // اندازهٔ تیم و جبران داوری
+    check("تعداد اعضا: ۳ / ۲ / ۱ / ۲", A.memberCount === 3 && B.memberCount === 2 && G.memberCount === 1 && D.memberCount === 2);
+    check("جبران: آلفا ۰٪، بتا ۷٪، گاما (فردی) ۱۵٪", A.boostPct === 0 && B.boostPct === 7 && G.boostPct === 15, `${A.boostPct}/${B.boostPct}/${G.boostPct}`);
+    check("داوری خام آلفا = ۸۰ و بدون جبران", A.juryRaw === 80 && near(A.juryAdjusted, 80), `${A.juryRaw}/${A.juryAdjusted}`);
+    check("داوری بتا = ۸۰ × ۱٫۰۷ = ۸۵٫۶", B.juryRaw === 80 && near(B.juryAdjusted, 85.6), `${B.juryAdjusted}`);
+    check("داوری گاما = ۷۰ × ۱٫۱۵ = ۸۰٫۵", G.juryRaw === 70 && near(G.juryAdjusted, 80.5), `${G.juryAdjusted}`);
+    check("دلتا بی‌محصول: داوری null و صفر", D.juryRaw === null && D.juryAdjusted === 0, `${D.juryRaw}/${D.juryAdjusted}`);
 
-    // فروش ناخالص/خالص
+    // حمایت مردمی
+    check("حمایت مردمی آلفا = ۵۰ (سقف هر نفر؛ خودی‌ها کنار رفتند)", near(A.people, 50), `=${A.people}`);
+    check("حامیان آلفا = ۱، سکهٔ دریافتی = ۱۰۰", A.supporters === 1 && A.coinsReceived === 100, `${A.supporters}/${A.coinsReceived}`);
+    check("حمایت مردمی بتا = ۱۶۰ (۴ حامی × ۱۰)", near(B.people, 160) && B.supporters === 4 && B.coinsReceived === 40, `${B.people}/${B.supporters}`);
+    check("حمایت مردمی گاما = ۱۰۰", near(G.people, 100) && G.supporters === 2 && G.coinsReceived === 50, `${G.people}/${G.supporters}`);
+    check("حمایت مردمی دلتا = ۱۰", near(D.people, 10) && D.supporters === 1, `${D.people}/${D.supporters}`);
+
+    // هوش مصنوعی
+    check("داوری هوش مصنوعی: ۶۰ / ۸۰ / null / null", A.ai === 60 && B.ai === 80 && G.ai === null && D.ai === null);
+
+    // امتیازها (هر معیار نسبت به بهترین)
+    const expA = { jury: (500 * 80) / 85.6, people: (300 * 50) / 160, ai: (200 * 60) / 80 };
+    const expG = { jury: (500 * 80.5) / 85.6, people: (300 * 100) / 160, ai: 0 };
+    check("بتا در هر سه معیار بهترین است → ۱۰۰۰", near(B.pts.jury, 500) && near(B.pts.people, 300) && near(B.pts.ai, 200) && near(B.total, 1000), JSON.stringify(B.pts));
     check(
-      "grossSales آلفا = ۴۰+۲۵ = ۶۵",
-      alpha.grossSales === 65,
-      `gross=${alpha.grossSales}`
+      "امتیاز آلفا = نسبت‌ها منهای کسر تقلب ۲۰",
+      near(A.pts.jury, expA.jury) && near(A.pts.people, expA.people) && near(A.pts.ai, expA.ai) && A.cheatPenalty === 20 &&
+        near(A.total, expA.jury + expA.people + expA.ai - 20),
+      `total=${A.total.toFixed(3)}`
     );
-    check("grossSales بتا = ۳۵+۲۰ = ۵۵", beta.grossSales === 55, `gross=${beta.grossSales}`);
-    check("grossSales گاما = ۱۵", gamma.grossSales === 15, `gross=${gamma.grossSales}`);
-    for (const [name, t] of [["آلفا", alpha], ["بتا", beta], ["گاما", gamma]] as const) {
-      check(
-        `netSales ${name} = gross - dividendsPaid`,
-        t.netSales === t.grossSales - t.dividendsPaid,
-        `net=${t.netSales} gross=${t.grossSales} div=${t.dividendsPaid}`
-      );
-    }
-
-    // سرمایهٔ خارجی و خودی
-    check("externalCapital آلفا = ۷۰ (۲۰ خودی حساب نمی‌شود)", alpha.externalCapital === 70, `=${alpha.externalCapital}`);
-    check("selfCapital آلفا = ۲۰", alpha.selfCapital === 20, `=${alpha.selfCapital}`);
-    check("externalCapital گاما = ۰", gamma.externalCapital === 0, `=${gamma.externalCapital}`);
-
-    // سود: مجموع سود هر تیم ≤ gross × سهم
-    for (const [name, t, share] of [
-      ["آلفا", alpha, 30],
-      ["بتا", beta, 50],
-      ["گاما", gamma, 40],
-    ] as const) {
-      const cap = t.grossSales * (share / 100);
-      check(
-        `مجموع سود پرداختی ${name} ≤ فروش ناخالص × سهم`,
-        t.dividendsPaid <= cap + 1e-9,
-        `paid=${t.dividendsPaid} cap=${cap}`
-      );
-    }
-    const dividendTotal = output.dividends.reduce((a, d) => a + d.dividend, 0);
-    const paidTotal = output.teams.reduce((a, t) => a + t.dividendsPaid, 0);
-    check("مجموع خطوط سود = مجموع dividendsPaid تیم‌ها", dividendTotal === paidTotal, `${dividendTotal} vs ${paidTotal}`);
-    check("گاما بدون سرمایهٔ خارجی سودی پرداخت نکرد", gamma.dividendsPaid === 0, `=${gamma.dividendsPaid}`);
-
-    // قلب و خریدار یکتا
-    check("قلب‌های آلفا = ۲", alpha.hearts === 2, `=${alpha.hearts}`);
-    check("خریداران یکتای آلفا = ۲", alpha.uniqueBuyers === 2, `=${alpha.uniqueBuyers}`);
-
-    // کیفیت از داور (نه هوش مصنوعی)
-    check("کیفیت آلفا از نمرهٔ داور ۹۰ آمده", alpha.quality === 90, `=${alpha.quality}`);
-
-    // جریمهٔ خرج‌نشده: فقط روی سکهٔ «خرج‌شدنی» حساب می‌شود (min(left, spendable))، نه کل مانده.
-    // مقادیر زیر دستی از روی فیکسچر (ایده‌ها/محصولات ثبت‌شده، سرمایه‌گذاری‌ها، خریدها، قدرت‌ها)
-    // با فرمول src/lib/scoring.ts محاسبه شده‌اند تا این یک وارسی مستقل از پیاده‌سازی باشد:
-    //   seedSpendable هر کاربر = Σ روی ایده‌های ثبت‌شدهٔ ۲ تیم دیگر: max(0, ۴۰ − سرمایه‌گذاری‌شده)
-    //   buySpendable هر کاربر = Σ روی محصولات ثبت‌شدهٔ ۲ تیم دیگر (قیمت=۲۰، سقف=۴۰):
-    //     floor(max(0,۴۰−خریده‌شده)/۲۰) × (۲۰ − تخفیفِ BARGAIN‌ی که ۳ است)
-    check("جریمهٔ هر سه تیم اعمال شد", [alpha, beta, gamma].every((t) => t.unspentPenalty > 0),
-      `alpha=${alpha.unspentPenalty} beta=${beta.unspentPenalty} gamma=${gamma.unspentPenalty}`);
+    check("امتیاز گاما", near(G.total, expG.jury + expG.people + expG.ai), `total=${G.total.toFixed(3)}`);
+    check("امتیاز دلتا = فقط حمایت مردمی ۱۸٫۷۵", near(D.total, (300 * 10) / 160), `total=${D.total}`);
     check(
-      "جریمهٔ آلفا فقط روی سکهٔ خرج‌شدنی حساب شد (نه کل مانده)؛ ضریب اعشاری ۱٫۵ هم اعمال شد",
-      Math.abs(alpha.unspentPenalty - 1.5 * 384) < 1e-9,
-      `penalty=${alpha.unspentPenalty} انتظار=${1.5 * 384}`
-    );
-    check(
-      "جریمهٔ بتا فقط روی سکهٔ خرج‌شدنی حساب شد",
-      Math.abs(beta.unspentPenalty - 1.5 * 394) < 1e-9,
-      `penalty=${beta.unspentPenalty} انتظار=${1.5 * 394}`
-    );
-    check(
-      "جریمهٔ گاما فقط روی سکهٔ خرج‌شدنی حساب شد (سپر دیگر معافیت ثابت نمی‌دهد)",
-      Math.abs(gamma.unspentPenalty - 1.5 * 381) < 1e-9,
-      `penalty=${gamma.unspentPenalty} انتظار=${1.5 * 381}`
+      "رتبه‌ها: بتا ۱، آلفا ۲، گاما ۳، دلتا ۴",
+      B.rank === 1 && A.rank === 2 && G.rank === 3 && D.rank === 4,
+      output.teams.map((t) => `${t.rank}:${t.total.toFixed(1)}`).join(" ")
     );
 
-    // ---------- پرتفوی و سلیقه ----------
-    // پرتفوی: اعتبار سود هر سرمایه‌گذاری به تیم *سرمایه‌گذار* می‌رسد، نه تیم سرمایه‌پذیر.
-    //   آلفا: alpha-1 (سپردار) با ۳۰ سکه روی بتا سرمایه‌گذاری کرد؛ سود=floor(27.5*30/30)=۲۷، سپر اثر ندارد (هدفی انتخاب نشده؛ حتی اگر می‌شد، ۲۷>سقف سپر=۱۵)
-    //   بتا: beta-0 با ۴۰ سکه روی آلفا؛ سود=floor(19.5*40/70)=۱۱
-    //   گاما: gamma-0 با ۳۰ سکه روی آلفا؛ سود=floor(19.5*30/70)=۸
-    check("پرتفوی آلفا = ۲۷ (سود سرمایه‌گذاری alpha-1 روی بتا)", alpha.portfolio === 27, `=${alpha.portfolio}`);
-    check("پرتفوی بتا = ۱۱ (سود سرمایه‌گذاری beta-0 روی آلفا)", beta.portfolio === 11, `=${beta.portfolio}`);
-    check("پرتفوی گاما = ۸ (سود سرمایه‌گذاری gamma-0 روی آلفا)", gamma.portfolio === 8, `=${gamma.portfolio}`);
+    // ---------- جوایز (هر پروژه حداکثر یک جایزه) ----------
+    const teamNames = new Map((await prisma.team.findMany({ select: { id: true, name: true } })).map((t) => [t.id, t.name]));
+    const awards = computeAwards(output, { teamNames, picks: { ai: delta.id, live: beta.id } });
+    const awardOf = (key: string) => awards.find((a) => a.key === key);
+    check("جایزهٔ قهرمان → بتا", awardOf("champion")?.teamId === beta.id, String(awardOf("champion")?.teamName));
+    check("انتخاب داوران → گاما (بتا قبلاً جایزه گرفته)", awardOf("jury")?.teamId === gamma.id, String(awardOf("jury")?.teamName));
+    check("انتخاب مردم → آلفا (بتا و گاما قبلاً جایزه گرفته‌اند)", awardOf("people")?.teamId === alpha.id, String(awardOf("people")?.teamName));
+    check("هوش مصنوعی (انتخاب داوران) → دلتا", awardOf("ai")?.teamId === delta.id, String(awardOf("ai")?.teamName));
+    check("محصول لایو: انتخاب بتا که قبلاً جایزه گرفته اهدا نمی‌شود", !awardOf("live"), JSON.stringify(awardOf("live")));
+    check("هیچ تیمی دو جایزه نگرفت", new Set(awards.map((a) => a.teamId)).size === awards.length, `${awards.length} جایزه`);
+    check("مجموع درصد جوایز اهداشده ≤ ۱۰۰", awards.reduce((a, w) => a + w.sharePct, 0) <= 100);
 
-    // سلیقه: Σ خریدهای اعضا از تیم‌های دیگر × کیفیت مؤثر فروشنده / ۱۰۰
-    //   آلفا: alpha-0 از بتا خرید ۳۵×کیفیت۷۰/۱۰۰=۲۴٫۵ + alpha-2 از گاما خرید ۱۵×کیفیت۵۰/۱۰۰=۷٫۵ → ۳۲
-    //   بتا: beta-0 از آلفا خرید ۴۰×کیفیت۹۰/۱۰۰=۳۶
-    //   گاما: gamma-0 از آلفا خرید ۲۵×۹۰/۱۰۰=۲۲٫۵ + gamma-1 از بتا خرید ۲۰×۷۰/۱۰۰=۱۴ → ۳۶٫۵
-    check("سلیقهٔ آلفا = ۳۲", Math.abs(alpha.taste - 32) < 1e-9, `=${alpha.taste}`);
-    check("سلیقهٔ بتا = ۳۶", Math.abs(beta.taste - 36) < 1e-9, `=${beta.taste}`);
-    check("سلیقهٔ گاما = ۳۶٫۵", Math.abs(gamma.taste - 36.5) < 1e-9, `=${gamma.taste}`);
-
-    // رتبه‌بندی
-    const ranks = [...output.teams].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
-    check("رتبه‌ها ۱..۳ و یکتا هستند", ranks.map((r) => r.rank).join(",") === "1,2,3", ranks.map((r) => r.rank).join(","));
+    // ---------- معیار عمومی پیش از پایان بازی: تعداد حامی ----------
+    invalidate("scores:");
+    const hall = await getHallPayloadCached();
+    check("سالن پیش از پایان: معیار = تعداد حامی", hall.metricLabel === "تعداد حامی", hall.metricLabel);
     check(
-      "ترتیب رتبه با امتیاز کل نزولی هم‌خوان است",
-      ranks.every((r, i) => i === 0 || ranks[i - 1].total >= r.total),
-      ranks.map((r) => `${r.rank}:${r.total.toFixed(1)}`).join(" ")
-    );
-    check("آلفا (بیشترین فروش/کیفیت/سرمایه) رتبهٔ ۱ است", alpha.rank === 1, `rank=${alpha.rank}`);
-
-    // ---------- جوایز ----------
-    const teams = await prisma.team.findMany({ select: { id: true, name: true } });
-    const users = await prisma.user.findMany({ select: { id: true, nickname: true } });
-    const awards = computeAwards(output, {
-      teamNames: new Map(teams.map((t) => [t.id, t.name])),
-      userNicknames: new Map(users.map((u) => [u.id, u.nickname])),
-    });
-    const perTeam = new Map<string, number>();
-    for (const a of awards) if (a.teamId) perTeam.set(a.teamId, (perTeam.get(a.teamId) ?? 0) + 1);
-    check(
-      "هیچ تیمی بیش از دو جایزه نگرفت",
-      [...perTeam.values()].every((n) => n <= 2),
-      [...perTeam.entries()].map(([id, n]) => `${id.slice(0, 6)}=${n}`).join(" ")
-    );
-    check("جایزهٔ قهرمان به تیم رتبهٔ ۱ رسید",
-      awards.find((a) => a.key === "champion")?.teamId === alpha.teamId,
-      String(awards.find((a) => a.key === "champion")?.teamName));
-    const bestInvestor = awards.find((a) => a.key === "topInvestor");
-    // beta-0 با ۴۰ و alpha-1 با ۳۰ واجد شرایط‌اند؛ gamma-0 با ۳۰ هم همین‌طور. کمتر از ۳۰ نباید برنده شود.
-    const investedOfWinner = bestInvestor
-      ? output.dividends.filter((d) => d.userId === bestInvestor.userId).reduce((a, d) => a + d.invested, 0)
-      : 0;
-    check(
-      "بهترین سرمایه‌گذار حداقل ۳۰ سکه سرمایه‌گذاری کرده",
-      !!bestInvestor && investedOfWinner >= 30,
-      `invested=${investedOfWinner}`
+      "ترتیب عمومی: بتا (۴)، گاما (۲)، آلفا و دلتا (۱؛ تساوی با سکهٔ دریافتی شکسته می‌شود)",
+      hall.topTeams.map((t) => t.teamId).join(",") === [beta.id, gamma.id, alpha.id, delta.id].join(","),
+      hall.topTeams.map((t) => `${t.name}=${t.metric}`).join(" ")
     );
 
-    // ---------- تشخیص تبانی ----------
+    // ---------- تنظیمات برگزارکننده روی امتیاز اثر می‌گذارند ----------
+    await prisma.setting.create({ data: { key: "support_cap", value: "1000" } });
+    await prisma.setting.create({ data: { key: "solo_boost_pct", value: "20" } });
+    const output2 = await computeScores();
+    const A2 = output2.teams.find((t) => t.teamId === alpha.id)!;
+    const G2 = output2.teams.find((t) => t.teamId === gamma.id)!;
+    check("support_cap=۱۰۰۰: حمایت مردمی آلفا = ۱۰۰", near(A2.people, 100), `=${A2.people}`);
+    check("solo_boost_pct=۲۰: داوری گاما = ۷۰ × ۱٫۲ = ۸۴", near(G2.juryAdjusted, 84) && G2.boostPct === 20, `=${G2.juryAdjusted}`);
+    await prisma.setting.deleteMany({ where: { key: { in: ["support_cap", "solo_boost_pct"] } } });
+
+    // ---------- تشخیص تبانی (خرید متقابل آلفا ↔ بتا) ----------
+    await buy(pBeta.id, a2.id, 40);
+    await buy(pAlpha.id, b0.id, 40);
     const flags = await detectAndFlagCollusion();
     const pair = flags.find(
-      (f) =>
-        (f.teamId === teamIds["alpha"] && f.otherTeamId === teamIds["beta"]) ||
-        (f.teamId === teamIds["beta"] && f.otherTeamId === teamIds["alpha"])
+      (f) => (f.teamId === alpha.id && f.otherTeamId === beta.id) || (f.teamId === beta.id && f.otherTeamId === alpha.id)
     );
     check("پرچم تبانی برای زوج آلفا↔بتا ثبت شد", !!pair, `تعداد پرچم=${flags.length}`);
-    // detectAndFlagCollusion (src/lib/admin.ts) هم خرید و هم سرمایه‌گذاری را جریان حساب می‌کند
-    // (از وقتی سرمایه‌گذاری خودی ممنوع شده، همهٔ سرمایه‌گذاری‌ها بیرونی‌اند):
-    //   آلفا→بتا: خرید alpha-0 از بتا (۳۵) + سرمایه‌گذاری alpha-1 روی بتا (۳۰) = ۶۵
-    //   بتا→آلفا: خرید beta-0 از آلفا (۴۰) + سرمایه‌گذاری beta-0 روی آلفا (۴۰) = ۸۰
-    check(
-      "مبالغ پرچم درست‌اند (۶۵ و ۸۰؛ خرید + سرمایه‌گذاری هر دو حساب می‌شوند)",
-      !!pair && pair.amountAB === 65 && pair.amountBA === 80,
-      pair ? `AB=${pair.amountAB} BA=${pair.amountBA}` : "-"
-    );
-    // اجرای دوباره نباید ردیف تکراری بسازد
+    check("مبالغ پرچم ۴۰ و ۴۰ است (حمایت خودی و خرید از تیم خود حساب نمی‌شود)", !!pair && pair.amountAB === 40 && pair.amountBA === 40, pair ? `AB=${pair.amountAB} BA=${pair.amountBA}` : "-");
+    check("زوج بی‌ارتباط پرچم نخورد", flags.length === 1, `تعداد=${flags.length}`);
     const flags2 = await detectAndFlagCollusion();
     check("اجرای دوبارهٔ تشخیص، پرچم تکراری نساخت", flags2.length === flags.length, `${flags.length} → ${flags2.length}`);
-
-    // ---------- پاک‌سازی و بازگرداندن فاز ----------
-    await wipe();
-    await setPhase("REGISTRATION", null);
-    const restored = await prisma.setting.findUnique({ where: { key: "phase" } });
-    const leftovers = await prisma.team.count();
-    check("پاک‌سازی انجام شد و فاز به REGISTRATION برگشت",
-      restored?.value === "REGISTRATION" && leftovers === 0,
-      `phase=${restored?.value} teams=${leftovers}`);
   } catch (err) {
     console.error(err);
     check("اجرای بدون خطا", false, String(err));

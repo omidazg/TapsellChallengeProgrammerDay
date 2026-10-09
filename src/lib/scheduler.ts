@@ -8,9 +8,8 @@ import { prisma } from "./db";
 import { getPhase, getSetting, getSettingInt } from "./phase";
 import { PHASES, type Phase } from "./phases";
 import { transitionTo } from "./phase-transition";
-import { ensureAuctions, startNextAuction, settleIfEnded } from "./auction";
-import { closeDueSlots } from "./adslots";
-import { runShieldReminders } from "./shield-reminders";
+import { startNextAuction, settleIfEnded } from "./auction";
+import { sendDuePushSlots } from "./adslots";
 import { log } from "./log";
 import { alert } from "./alert";
 
@@ -19,8 +18,7 @@ const DEFAULT_PHASE_HOURS: Partial<Record<Phase, number>> = {
   IDEATION: 24,
   SEED_ROUND: 24,
   BUILD: 48,
-  MARKET: 6,
-  AUCTION: 2,
+  MARKET: 8,
 };
 
 const DEFAULT_AUCTION_GAP_SEC = 60;
@@ -59,14 +57,11 @@ export async function runScheduledTasks(): Promise<void> {
   try {
     await autoAdvancePhase().catch((e) => reportTickFailure("autoAdvancePhase", e));
     await cleanupOldNotifications().catch((e) => reportTickFailure("cleanupOldNotifications", e));
-    // یادآور یک‌بارهٔ سپر (شروع BUILD و ~۳۰ دقیقه پیش از پایان SEED_ROUND/BUILD)؛ خودش فاز را بررسی می‌کند.
-    await runShieldReminders().catch((e) => reportTickFailure("runShieldReminders", e));
 
     const { phase } = await getPhase();
-    if (phase === "AUCTION") {
+    if (phase === "MARKET") {
       await runAuctionTasks().catch((e) => reportTickFailure("runAuctionTasks", e));
-    } else if (phase === "MARKET") {
-      await runMarketTasks().catch((e) => reportTickFailure("runMarketTasks", e));
+      await sendDuePushSlots().catch((e) => reportTickFailure("sendDuePushSlots", e));
     }
     lastSuccessfulTickAt = Date.now();
   } catch (e) {
@@ -118,10 +113,8 @@ async function autoAdvancePhase() {
   );
 }
 
-/** ۱.ب: در فاز AUCTION، تسویهٔ حراج‌های تمام‌شده و شروع خودکار حراج بعدی. */
+/** ۱.ب: در روز بازار، تسویهٔ حراج‌های تمام‌شده و شروع خودکار حراج بعدیِ صف (صف را تیم‌ها پر می‌کنند). */
 async function runAuctionTasks() {
-  await ensureAuctions();
-
   const liveAuctions = await prisma.auction.findMany({ where: { status: "LIVE" } });
   for (const a of liveAuctions) {
     if (!a.endsAt || a.endsAt.getTime() > Date.now()) continue;
@@ -132,7 +125,7 @@ async function runAuctionTasks() {
     }
   }
 
-  const autoAuction = await getSetting("auto_auction", "0");
+  const autoAuction = await getSetting("auto_auction", "1");
   if (autoAuction !== "1") return;
 
   const stillLive = await prisma.auction.findFirst({ where: { status: "LIVE" } });
@@ -157,14 +150,8 @@ async function setLastAuctionEndedAt(d: Date) {
   });
 }
 
-/** ۱.ج: در فاز MARKET، بستن جایگاه‌های تبلیغاتی که ساعتشان رسیده. */
-async function runMarketTasks() {
-  const closed = await closeDueSlots();
-  if (closed.length > 0) console.log(`[scheduler] ${closed.length} جایگاه تبلیغاتی بسته شد`);
-}
-
 /**
- * ۱.د: پاک‌سازی سبک اعلان‌های قدیمی — حداکثر یک‌بار در ساعت اجرا می‌شود (قفل درون‌حافظه‌ای،
+ * ۱.ج: پاک‌سازی سبک اعلان‌های قدیمی — حداکثر یک‌بار در ساعت اجرا می‌شود (قفل درون‌حافظه‌ای،
  * مستقل از فاز بازی). دو دسته حذف می‌شوند: خوانده‌شده و قدیمی‌تر از ۷ روز، یا هر اعلان
  * (خوانده‌شده یا نه) قدیمی‌تر از ۳۰ روز.
  */

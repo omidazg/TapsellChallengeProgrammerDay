@@ -3,12 +3,12 @@ import { requireUser } from "@/lib/auth";
 import { getPhase, phaseIndex, PHASE_LABEL } from "@/lib/phase";
 import { prisma } from "@/lib/db";
 import { PageHeader, Container, Empty, Locked, Alert } from "@/components/ui";
-import { fa, coins } from "@/lib/persian";
+import { AiTag } from "@/components/AiTag";
+import { ideaAiTag } from "@/lib/ai-tag";
+import { teamAccess } from "@/lib/team-access";
 import { IdeaForm, UnsubmitButton } from "./IdeaForm";
 import { AnalystCard } from "./AnalystCard";
 import { Cover } from "./Cover";
-import { teamAccess } from "@/lib/leader";
-import { LeaderNotice } from "@/components/LeaderNotice";
 
 export const metadata = { title: "اتاق ایده" };
 
@@ -20,9 +20,13 @@ export default async function IdeaPage() {
   if (!user.teamId) {
     return (
       <>
-        <PageHeader eyebrow="فاز فعلی" title="اتاق ایده" desc="اینجا ایدهٔ تیمت را می‌نویسی و برای سرمایه‌گذاری ثبت می‌کنی." />
+        <PageHeader eyebrow="فاز فعلی" title="اتاق ایده" desc="اینجا ایدهٔ تیمت را می‌نویسی و برای «دور حمایت» ثبت می‌کنی." />
         <Container>
-          <Empty title="هنوز عضو تیمی نیستی" desc="برای ثبت ایده، ابتدا باید عضو یک تیم سه‌نفره شوی." cta={{ href: "/team", label: "رفتن به اتاق تیم" }} />
+          <Empty
+            title="هنوز عضو تیمی نیستی"
+            desc="برای ثبت ایده، یک تیم بساز، به تیمی بپیوند یا «شرکت فردی» را انتخاب کن."
+            cta={{ href: "/team", label: "رفتن به اتاق تیم" }}
+          />
         </Container>
       </>
     );
@@ -49,12 +53,17 @@ export default async function IdeaPage() {
 
   const idea = await prisma.idea.findUnique({ where: { teamId: user.teamId } });
   const isIdeation = phase === "IDEATION";
+  // هر عضو تیم (یا شرکت‌کنندهٔ فردی) ایده را می‌نویسد و ویرایش می‌کند.
   const { canManage, reason } = await teamAccess(user);
 
   if (isIdeation && !idea?.submittedAt && canManage) {
     return (
       <>
-        <PageHeader eyebrow="فاز فعلی" title="اتاق ایده" desc="ایدهٔ تیمت را بنویس و پیش از پایان فاز ثبت نهایی کن تا سرمایه‌گذاران آن را ببینند." />
+        <PageHeader
+          eyebrow="فاز فعلی"
+          title="اتاق ایده"
+          desc={`ایدهٔ تیمت را بنویس و پیش از پایان فاز ثبت نهایی کن تا در «${PHASE_LABEL.SEED_ROUND}» دیده شود و حامی جمع کند. هر عضو تیم می‌تواند ویرایشش کند.`}
+        />
         <Container className="max-w-3xl">
           <IdeaForm
             draftKey={`${user.teamId}:${idea?.id ?? "new"}`}
@@ -67,8 +76,6 @@ export default async function IdeaPage() {
                     audience: idea.audience,
                     buildPlan: idea.buildPlan,
                     coverUrl: idea.coverUrl,
-                    fundingCap: idea.fundingCap,
-                    revenueShare: idea.revenueShare,
                   }
                 : null
             }
@@ -83,15 +90,14 @@ export default async function IdeaPage() {
       <>
         <PageHeader eyebrow="فاز فعلی" title="اتاق ایده" />
         <Container className="space-y-4">
-          {isIdeation && <LeaderNotice reason={reason} />}
-          <Empty
-            title={isIdeation ? "سرپرست هنوز ایده‌ای ننوشته" : "ایده‌ای ثبت نشده"}
-            desc={isIdeation ? "وقتی سرپرست پیش‌نویس ایده را ذخیره کند، همین‌جا می‌بینی." : "تیم شما ایده‌ای برای این دوره ثبت نکرده است."}
-          />
+          {isIdeation && reason && <Alert kind="info">{reason}</Alert>}
+          <Empty title="ایده‌ای ثبت نشده" desc={isIdeation ? undefined : "تیم شما ایده‌ای برای این دوره ثبت نکرده است."} />
         </Container>
       </>
     );
   }
+
+  const aiTag = ideaAiTag(idea);
 
   return (
     <>
@@ -102,15 +108,14 @@ export default async function IdeaPage() {
         action={isIdeation && canManage && idea.submittedAt ? <UnsubmitButton /> : undefined}
       />
       <Container className="max-w-3xl space-y-6">
-        {isIdeation && <LeaderNotice reason={reason} />}
         {isIdeation && idea.submittedAt && canManage && (
-          <Alert kind="ok">ایده ثبت نهایی شده است. تا پایان فاز اتاق ایده می‌توانی برای ویرایش دوباره آن را باز کنی.</Alert>
+          <Alert kind="ok">ایده ثبت نهایی شده است. تا پایان فاز اتاق ایده هر عضو تیم می‌تواند برای ویرایش دوباره آن را باز کند.</Alert>
         )}
-        {isIdeation && !idea.submittedAt && (
-          <Alert kind="info">این پیش‌نویس سرپرست است و هنوز ثبت نهایی نشده.</Alert>
-        )}
+        {isIdeation && !idea.submittedAt && <Alert kind="info">این پیش‌نویس هنوز ثبت نهایی نشده.</Alert>}
         {!isIdeation && !idea.submittedAt && (
-          <Alert kind="error">این ایده پیش از پایان فاز «اتاق ایده» ثبت نهایی نشد و در طبقهٔ سرمایه‌گذاری نمایش داده نمی‌شود.</Alert>
+          <Alert kind="error">
+            این ایده پیش از پایان فاز «اتاق ایده» ثبت نهایی نشد و در «{PHASE_LABEL.SEED_ROUND}» نمایش داده نمی‌شود.
+          </Alert>
         )}
 
         {idea.coverUrl && (
@@ -120,6 +125,7 @@ export default async function IdeaPage() {
         )}
 
         <div className="card p-6 space-y-4 anim-rise">
+          <AiTag tag={aiTag} />
           <div>
             <div className="text-xs font-bold text-brand-slate mb-1">مسئله</div>
             <p className="text-brand-navy leading-7 break-words whitespace-pre-line">{idea.problem}</p>
@@ -131,10 +137,6 @@ export default async function IdeaPage() {
           <div>
             <div className="text-xs font-bold text-brand-slate mb-1">برنامهٔ ساخت ۴۸ ساعته</div>
             <p className="text-brand-navy leading-7 break-words whitespace-pre-line">{idea.buildPlan}</p>
-          </div>
-          <div className="flex flex-wrap gap-3 pt-2">
-            <span className="chip-navy">هدف جذب سرمایه: {coins(idea.fundingCap)}</span>
-            <span className="chip-cyan">سهم سود سرمایه‌گذار: {fa(idea.revenueShare)}٪</span>
           </div>
         </div>
 

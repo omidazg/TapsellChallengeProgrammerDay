@@ -2,7 +2,7 @@ import { PHASES, PHASE_LABEL, type Phase } from "@/lib/phases";
 import { fa, jdatetime } from "@/lib/persian";
 
 /**
- * نمایش پلکانی هفت فاز بازی با فاز جاری هایلایت‌شده.
+ * نمایش پلکانی فازهای بازی (شش فاز؛ حراج زنده داخل «روز بازار» است) با فاز جاری هایلایت‌شده.
  * فقط از `@/lib/phases` (بدون وابستگی به prisma) استفاده می‌کند، پس هم در سرور
  * و هم — در صورت نیاز — در کلاینت قابل استفاده است. کامپوننت سرور است (بدون state).
  */
@@ -12,7 +12,7 @@ export function PhaseTimeline({ phase, endsAt }: { phase: Phase; endsAt: string 
   return (
     <div className="card p-5 sm:p-6">
       <h3 className="text-sm font-bold text-brand-cyan-dark mb-4">مسیر بازی</h3>
-      <ol className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+      <ol className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {PHASES.map((p, i) => {
           const isCurrent = i === currentIndex;
           const isDone = i < currentIndex;

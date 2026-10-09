@@ -1,7 +1,7 @@
 /**
  * فید زندهٔ رویدادهای عمومی — بدون جدول جدید؛ از جدول‌های موجود ساخته می‌شود.
  * فقط دادهٔ از قبل عمومی (نام تیم، نام‌مستعار کاربر، اسم محصول) را نشان می‌دهد؛
- * هیچ ایمیل، موجودی کیف یا مبلغ سرمایه‌گذاری (که در InvestorList پنهان است) درز نمی‌کند.
+ * هیچ ایمیل، موجودی کیف یا مبلغ حمایت (که در InvestorList پنهان است) درز نمی‌کند.
  */
 import { prisma } from "./db";
 import { PHASE_LABEL, PHASES, type Phase } from "./phases";
@@ -90,11 +90,11 @@ export async function buildFeed(limit = FEED_LIMIT): Promise<FeedEvent[]> {
 
   for (const inv of investments) {
     if (!inv.idea) continue;
-    // مبلغ سرمایه‌گذاری در جای دیگر (InvestorList) هم پیش از افشا پنهان است؛ اینجا هم فقط خبر بدون رقم می‌آید.
+    // مبلغ حمایت در جای دیگر (InvestorList) هم پیش از افشا پنهان است؛ اینجا هم فقط خبر بدون رقم می‌آید.
     events.push({
       id: `invest:${inv.id}`,
       emoji: "🌱",
-      text: `تیم «${inv.idea.team.name}» سرمایهٔ تازه گرفت`,
+      text: `تیم «${inv.idea.team.name}» حمایت تازه گرفت`,
       at: inv.createdAt.toISOString(),
     });
   }

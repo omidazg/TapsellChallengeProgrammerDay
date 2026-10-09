@@ -95,7 +95,7 @@ export function HallClient() {
         <div className="flex-1 flex items-center justify-center text-2xl text-white/60">در حال بارگذاری نمای سالن…</div>
       ) : (
         <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1.1fr_1.4fr_1.1fr] gap-4 p-4">
-          <TopTeamsPanel teams={data.topTeams} metricLabel={data.metricLabel} />
+          <TopTeamsPanel teams={data.topTeams} metricLabel={data.metricLabel} closed={data.phase === "CLOSED"} />
           <AuctionPanel auction={data.auction} now={now} />
           <FeedPanel feed={data.feed} />
         </div>
@@ -159,9 +159,10 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-function TopTeamsPanel({ teams, metricLabel }: { teams: HallPayload["topTeams"]; metricLabel: string }) {
+/** پیش از پایان بازی فقط معیار عمومی «تعداد حامی» دیده می‌شود؛ پس از آن امتیاز کل (همان قاعدهٔ جدول امتیازات). */
+function TopTeamsPanel({ teams, metricLabel, closed }: { teams: HallPayload["topTeams"]; metricLabel: string; closed: boolean }) {
   return (
-    <Panel title={`تیم‌های برتر · ${metricLabel}`}>
+    <Panel title={closed ? `تیم‌های برتر · ${metricLabel}` : `پرحامی‌ترین تیم‌ها · ${metricLabel}`}>
       {teams.length === 0 ? (
         <p className="text-white/50 text-lg">هنوز تیمی رتبه‌بندی نشده</p>
       ) : (

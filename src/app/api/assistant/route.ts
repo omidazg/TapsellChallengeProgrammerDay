@@ -3,6 +3,7 @@ import { z } from "zod";
 import { askChat } from "@/lib/ai";
 import { getCurrentUser } from "@/lib/auth";
 import { buildAssistantContext } from "@/lib/assistant-context";
+import { getPrizePoolCached } from "@/lib/prize-pool";
 import { getEffectiveGameValues } from "@/lib/game-values";
 import { ASSISTANT_IP_RULE, rateLimit, rateLimitMessage } from "@/lib/rate-limit";
 
@@ -17,8 +18,8 @@ const bodySchema = z.object({
 });
 
 /**
- * سقف per-user: بودجهٔ روزانهٔ هوش مصنوعی بین دستیار و بقیهٔ قابلیت‌ها (داوری، بررسی
- * سرمایه‌گذاری) مشترک است؛ بدون این سقف یک نفر (یا یک اسکریپت) می‌تواند کل بودجه را
+ * سقف per-user: بودجهٔ روزانهٔ هوش مصنوعی بین دستیار و بقیهٔ قابلیت‌ها (داوری، تحلیل
+ * ایده) مشترک است؛ بدون این سقف یک نفر (یا یک اسکریپت) می‌تواند کل بودجه را
  * در چند دقیقه تمام کند.
  */
 const ASSISTANT_USER_RATE = { limit: 30, windowMs: 10 * 60 * 1000 };
@@ -68,7 +69,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "پیام نامعتبر است." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
 
-  const reply = await askChat(buildAssistantContext(await getEffectiveGameValues()), messages.slice(firstUser), 600);
+  const [values, pool] = await Promise.all([getEffectiveGameValues(), getPrizePoolCached()]);
+  const reply = await askChat(buildAssistantContext(values, pool), messages.slice(firstUser), 600);
   if (!reply) {
     return NextResponse.json(
       { error: "دستیار هوش مصنوعی الان در دسترس نیست؛ سؤالت را از برگزارکننده بپرس یا راهنمای بازی (/guide) را ببین." },

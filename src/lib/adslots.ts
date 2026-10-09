@@ -1,13 +1,16 @@
 import { prisma } from "./db";
-import { getSetting } from "./phase";
-import { AD_SLOT_KINDS } from "./constants";
-import { pickSecondPriceWinner } from "./economy/bids";
+import { getPhase, getSetting, getSettingInt } from "./phase";
+import { AD_SLOT_KINDS, DEFAULTS } from "./constants";
+import { reservedBuyCoins } from "./reservations";
+import { notifyAll } from "./notifications";
+import { fa } from "./persian";
 
 export type AdSlotKind = keyof typeof AD_SLOT_KINDS;
 const KINDS = Object.keys(AD_SLOT_KINDS) as AdSlotKind[];
+const HOUR_MS = 60 * 60 * 1000;
 
-/** جایگاه‌ها این مدت پیش از شروع ساعتشان بسته می‌شوند (پیشنهاد تازه پذیرفته نمی‌شود). */
-const SLOT_CLOSE_LEAD_MS = 5 * 60 * 1000;
+/** خرید جایگاه از «ساخت محصول» تا پایان «روز بازار» باز است (پیش‌خرید ساعت‌های روز بازار). */
+const ADSLOT_PHASES = ["BUILD", "MARKET"] as const;
 
 /**
  * ساعت شروع روز بازار: از تنظیمات (`market_starts_at`)؛ وگرنه ساعت اولین جایگاه موجود
@@ -26,11 +29,18 @@ export async function marketStartFromSettings(): Promise<Date> {
   return d;
 }
 
+/** طول روز بازار (ساعت) از تنظیم زمان‌بند `phase_hours_MARKET`. */
+export async function marketHoursFromSettings(): Promise<number> {
+  const hours = await getSettingInt("phase_hours_MARKET", 8);
+  return Math.min(24, Math.max(1, hours));
+}
+
 /** برای هر نوع جایگاه و هر ساعت از روز بازار یک AdSlot می‌سازد (idempotent). */
-export async function ensureAdSlots(marketStart: Date, hours = 6) {
+export async function ensureAdSlots(marketStart: Date, hours?: number) {
+  hours ??= await marketHoursFromSettings();
   const wanted: { kind: AdSlotKind; hourStart: Date }[] = [];
   for (let h = 0; h < hours; h++) {
-    const hourStart = new Date(marketStart.getTime() + h * 60 * 60 * 1000);
+    const hourStart = new Date(marketStart.getTime() + h * HOUR_MS);
     for (const kind of KINDS) wanted.push({ kind, hourStart });
   }
   if (wanted.length === 0) return;
@@ -48,154 +58,158 @@ export async function ensureAdSlots(marketStart: Date, hours = 6) {
   );
 }
 
-/** ثبت/به‌روزرسانی پیشنهاد یک تیم روی یک جایگاه؛ سقف = خزانه منهای سایر تعهدهای باز تیم. */
-export async function upsertBid(slotId: string, teamId: string, amount: number) {
-  if (!Number.isInteger(amount) || amount < 1) throw new Error("مبلغ پیشنهاد باید عدد صحیح و دست‌کم یک سکه باشد");
-  return prisma.$transaction(async (tx) => {
-    const slot = await tx.adSlot.findUnique({ where: { id: slotId } });
-    if (!slot) throw new Error("جایگاه پیدا نشد");
-    if (slot.status !== "OPEN") throw new Error("این جایگاه بسته شده است");
-    // همان مهلت closeDueSlots: تا بستن خودکار بعدی، پیشنهاد دیرهنگام پذیرفته نشود.
-    if (slot.hourStart.getTime() - SLOT_CLOSE_LEAD_MS <= Date.now()) throw new Error("مهلت پیشنهاد این جایگاه تمام شده و بسته شده است");
-
-    const team = await tx.team.findUnique({ where: { id: teamId } });
-    if (!team) throw new Error("تیم پیدا نشد");
-
-    const otherBids = await tx.adSlotBid.findMany({
-      where: { teamId, slot: { status: "OPEN" }, slotId: { not: slotId } },
-    });
-    const committedElsewhere = otherBids.reduce((s, b) => s + b.amount, 0);
-    if (committedElsewhere + amount > team.treasury) {
-      throw new Error("مجموع پیشنهادهای باز از خزانهٔ تیم بیشتر می‌شود");
-    }
-
-    return tx.adSlotBid.upsert({
-      where: { slotId_teamId: { slotId, teamId } },
-      update: { amount },
-      create: { slotId, teamId, amount },
-    });
-  });
+/** قیمت ثابت هر نوع جایگاه (سکه) از تنظیمات. */
+export async function adSlotPrices(): Promise<Record<AdSlotKind, number>> {
+  const [banner, featured, push] = await Promise.all([
+    getSettingInt("adslot_price_banner", DEFAULTS.adslotPriceBanner),
+    getSettingInt("adslot_price_featured", DEFAULTS.adslotPriceFeatured),
+    getSettingInt("adslot_price_push", DEFAULTS.adslotPricePush),
+  ]);
+  return { BANNER: banner, FEATURED: featured, PUSH: push };
 }
 
-/** قیمت دوم برای یک جایگاه: بستن با قاعدهٔ حراج قیمت-دوم مهروموم. */
-export async function closeSlot(slotId: string) {
-  return prisma.$transaction(async (tx) => {
-    // نگهبان مسابقه/idempotency: فقط فراخوانی‌ای که واقعاً جایگاه را ببندد ادامه می‌دهد.
-    const claimed = await tx.adSlot.updateMany({ where: { id: slotId, status: "OPEN" }, data: { status: "CLOSED" } });
-    if (claimed.count === 0) return null;
+export type BuyAdSlotResult = { ok: true; price: number } | { ok: false; error: string };
 
-    const bids = await tx.adSlotBid.findMany({ where: { slotId } });
-    if (bids.length === 0) {
-      return tx.adSlot.findUnique({ where: { id: slotId } });
-    }
-    const teams = await tx.team.findMany({
-      where: { id: { in: [...new Set(bids.map((b) => b.teamId))] } },
-      select: { id: true, treasury: true },
+/**
+ * خرید یک ساعت جایگاه تبلیغاتی به قیمت ثابت. هر عضو تیم می‌تواند از سکه‌های خودش برای تیمش بخرد.
+ * اول‌آمده، اول‌خرید: جایگاهی که فروخته شد دیگر قابل خرید نیست. هر تیم حداکثر adslot_max_per_team جایگاه.
+ * جایگاه برای امتیاز اثری ندارد؛ فقط دیده‌شدن در بازار را بیشتر می‌کند.
+ */
+export async function buyAdSlot(userId: string, slotId: string): Promise<BuyAdSlotResult> {
+  const { phase } = await getPhase();
+  if (!(ADSLOT_PHASES as readonly string[]).includes(phase)) {
+    return { ok: false, error: "خرید جایگاه تبلیغاتی فقط در «ساخت محصول» و «روز بازار» ممکن است" };
+  }
+  const [prices, maxPerTeam] = await Promise.all([
+    adSlotPrices(),
+    getSettingInt("adslot_max_per_team", DEFAULTS.adslotMaxPerTeam),
+  ]);
+
+  try {
+    return await prisma.$transaction(async (tx): Promise<BuyAdSlotResult> => {
+      const user = await tx.user.findUnique({ where: { id: userId }, select: { id: true, teamId: true, buyWallet: true } });
+      if (!user) return { ok: false, error: "کاربر پیدا نشد" };
+      if (!user.teamId) return { ok: false, error: "جایگاه تبلیغاتی برای محصول تیم خریده می‌شود؛ اول عضو یک تیم شو" };
+      const product = await tx.product.findUnique({ where: { teamId: user.teamId }, select: { submittedAt: true } });
+      if (!product?.submittedAt) return { ok: false, error: "اول محصولت را ثبت نهایی کن؛ تبلیغ به صفحهٔ محصول می‌رسد" };
+
+      const slot = await tx.adSlot.findUnique({ where: { id: slotId } });
+      if (!slot) return { ok: false, error: "جایگاه پیدا نشد" };
+      if (slot.winnerTeamId || slot.status !== "OPEN") return { ok: false, error: "این جایگاه قبلاً فروخته شده است" };
+      if (slot.hourStart.getTime() + HOUR_MS <= Date.now()) return { ok: false, error: "زمان این جایگاه گذشته است" };
+
+      const owned = await tx.adSlot.count({ where: { winnerTeamId: user.teamId } });
+      if (owned >= maxPerTeam) return { ok: false, error: `هر تیم حداکثر ${fa(maxPerTeam)} جایگاه می‌تواند بخرد` };
+
+      const price = prices[slot.kind as AdSlotKind] ?? 0;
+      const spendable = user.buyWallet - (await reservedBuyCoins(tx, userId));
+      if (price > spendable) return { ok: false, error: "سکهٔ کافی نداری؛ از «کیف سکه» سکه بخر" };
+
+      // نگهبان مسابقه: فقط اگر جایگاه هنوز آزاد است.
+      const claimed = await tx.adSlot.updateMany({
+        where: { id: slot.id, status: "OPEN", winnerTeamId: null },
+        data: { status: "CLOSED", winnerTeamId: user.teamId, pricePaid: price },
+      });
+      if (claimed.count === 0) throw new SlotTakenError();
+      if (price > 0) {
+        const charged = await tx.user.updateMany({
+          where: { id: userId, buyWallet: { gte: price } },
+          data: { buyWallet: { decrement: price } },
+        });
+        if (charged.count === 0) throw new SlotTakenError("سکهٔ کافی نداری");
+        await tx.ledgerEntry.create({
+          data: { userId, teamId: user.teamId, wallet: "BUY", delta: -price, reason: "ADSLOT", refId: slot.id },
+        });
+      }
+      return { ok: true, price };
     });
-    const treasuryById = new Map(teams.map((t) => [t.id, t.treasury]));
-    // قاعدهٔ قیمت دوم: بالاترین پیشنهاد (در تساوی، زودتر) برنده است و min(max(دومین، ۱), پیشنهاد خودش)
-    // را می‌پردازد؛ تک‌پیشنهادی یک سکهٔ نمادین. رزرو در upsertBid تضمین می‌کند خزانه کافی است؛
-    // اگر به هر دلیل نبود، آن پیشنهاد نامعتبر است و نفر بعدی (با قیمت دومِ از نو حساب‌شده) برنده می‌شود —
-    // هرگز کمتر از قیمت قاعده گرفته نمی‌شود.
-    const picked = pickSecondPriceWinner(
-      bids.map((b) => ({ ...b, bidderId: b.teamId })),
-      (teamId) => treasuryById.get(teamId) ?? null
-    );
-    if (!picked) {
-      return tx.adSlot.findUnique({ where: { id: slotId } });
-    }
-    const winner = picked.bid;
-    const pricePaid = picked.price;
-
-    if (pricePaid > 0) {
-      await tx.team.update({ where: { id: winner.teamId }, data: { treasury: { decrement: pricePaid } } });
-      await tx.ledgerEntry.create({ data: { teamId: winner.teamId, wallet: "TREASURY", delta: -pricePaid, reason: "ADSLOT", refId: slotId } });
-    }
-
-    return tx.adSlot.update({
-      where: { id: slotId },
-      data: { winnerTeamId: winner.teamId, pricePaid },
-    });
-  });
+  } catch (e) {
+    if (e instanceof SlotTakenError) return { ok: false, error: e.message };
+    throw e;
+  }
 }
 
-/** جایگاه‌های OPEN که ساعتشان نزدیک است (۵ دقیقه پیش از شروع) را می‌بندد. */
-export async function closeDueSlots() {
-  const cutoff = new Date(Date.now() + SLOT_CLOSE_LEAD_MS); // now >= hourStart - 5min  <=>  hourStart <= now + 5min
-  const due = await prisma.adSlot.findMany({ where: { status: "OPEN", hourStart: { lte: cutoff } } });
-  const results = [];
-  for (const s of due) results.push(await closeSlot(s.id));
-  return results;
-}
-
-/** قدرت «هیاهو»: یک جایگاه FEATURED آزاد را رایگان می‌گیرد. */
-export async function claimHypeSlot(userId: string) {
-  return prisma.$transaction(async (tx) => {
-    const user = await tx.user.findUnique({ where: { id: userId } });
-    if (!user) throw new Error("کاربر پیدا نشد");
-    if (user.power !== "HYPE") throw new Error("این قدرت را نداری");
-    if (user.powerUsed) throw new Error("قدرتت قبلاً استفاده شده است");
-    if (!user.teamId) throw new Error("عضو هیچ تیمی نیستی");
-
-    // فقط جایگاه‌های ویژه‌ای که هنوز شروع نشده‌اند.
-    const slot = await tx.adSlot.findFirst({
-      where: { kind: "FEATURED", status: "OPEN", hourStart: { gt: new Date(Date.now() + SLOT_CLOSE_LEAD_MS) } },
-      orderBy: { hourStart: "asc" },
-    });
-    if (!slot) throw new Error("جایگاه ویژهٔ آزادی باقی نمانده است");
-
-    // نگهبان مسابقه: قدرت فقط یک‌بار و جایگاه فقط یک‌بار بسته می‌شود.
-    const used = await tx.user.updateMany({ where: { id: userId, powerUsed: false }, data: { powerUsed: true } });
-    if (used.count === 0) throw new Error("قدرتت قبلاً استفاده شده است");
-    const claimed = await tx.adSlot.updateMany({
-      where: { id: slot.id, status: "OPEN" },
-      data: { status: "CLOSED", winnerTeamId: user.teamId, pricePaid: 0 },
-    });
-    if (claimed.count === 0) throw new Error("جایگاه ویژهٔ آزادی باقی نمانده است");
-    return slot;
-  });
+class SlotTakenError extends Error {
+  constructor(message = "این جایگاه همین حالا فروخته شد") {
+    super(message);
+  }
 }
 
 export type SlotCell = {
   id: string;
   kind: AdSlotKind;
   hourStart: string;
-  status: "OPEN" | "CLOSED";
-  bidderCount: number;
-  myBid: number | null;
+  /** OPEN: قابل خرید · SOLD: فروخته شده · PAST: زمانش گذشته */
+  state: "OPEN" | "SOLD" | "PAST";
+  price: number;
   winnerTeamId: string | null;
   winnerTeamName: string | null;
   pricePaid: number | null;
+  mine: boolean;
 };
 
-/** شبکهٔ ساعت × نوع جایگاه برای صفحهٔ حراج جایگاه تبلیغاتی. */
+/** شبکهٔ ساعت × نوع جایگاه برای صفحهٔ جایگاه تبلیغاتی. */
 export async function slotsGrid(myTeamId: string | null): Promise<SlotCell[]> {
   // مدل AdSlot رابطهٔ winnerTeam ندارد (فقط winnerTeamId اسکالر)؛ جدا واکشی می‌شود.
-  const [slots, teams] = await Promise.all([
-    prisma.adSlot.findMany({ orderBy: [{ hourStart: "asc" }, { kind: "asc" }], include: { bids: true } }),
+  const [slots, teams, prices] = await Promise.all([
+    prisma.adSlot.findMany({ orderBy: [{ hourStart: "asc" }, { kind: "asc" }] }),
     prisma.team.findMany({ select: { id: true, name: true } }),
+    adSlotPrices(),
   ]);
   const teamById = new Map(teams.map((t) => [t.id, t]));
+  const now = Date.now();
   return slots.map((s) => ({
     id: s.id,
     kind: s.kind as AdSlotKind,
     hourStart: s.hourStart.toISOString(),
-    status: s.status as "OPEN" | "CLOSED",
-    bidderCount: s.bids.length,
-    myBid: myTeamId ? s.bids.find((b) => b.teamId === myTeamId)?.amount ?? null : null,
+    state: s.winnerTeamId ? "SOLD" : s.hourStart.getTime() + HOUR_MS <= now ? "PAST" : "OPEN",
+    price: prices[s.kind as AdSlotKind] ?? 0,
     winnerTeamId: s.winnerTeamId,
     winnerTeamName: (s.winnerTeamId && teamById.get(s.winnerTeamId)?.name) ?? null,
     pricePaid: s.pricePaid,
+    mine: !!myTeamId && s.winnerTeamId === myTeamId,
   }));
 }
 
-/** تیم‌های برندهٔ فعلی هر نوع جایگاه، برای نمایش در بازار. */
+/** تیم‌های صاحب فعلی هر نوع جایگاه، برای نمایش در بازار. */
 export async function currentAdWinners(now: Date): Promise<{ banner: string | null; featured: string | null; push: string | null }> {
-  const closed = await prisma.adSlot.findMany({
-    where: { status: "CLOSED", hourStart: { lte: now } },
+  const sold = await prisma.adSlot.findMany({
+    where: { winnerTeamId: { not: null }, hourStart: { lte: now } },
   });
-  const oneHour = 60 * 60 * 1000;
-  const active = closed.filter((s) => now.getTime() < s.hourStart.getTime() + oneHour);
+  const active = sold.filter((s) => now.getTime() < s.hourStart.getTime() + HOUR_MS);
   const pick = (kind: AdSlotKind) => active.filter((s) => s.kind === kind).sort((a, b) => b.hourStart.getTime() - a.hourStart.getTime())[0]?.winnerTeamId ?? null;
   return { banner: pick("BANNER"), featured: pick("FEATURED"), push: pick("PUSH") };
+}
+
+/**
+ * جایگاه «اعلان به همه»: وقتی ساعتش شروع شد، یک‌بار به همهٔ شرکت‌کننده‌ها اعلان می‌رود.
+ * ارسال‌شده‌ها در Setting (adslot_push_sent:<id>) علامت می‌خورند تا تکرار نشوند. زمان‌بند در روز بازار صدا می‌زند.
+ */
+export async function sendDuePushSlots(): Promise<number> {
+  const now = new Date();
+  const due = await prisma.adSlot.findMany({
+    where: { kind: "PUSH", winnerTeamId: { not: null }, hourStart: { lte: now, gt: new Date(now.getTime() - HOUR_MS) } },
+  });
+  let sent = 0;
+  for (const slot of due) {
+    const key = `adslot_push_sent:${slot.id}`;
+    const marked = await prisma.setting.upsert({ where: { key }, update: {}, create: { key, value: "" } });
+    if (marked.value) continue;
+    // ادعای شرطی: فقط یک فراخوانی ارسال می‌کند.
+    const claimed = await prisma.setting.updateMany({ where: { key, value: "" }, data: { value: now.toISOString() } });
+    if (claimed.count === 0) continue;
+    const team = await prisma.team.findUnique({
+      where: { id: slot.winnerTeamId! },
+      select: { name: true, slug: true, product: { select: { name: true, tagline: true, submittedAt: true } } },
+    });
+    if (!team?.product?.submittedAt) continue;
+    await notifyAll({
+      kind: "adslot_push",
+      title: `📣 ${team.product.name}`,
+      body: team.product.tagline || `محصول تیم ${team.name} را در بازار ببین.`,
+      href: `/market/${team.slug}`,
+    });
+    sent++;
+  }
+  return sent;
 }

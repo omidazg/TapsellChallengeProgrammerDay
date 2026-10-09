@@ -1,27 +1,21 @@
 /**
- * تسویهٔ نهایی بازی (پرداخت سود سرمایه‌گذاران، ثبت جریمه‌ها و تثبیت امتیازها).
- * قرارداد: settleGame باید idempotent باشد — فراخوانی دوباره چیزی را دو بار پرداخت نمی‌کند.
- *
- * ترتیب مهم است: امتیاز و جریمهٔ سکهٔ خرج‌نشده روی کیف‌پول‌ها **پیش از** واریز سود
- * محاسبه می‌شود؛ وگرنه سودِ تازه‌واریز‌شده خودش «خرج‌نشده» حساب می‌شد و دوباره جریمه می‌خورد.
+ * تسویهٔ نهایی بازی: امتیازهای سه‌معیاره محاسبه و در TeamScore ثبت می‌شوند.
+ * قرارداد: settleGame باید idempotent باشد — فراخوانی دوباره چیزی را دوباره ثبت نمی‌کند.
+ * (در اقتصاد ساده‌شده سود سهام و جریمه‌ای وجود ندارد؛ تسویه فقط امتیازها را تثبیت می‌کند.)
  */
 import { prisma } from "./db";
-import { computeScores } from "./scoring";
+import { computeScores, configFromSettings } from "./scoring";
+import { smallTeamBoostPct } from "./economy/engine";
 import { invalidate } from "./ttl-cache";
-import { DEFAULTS } from "./constants";
-import { shieldedCredit } from "./economy/engine";
-import type { DividendLine, ScoreOutput, TeamResult } from "./economy/types";
+import type { ScoreOutput, TeamResult } from "./economy/types";
 
 /** کلید Setting که زمان تسویه در آن ذخیره می‌شود (ISO). */
 export const SETTLED_AT_KEY = "settled_at";
 
 export type SettlementResult = {
   alreadySettled: boolean;
-  dividendsPaid: number;
   teams: number;
   settledAt: Date;
-  /** تعداد سطرهای سود پرداخت‌شده (هر سرمایه‌گذار روی هر تیم یک سطر) */
-  dividendLines?: number;
 };
 
 /** زمان تسویهٔ نهایی؛ null یعنی هنوز تسویه نشده است. */
@@ -36,17 +30,12 @@ export async function getSettledAt(): Promise<Date | null> {
 let settleInFlight: Promise<SettlementResult> | null = null;
 
 /**
- * تسویهٔ نهایی.
- *
- * امتیازها با `computeScores()` (فقط-خواندنی) محاسبه می‌شوند — یعنی جریمهٔ خرج‌نشده
- * بر اساس کیف‌پول‌های *پیش از* واریز سود به‌دست می‌آید — و سپس همهٔ نوشتن‌ها
- * (دفتر کل سود، افزایش کیف خرید، ثبت TeamScore و کلید settled_at) در یک تراکنش انجام می‌شود.
- * درون همان تراکنش دوباره settled_at بررسی می‌شود تا دو فراخوانی هم‌زمان دوبار پرداخت نکنند.
+ * تسویهٔ نهایی. امتیازها با `computeScores()` محاسبه و سپس همهٔ نوشتن‌ها (TeamScore و کلید
+ * settled_at) در یک تراکنش انجام می‌شود. درون همان تراکنش دوباره settled_at بررسی می‌شود
+ * تا دو فراخوانی هم‌زمان دوبار ثبت نکنند.
  */
 export function settleGame(): Promise<SettlementResult> {
-  // single-flight در-فرآیندی: کلیک ادمین و پیشروی خودکار زمان‌بند به CLOSED ممکن است هم‌زمان
-  // برسند؛ فراخوانی دوم به همان اجرای در جریان می‌پیوندد، نه اینکه computeScores و تراکنش
-  // دوم را موازی شروع کند (بررسی settled_at داخل تراکنش همچنان لایهٔ دوم محافظت است).
+  // single-flight در-فرآیندی: کلیک ادمین و پیشروی خودکار زمان‌بند به CLOSED ممکن است هم‌زمان برسند.
   if (settleInFlight) return settleInFlight;
   settleInFlight = settleGameOnce().finally(() => {
     settleInFlight = null;
@@ -54,226 +43,105 @@ export function settleGame(): Promise<SettlementResult> {
   return settleInFlight;
 }
 
+type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/** نوشتن امتیاز همهٔ تیم‌ها در TeamScore و زمان تسویه (درون تراکنش). */
+async function writeScores(tx: Tx, output: ScoreOutput, settledAt: Date) {
+  for (const t of output.teams) {
+    const data = {
+      memberCount: t.memberCount,
+      juryRaw: t.juryRaw,
+      juryAdjusted: t.juryAdjusted,
+      people: t.people,
+      supporters: t.supporters,
+      coinsReceived: t.coinsReceived,
+      ai: t.ai,
+      ptsJury: t.pts.jury,
+      ptsPeople: t.pts.people,
+      ptsAi: t.pts.ai,
+      cheatPenalty: t.cheatPenalty,
+      total: t.total,
+      rank: t.rank ?? 0,
+      computedAt: settledAt,
+    };
+    await tx.teamScore.upsert({
+      where: { teamId: t.teamId },
+      update: data,
+      create: { teamId: t.teamId, ...data },
+    });
+  }
+  // ردیف تیم‌هایی که دیگر در محاسبه نیستند (مثلاً ادغام‌شده) نباید در نتیجه بمانند.
+  await tx.teamScore.deleteMany({ where: { teamId: { notIn: output.teams.map((t) => t.teamId) } } });
+
+  await tx.setting.upsert({
+    where: { key: SETTLED_AT_KEY },
+    update: { value: settledAt.toISOString() },
+    create: { key: SETTLED_AT_KEY, value: settledAt.toISOString() },
+  });
+}
+
 async function settleGameOnce(): Promise<SettlementResult> {
   const existing = await getSettledAt();
   if (existing) {
-    const teams = await prisma.teamScore.count();
-    const paid = await prisma.ledgerEntry.aggregate({
-      where: { reason: "DIVIDEND", wallet: "BUY" },
-      _sum: { delta: true },
-    });
-    return { alreadySettled: true, dividendsPaid: paid._sum.delta ?? 0, teams, settledAt: existing };
+    return { alreadySettled: true, teams: await prisma.teamScore.count(), settledAt: existing };
   }
 
   const output: ScoreOutput = await computeScores();
   const settledAt = new Date();
 
   const result = await prisma.$transaction<SettlementResult>(async (tx) => {
-    // بررسی دوباره داخل تراکنش (محافظت در برابر فراخوانی هم‌زمان)
     const guard = await tx.setting.findUnique({ where: { key: SETTLED_AT_KEY } });
     if (guard?.value) {
-      const teams = await tx.teamScore.count();
-      const paid = await tx.ledgerEntry.aggregate({
-        where: { reason: "DIVIDEND", wallet: "BUY" },
-        _sum: { delta: true },
-      });
-      return {
-        alreadySettled: true,
-        dividendsPaid: paid._sum.delta ?? 0,
-        teams,
-        settledAt: new Date(guard.value),
-      };
+      return { alreadySettled: true, teams: await tx.teamScore.count(), settledAt: new Date(guard.value) };
     }
-
-    // ۱) پرداخت سود سرمایه‌گذاران خارجی (موتور فقط سرمایه‌گذاری‌های غیر selfFunded را می‌شمارد)
-    let dividendsPaid = 0;
-    let dividendLines = 0;
-    for (const line of output.dividends) {
-      if (line.dividend <= 0) continue;
-      await tx.ledgerEntry.create({
-        data: {
-          userId: line.userId,
-          teamId: line.teamId,
-          wallet: "BUY",
-          delta: line.dividend,
-          reason: "DIVIDEND",
-          refId: line.teamId,
-        },
-      });
-      await tx.user.update({
-        where: { id: line.userId },
-        data: { buyWallet: { increment: line.dividend } },
-      });
-      dividendsPaid += line.dividend;
-      dividendLines += 1;
-    }
-
-    // ۲) تثبیت نتیجهٔ همهٔ تیم‌ها (جریمهٔ خرج‌نشده در ستون unspentPenalty ثبت می‌شود)
-    for (const t of output.teams) {
-      const data = {
-        grossSales: t.grossSales,
-        dividendsPaid: t.dividendsPaid,
-        netSales: t.netSales,
-        externalCapital: t.externalCapital,
-        investorRoi: t.investorRoi,
-        uniqueBuyers: t.uniqueBuyers,
-        hearts: t.hearts,
-        unspentPenalty: t.unspentPenalty,
-        ptsSales: t.pts.sales,
-        ptsCapital: t.pts.capital,
-        ptsRoi: t.pts.roi,
-        ptsQuality: t.pts.quality,
-        ptsTeaser: t.pts.teaser,
-        ptsCommunity: t.pts.community,
-        ptsPortfolio: t.pts.portfolio,
-        ptsTaste: t.pts.taste,
-        total: t.total,
-        rank: t.rank ?? 0,
-        selfCapital: t.selfCapital,
-        quality: t.quality,
-        teaser: t.teaser,
-        portfolio: t.portfolio,
-        taste: t.taste,
-        computedAt: settledAt,
-      };
-      await tx.teamScore.upsert({
-        where: { teamId: t.teamId },
-        update: data,
-        create: { teamId: t.teamId, ...data },
-      });
-    }
-
-    // ۳) مهر تسویه
-    await tx.setting.upsert({
-      where: { key: SETTLED_AT_KEY },
-      update: { value: settledAt.toISOString() },
-      create: { key: SETTLED_AT_KEY, value: settledAt.toISOString() },
-    });
-
-    return {
-      alreadySettled: false,
-      dividendsPaid,
-      teams: output.teams.length,
-      settledAt,
-      dividendLines,
-    };
+    await writeScores(tx, output, settledAt);
+    return { alreadySettled: false, teams: output.teams.length, settledAt };
   });
 
-  // امتیازها بعد از تسویه (سود سرمایه‌گذاران، جریمه، قفل‌شدن نتایج) تغییر کرده‌اند؛
   // کش صفحات عمومی (جدول امتیازات، نتایج) باید پاک شود تا داده‌های قدیمی نمایش داده نشود.
   invalidate("scores:");
   return result;
 }
 
 /**
- * بعد از تسویهٔ نهایی، نتیجه از جدول TeamScore و دفتر کل خوانده می‌شود (نه بازمحاسبه)،
- * تا عددهای صفحه دقیقاً همانی باشد که پرداخت و ثبت شده است.
- *
- * از آیتم ۳۵ به بعد، rank/selfCapital/quality/teaser هم مستقیماً روی TeamScore ذخیره‌اند و
- * دیگر لازم نیست از Investment/pts بازسازی شوند. سطرهایی که پیش از این تغییر نوشته شده‌اند
- * rank=۰ دارند (مقدار پیش‌فرض ستون تازه)؛ برای آن‌ها به مسیر بازسازی قدیمی برمی‌گردیم.
+ * بازتسویه: پس از تسویه، اگر داوران نمرهٔ دیرهنگام ثبت کنند یا برگزارکننده کسر تقلب بدهد، امتیازها
+ * دوباره محاسبه و جایگزین نتیجهٔ ثبت‌شده می‌شوند. تسویه اثر جانبی دیگری (پرداخت/سود) ندارد، پس امن است.
+ */
+export async function resettleGame(): Promise<SettlementResult> {
+  if (settleInFlight) await settleInFlight.catch(() => {});
+  const output: ScoreOutput = await computeScores();
+  const settledAt = new Date();
+  await prisma.$transaction(async (tx) => {
+    await writeScores(tx, output, settledAt);
+  });
+  invalidate("scores:");
+  return { alreadySettled: false, teams: output.teams.length, settledAt };
+}
+
+/**
+ * بعد از تسویهٔ نهایی، نتیجه از جدول TeamScore خوانده می‌شود (نه بازمحاسبه)،
+ * تا عددهای صفحه دقیقاً همانی باشد که ثبت شده است.
  */
 export async function loadSettledOutput(): Promise<ScoreOutput> {
-  const [scores, dividendRows] = await Promise.all([
-    prisma.teamScore.findMany(),
-    prisma.ledgerEntry.findMany({ where: { reason: "DIVIDEND", wallet: "BUY" } }),
-  ]);
-
-  // سطر تسویه‌شدهٔ پیش از آیتم ۳۵ چون rank را نداشت، پیش‌فرض ۰ گرفته است.
-  const legacy = scores.some((s) => s.rank === 0);
-
-  const selfCapital = new Map<string, number>();
-  const investedByUserTeam = new Map<string, number>();
-  {
-    // invested هر سرمایه‌گذار روی هر تیم در TeamScore ذخیره نمی‌شود (فقط مجموع تیم)،
-    // پس برای ساختن خطوط سود همیشه از Investment خوانده می‌شود.
-    const investments = await prisma.investment.findMany({
-      select: { userId: true, amount: true, selfFunded: true, idea: { select: { teamId: true } } },
-    });
-    for (const inv of investments) {
-      const teamId = inv.idea.teamId;
-      if (inv.selfFunded) {
-        if (legacy) selfCapital.set(teamId, (selfCapital.get(teamId) ?? 0) + inv.amount);
-      } else {
-        const key = `${inv.userId}|${teamId}`;
-        investedByUserTeam.set(key, (investedByUserTeam.get(key) ?? 0) + inv.amount);
-      }
-    }
-  }
-
-  // هر سطر DIVIDEND دفتر کل: refId = شناسهٔ تیم سرمایه‌پذیر
-  const byUserTeam = new Map<string, number>();
-  for (const row of dividendRows) {
-    if (!row.userId || !row.refId) continue;
-    const key = `${row.userId}|${row.refId}`;
-    byUserTeam.set(key, (byUserTeam.get(key) ?? 0) + row.delta);
-  }
-
-  // portfolioCredit در دفتر کل ذخیره نمی‌شود (فقط یک مشتق امتیازی است)؛ اینجا از روی
-  // انتخاب سپر کاربر (shieldTeamId) بازسازی می‌شود — همان چیزی که scoreGame هنگام تسویه دید.
-  // انتخاب سپر یک‌بار و برگشت‌ناپذیر است (فقط پیش از روز بازار)، پس بعد از تسویه تغییر نمی‌کند.
-  const shieldUsers = await prisma.user.findMany({
-    where: { power: "SHIELD", shieldTeamId: { not: null } },
-    select: { id: true, shieldTeamId: true },
-  });
-  const shieldedKeys = new Set(shieldUsers.map((u) => `${u.id}|${u.shieldTeamId}`));
-  // جفتِ بیمه‌شده‌ای که سودش صفر شده، سطر DIVIDEND در دفتر کل ندارد؛ با سود ۰ اضافه می‌شود
-  // تا اعتبار سپرش (نصف مبلغ) مثل خروجی scoreGame در فهرست سطرهای سود بماند.
-  for (const key of shieldedKeys) {
-    if (!byUserTeam.has(key) && (investedByUserTeam.get(key) ?? 0) > 0) byUserTeam.set(key, 0);
-  }
-
-  const dividends: DividendLine[] = [...byUserTeam.entries()].map(([key, dividend]) => {
-    const [userId, teamId] = key.split("|");
-    const invested = investedByUserTeam.get(key) ?? 0;
-    const portfolioCredit = shieldedKeys.has(key)
-      ? shieldedCredit(dividend, invested, DEFAULTS.shieldFloor)
-      : dividend;
-    return { userId, teamId, invested, dividend, portfolioCredit };
-  });
-
+  const [scores, config] = await Promise.all([prisma.teamScore.findMany({ orderBy: { rank: "asc" } }), configFromSettings()]);
   const teams: TeamResult[] = scores.map((s) => ({
     teamId: s.teamId,
-    grossSales: s.grossSales,
-    dividendsPaid: s.dividendsPaid,
-    netSales: s.netSales,
-    externalCapital: s.externalCapital,
-    selfCapital: legacy ? selfCapital.get(s.teamId) ?? 0 : s.selfCapital,
-    investorRoi: s.investorRoi,
-    uniqueBuyers: s.uniqueBuyers,
-    hearts: s.hearts,
-    // مسیر جدید: نمرهٔ خام مستقیماً از ستون‌های quality/teaser خوانده می‌شود.
-    // مسیر قدیمی (بک‌فیل): این مقدار در TeamScore نبود، امتیاز وزنی جایگزینش می‌شود
-    // (فقط برای ترتیب جوایز کافی بود).
-    quality: legacy ? s.ptsQuality : s.quality,
-    teaser: legacy ? s.ptsTeaser : s.teaser,
-    // مسیر قدیمی (پیش از پرتفوی/سلیقه): این ستون‌ها وجود نداشتند، ۰ پیش‌فرض می‌مانند.
-    portfolio: s.portfolio,
-    taste: s.taste,
-    unspentPenalty: s.unspentPenalty,
-    pts: {
-      sales: s.ptsSales,
-      quality: s.ptsQuality,
-      capital: s.ptsCapital,
-      roi: s.ptsRoi,
-      teaser: s.ptsTeaser,
-      community: s.ptsCommunity,
-      portfolio: s.ptsPortfolio,
-      taste: s.ptsTaste,
-    },
+    memberCount: s.memberCount,
+    juryRaw: s.juryRaw,
+    // درصد جبران از نسبت ثبت‌شده؛ اگر نمرهٔ داوری صفر/خالی بوده، از اندازهٔ تیم و تنظیمات فعلی
+    boostPct:
+      s.juryRaw && s.juryRaw > 0
+        ? Math.round((s.juryAdjusted / s.juryRaw - 1) * 100)
+        : smallTeamBoostPct(config, s.memberCount),
+    juryAdjusted: s.juryAdjusted,
+    people: s.people,
+    supporters: s.supporters,
+    coinsReceived: s.coinsReceived,
+    ai: s.ai,
+    cheatPenalty: s.cheatPenalty,
+    pts: { jury: s.ptsJury, people: s.ptsPeople, ai: s.ptsAi },
     total: s.total,
-    rank: legacy ? undefined : s.rank,
+    rank: s.rank,
   }));
-
-  if (legacy) {
-    // همان قاعدهٔ رتبه‌بندی موتور اقتصاد
-    teams.sort((a, b) => (b.total !== a.total ? b.total - a.total : b.netSales - a.netSales));
-    teams.forEach((t, i) => {
-      t.rank = i + 1;
-    });
-  } else {
-    teams.sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
-  }
-
-  return { teams, dividends };
+  return { teams };
 }

@@ -4,7 +4,6 @@ import { getCurrentUser } from "@/lib/auth";
 import { getPhase, phaseIndex } from "@/lib/phase";
 import { cache } from "react";
 import { getTeamPreviewBySlug as loadTeamPreview, TEAM_FULL } from "@/lib/team";
-import { ROLES, type RoleKey } from "@/lib/constants";
 import { fa } from "@/lib/persian";
 import { PageHeader, Container, Locked, Alert } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
@@ -12,6 +11,10 @@ import { JoinButton } from "./JoinActions";
 
 /** generateMetadata و صفحه در یک درخواست یک کوئری مشترک می‌زنند */
 const getTeamPreviewBySlug = cache(loadTeamPreview);
+
+// همان پیام‌های src/lib/team.ts (joinBySlug) تا متن صفحه و خطای اکشن یکی باشد
+const SOLO_CLOSED = "این شرکت‌کننده فردی بازی می‌کند و هم‌تیمی نمی‌پذیرد.";
+const TEAM_IS_FULL = "این تیم پر شده است.";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -43,11 +46,14 @@ export default async function JoinPage({ params }: { params: Promise<{ slug: str
             <div className="flex-1 min-w-0">
               <div className="font-black text-brand-navy text-lg break-words">{team.name}</div>
               <div className="mt-1 flex flex-wrap gap-1.5">
-                {team.coverage.map((c) => (
-                  <span key={c.role} className={c.present ? "chip-ok" : "chip-red"}>
-                    {c.emoji} {c.label}
-                  </span>
-                ))}
+                {team.solo && <span className="chip-gold">🧑‍🚀 شرکت فردی</span>}
+                {team.coverage
+                  .filter((c) => c.present)
+                  .map((c) => (
+                    <span key={c.role} className="chip-cyan" title="مهارت اعضا">
+                      {c.emoji} {c.label}
+                    </span>
+                  ))}
               </div>
               <div className="mt-1 text-xs text-brand-slate fa-num">اعضا {fa(team.memberCount)} از {fa(TEAM_FULL)}</div>
             </div>
@@ -56,8 +62,10 @@ export default async function JoinPage({ params }: { params: Promise<{ slug: str
           <div className="mt-6">
             {!user ? (
               <div className="card p-6 anim-rise space-y-3 text-center">
-                {team.full ? (
-                  <Alert kind="error">این تیم تکمیل است؛ ظرفیت هر تیم {fa(TEAM_FULL)} نفر است و دیگر نمی‌توان به آن پیوست.</Alert>
+                {team.solo ? (
+                  <Alert kind="error">{SOLO_CLOSED}</Alert>
+                ) : team.full ? (
+                  <Alert kind="error">{TEAM_IS_FULL} ظرفیت هر تیم {fa(TEAM_FULL)} نفر است.</Alert>
                 ) : (
                   <p className="text-sm text-brand-navy">
                     {registrationOpen
@@ -91,18 +99,19 @@ export default async function JoinPage({ params }: { params: Promise<{ slug: str
                 title="پیوستن به تیم بسته است"
                 desc="فاز اتاق ایده به پایان رسیده؛ برای پیوستن به تیم با برگزارکننده هماهنگ کن."
               />
+            ) : team.solo ? (
+              <div className="card p-6 anim-rise text-center space-y-3">
+                <Alert kind="error">{SOLO_CLOSED}</Alert>
+                <Link href="/team" className="btn-ghost w-full">رفتن به اتاق تیم</Link>
+              </div>
             ) : team.full ? (
-              <div className="card p-6 anim-rise text-center">
-                <Alert kind="error">این تیم پر شده است؛ ظرفیت هر تیم {fa(TEAM_FULL)} نفر است.</Alert>
+              <div className="card p-6 anim-rise text-center space-y-3">
+                <Alert kind="error">{TEAM_IS_FULL} ظرفیت هر تیم {fa(TEAM_FULL)} نفر است.</Alert>
+                <Link href="/team" className="btn-ghost w-full">رفتن به اتاق تیم</Link>
               </div>
             ) : (
               <div className="card p-6 anim-rise space-y-4 text-center">
-                {team.coverage.find((c) => c.role === (user.role as RoleKey))?.present && (
-                  <Alert kind="info">
-                    توجه: این تیم همین حالا یک {ROLES[user.role as RoleKey]?.label} دارد؛ نقش تو در این تیم تکراری خواهد بود.
-                  </Alert>
-                )}
-                <p className="text-sm text-brand-navy">با پیوستن، عضو این تیم می‌شوی.</p>
+                <p className="text-sm text-brand-navy">با پیوستن، عضو این تیم می‌شوی. تیم‌ها ۱ تا ۳ نفره‌اند و همهٔ اعضا هم‌اختیارند.</p>
                 <JoinButton slug={slug} />
               </div>
             )}

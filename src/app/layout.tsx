@@ -19,7 +19,7 @@ const vazir = localFont({
 
 const SITE_URL = process.env.SITE_URL ?? "http://89.42.199.174";
 const SITE_TITLE = "میدان بنیان‌گذاران";
-const SITE_DESCRIPTION = "بازار استارتاپی چهارروزهٔ روز برنامه‌نویس گروه پگاه: ایده بده، سرمایه جذب کن، بساز، بفروش.";
+const SITE_DESCRIPTION = "بازار استارتاپی چهارروزهٔ روز برنامه‌نویس گروه پگاه: ایده بده، حامی جذب کن، بساز، بفروش.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -72,7 +72,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <ServiceWorkerRegister />
         <AnnouncementBar />
         <AppShell
-          user={user ? { id: user.id, nickname: user.nickname, isAdmin: user.isAdmin, seedWallet: user.seedWallet, buyWallet: user.buyWallet, teamName: user.team?.name ?? null, avatarSeed: user.avatarSeed } : null}
+          user={user ? { id: user.id, nickname: user.nickname, isAdmin: user.isAdmin, buyWallet: user.buyWallet, teamName: user.team?.name ?? null, avatarSeed: user.avatarSeed } : null}
           phase={phaseInfo.phase}
           phaseEndsAt={phaseInfo.endsAt?.toISOString() ?? null}
         >

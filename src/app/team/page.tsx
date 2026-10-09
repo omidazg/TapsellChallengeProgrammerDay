@@ -1,27 +1,27 @@
 import { requireUser } from "@/lib/auth";
 import { getPhase, phaseIndex } from "@/lib/phase";
 import { prisma } from "@/lib/db";
-import { getTeamWithMembers, roleCoverage } from "@/lib/team";
+import { getTeamWithMembers } from "@/lib/team";
+import { getEffectiveGameValues } from "@/lib/game-values";
 import { PageHeader, Container, Alert } from "@/components/ui";
 import { NoTeamPanel } from "./NoTeamPanel";
 import { TeamPanel } from "./TeamPanel";
-import { syncLeader, getLeaderState } from "@/lib/leader";
 
 export const metadata = { title: "اتاق تیم" };
 
 export default async function TeamPage({ searchParams }: { searchParams: Promise<{ joined?: string }> }) {
   const user = await requireUser();
-  const { phase } = await getPhase();
+  const [{ phase }, values, { joined }] = await Promise.all([getPhase(), getEffectiveGameValues(), searchParams]);
   const registrationOpen = phase === "REGISTRATION";
   const formingOpen = phaseIndex(phase) <= phaseIndex("IDEATION");
-  const { joined } = await searchParams;
+  // جبران تیم کوچک در داوری انسانی (تنظیم برگزارکننده یا پیش‌فرض)
+  const boost = { solo: values.soloBoostPct, duo: values.duoBoostPct };
 
   if (user.teamId) {
-    await syncLeader(user.teamId);
-    const [team, leader] = await Promise.all([getTeamWithMembers(user.teamId), getLeaderState(user.teamId)]);
+    const team = await getTeamWithMembers(user.teamId);
     return (
       <>
-        <PageHeader eyebrow="اتاق تیم" title={team?.name ?? "اتاق تیم"} desc="ترکیب تیم، پوشش نقش‌ها و پیشرفت کارها." />
+        <PageHeader eyebrow="اتاق تیم" title={team?.name ?? "اتاق تیم"} desc="اعضای تیم، دعوت هم‌تیمی و پیشرفت کارها." />
         <Container>
           {joined === "1" && (
             <div className="mb-4">
@@ -31,11 +31,10 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
           {team && (
             <TeamPanel
               team={team}
-              coverage={roleCoverage(team.members)}
               currentUserId={user.id}
               registrationOpen={registrationOpen}
               formingOpen={formingOpen}
-              leader={{ ...leader, leaderElectedAt: leader.leaderElectedAt?.toISOString() ?? null }}
+              boost={boost}
             />
           )}
         </Container>
@@ -51,9 +50,9 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
 
   return (
     <>
-      <PageHeader eyebrow="اتاق تیم" title="اتاق تیم" desc="تیم سه‌نفره‌ات را بساز یا پیدا کن." />
+      <PageHeader eyebrow="اتاق تیم" title="اتاق تیم" desc="تنها بازی کن یا با یک تا دو هم‌تیمی؛ تیم‌ها ۱ تا ۳ نفره‌اند." />
       <Container>
-        <NoTeamPanel invites={invites} registrationOpen={registrationOpen} formingOpen={formingOpen} />
+        <NoTeamPanel invites={invites} formingOpen={formingOpen} boost={boost} />
       </Container>
     </>
   );

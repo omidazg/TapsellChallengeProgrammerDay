@@ -1,8 +1,7 @@
 /**
- * دود-تست تکمیل/پیوستن به تیم و ابزارهای برگزارکننده.
- * روی یک دیتابیس موقت اجرا شود:
- *   rm -f smoke-team.db && npx prisma db push --url file:./smoke-team.db --skip-generate
- *   DATABASE_URL="file:./smoke-team.db" npx tsx scripts/smoke-team.ts
+ * دود-تست تکمیل/پیوستن به تیم، شرکت فردی (تیم یک‌نفرهٔ بسته) و ابزارهای برگزارکننده.
+ * اجرا: npx tsx scripts/smoke-team.ts
+ * روی پایگاه‌دادهٔ موقت (createTempDb) اجرا می‌شود؛ dev.db لمس نمی‌شود.
  */
 import { createTempDb, isTempDatabaseUrl } from "./lib/temp-db";
 
@@ -36,6 +35,9 @@ async function main() {
     adminMoveUserToTeam,
     adminMergeTeams,
     autoComposeTeams,
+    goSolo,
+    openSoloTeam,
+    joinMatchmaking,
     TEAM_FULL,
   } = await import("../src/lib/team");
 
@@ -46,14 +48,14 @@ async function main() {
         passwordHash: "x",
         nickname: `کاربر ${n}`,
         role,
-        power: "HYPE",
+        power: "",
         coffee: 5,
         bugs: 50,
         sleep: 7,
         confidence: 100,
         avatarSeed: `seed-${n}`,
-        seedWallet: DEFAULTS.seedWallet,
-        buyWallet: DEFAULTS.buyWallet,
+        seedWallet: 0,
+        buyWallet: DEFAULTS.startingCoins,
       },
     });
   }
@@ -163,8 +165,8 @@ async function main() {
         problem: "مسئله",
         audience: "مخاطب",
         buildPlan: "برنامه",
-        fundingCap: 100,
-        revenueShare: 30,
+        fundingCap: 0,
+        revenueShare: 0,
       },
     });
 
@@ -189,8 +191,67 @@ async function main() {
     const moveFullRefused = await adminMoveUserToTeam(ideaUser.id, cFull.id);
     check("انتقال به تیم پر رد می‌شود", !moveFullRefused.ok && !!moveFullRefused.error, JSON.stringify(moveFullRefused));
 
+    // ---------- شرکت فردی ----------
+    console.log("\n# ۸ — شرکت فردی (تیم یک‌نفرهٔ بسته)");
+    const soloUser = await makeUser("solo1", "BUILDER");
+    const soloRes = await goSolo(soloUser.id);
+    check("goSolo برای کاربر بی‌تیم موفق است", !!soloRes.ok, JSON.stringify(soloRes));
+    const soloAfter = await prisma.user.findUniqueOrThrow({ where: { id: soloUser.id }, include: { team: true } });
+    const soloTeam = soloAfter.team!;
+    createdTeamIds.add(soloTeam.id);
+    check("تیم فردی ساخته شد و solo=true است", !!soloTeam && soloTeam.solo === true, JSON.stringify(soloTeam));
+    check("نام تیم فردی همان نام مستعار کاربر است", soloTeam.name === soloUser.nickname, soloTeam.name);
+    check("goSolo دوباره روی همان تیم یک‌نفره هم موفق است (idempotent)", !!(await goSolo(soloUser.id)).ok);
+
+    const soloSeeker = await makeUser("soloSeeker", "STORYTELLER");
+    const joinSolo = await joinBySlug(soloSeeker.id, soloTeam.slug);
+    check("پیوستن با لینک به تیم فردی رد می‌شود", !joinSolo.ok && !!joinSolo.error?.includes("فردی"), JSON.stringify(joinSolo));
+    const mm = await joinMatchmaking(soloSeeker.id);
+    const seekerAfter = await prisma.user.findUniqueOrThrow({ where: { id: soloSeeker.id } });
+    if (seekerAfter.teamId) createdTeamIds.add(seekerAfter.teamId);
+    check("هم‌تیم‌سازی، کاربر را به تیم فردی نمی‌فرستد", !!mm.ok && !!seekerAfter.teamId && seekerAfter.teamId !== soloTeam.id, JSON.stringify(mm));
+
+    const mates = await goSolo(h1.id);
+    check("goSolo برای تیم چندنفره رد می‌شود", !mates.ok && !!mates.error?.includes("عضو دیگری"), JSON.stringify(mates));
+    check("تیم چندنفره solo نشد", (await prisma.team.findUniqueOrThrow({ where: { id: host1.teamId! } })).solo === false);
+
+    // عضو تنهای یک تیم معمولی: goSolo همان تیم را می‌بندد و دعوت‌های در انتظار را رد می‌کند
+    const lone = await makeUser("lone", "DEALMAKER");
+    await createTeamForUser(lone.id, `تیم ${TAG} تنها`);
+    const loneTeamId = (await prisma.user.findUniqueOrThrow({ where: { id: lone.id } })).teamId!;
+    createdTeamIds.add(loneTeamId);
+    const invite = await prisma.teamInvite.create({ data: { teamId: loneTeamId, email: mail("invited"), inviterId: lone.id } });
+    const loneSolo = await goSolo(lone.id);
+    check("goSolo برای عضو تنهای تیم معمولی موفق است", !!loneSolo.ok, JSON.stringify(loneSolo));
+    check("همان تیم بسته شد (solo=true)", (await prisma.team.findUniqueOrThrow({ where: { id: loneTeamId } })).solo === true);
+    check("دعوت در انتظار آن تیم رد شد", (await prisma.teamInvite.findUniqueOrThrow({ where: { id: invite.id } })).status === "DECLINED");
+
+    const reopened = await openSoloTeam(soloUser.id);
+    check("openSoloTeam تیم فردی را دوباره باز می‌کند", !!reopened.ok && (await prisma.team.findUniqueOrThrow({ where: { id: soloTeam.id } })).solo === false, JSON.stringify(reopened));
+    const lateJoiner = await makeUser("lateJoiner", "STORYTELLER");
+    const joinReopened = await joinBySlug(lateJoiner.id, soloTeam.slug);
+    check("پس از بازگشایی، پیوستن با لینک ممکن است", !!joinReopened.ok, JSON.stringify(joinReopened));
+    check("حالا که هم‌تیمی دارد goSolo رد می‌شود", !(await goSolo(soloUser.id)).ok);
+    const strayUser = await makeUser("stray", "BUILDER");
+    check("openSoloTeam برای کاربر بی‌تیم رد می‌شود", !(await openSoloTeam(strayUser.id)).ok);
+
+    const moveIntoSolo = await adminMoveUserToTeam(strayUser.id, loneTeamId);
+    check("برگزارکننده می‌تواند کاربر را به تیم فردی منتقل کند", !!moveIntoSolo.ok, JSON.stringify(moveIntoSolo));
+    check("پس از انتقال، تیم دیگر فردی نیست (solo=false)", (await prisma.team.findUniqueOrThrow({ where: { id: loneTeamId } })).solo === false);
+
+    // تیم فردی تازه برای آزمون هم‌تیم‌سازی خودکار
+    const soloKeeper = await makeUser("soloKeeper", "STORYTELLER");
+    await goSolo(soloKeeper.id);
+    const keeperTeamId = (await prisma.user.findUniqueOrThrow({ where: { id: soloKeeper.id } })).teamId!;
+    createdTeamIds.add(keeperTeamId);
+
+    await setPhase("BUILD", original.endsAt);
+    const lateSolo = await goSolo(strayUser.id);
+    check("goSolo بعد از پایان اتاق ایده رد می‌شود", !lateSolo.ok && lateSolo.error === "این کار فقط تا پایان فاز «اتاق ایده» ممکن است.", JSON.stringify(lateSolo));
+    await setPhase("IDEATION", original.endsAt);
+
     // ---------- autoComposeTeams ----------
-    console.log("\n# ۸ — تشکیل خودکار تیم‌ها");
+    console.log("\n# ۹ — تشکیل خودکار تیم‌ها");
     const tl1 = await makeUser("teamless1", "DEALMAKER"); // باید به moveTarget (دارد BUILDER، کم دارد DEALMAKER) ملحق شود ترجیحاً
     const tl2 = await makeUser("teamless2", "BUILDER");
     const tl3 = await makeUser("teamless3", "STORYTELLER");
@@ -224,6 +285,9 @@ async function main() {
     // هیچ تیمی نباید از سقف سه‌نفره عبور کرده باشد
     const allTeamsAfter = await prisma.team.findMany({ where: { id: { in: [...createdTeamIds] } }, include: { members: true } });
     check("هیچ تیمی از سقف سه‌نفره عبور نکرد", allTeamsAfter.every((t) => t.members.length <= TEAM_FULL));
+    check("autoComposeTeams به تیم فردی دست نزد", !summary.assigned.some((a) => a.teamId === keeperTeamId));
+    const keeperTeam = await prisma.team.findUniqueOrThrow({ where: { id: keeperTeamId }, include: { members: true } });
+    check("تیم فردی همچنان یک‌نفره و بسته است", keeperTeam.solo && keeperTeam.members.length === 1, JSON.stringify({ solo: keeperTeam.solo, n: keeperTeam.members.length }));
 
     const teamlessAfter = await prisma.user.count({ where: { email: { startsWith: TAG }, teamId: null } });
     check("هیچ کاربر بی‌تیمی از این آزمون باقی نماند", teamlessAfter === 0, String(teamlessAfter));

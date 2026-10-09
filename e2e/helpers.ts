@@ -1,4 +1,5 @@
 import { expect, type Browser, type Page } from "@playwright/test";
+import type { Phase } from "../src/lib/phases";
 
 /** ایمیل و رمز یکتا برای هر اجرا (جلوگیری از برخورد در سرور در حال اجرا) */
 export function uniqueEmail(tag: string) {
@@ -11,9 +12,26 @@ export const PASSWORD = "e2e-secret-123";
 export const ADMIN_EMAIL = "admin@tapsell.ir";
 export const ADMIN_PASSWORD = "admin1234";
 
+const dialogPages = new WeakSet<Page>();
+
 /**
- * ثبت‌نام یک کاربر تازه از طریق ویزارد ۵ مرحله‌ای /register.
- * role/power پیش‌فرض روی گزینهٔ اول هر مرحله است.
+ * Playwright پنجره‌های confirm را به‌طور پیش‌فرض رد (dismiss) می‌کند؛ پس هر فرمی
+ * که پیش از ارسال `confirm()` می‌پرسد (شرکت فردی، فرستادن به حراج، تغییر فاز،
+ * شروع حراج، تسویه) بی‌صدا ارسال نمی‌شد. این کمک‌تابع همهٔ دیالوگ‌های این صفحه را
+ * می‌پذیرد و برای هر صفحه فقط یک‌بار شنونده ثبت می‌کند (پذیرفتن دوباره خطا می‌دهد).
+ */
+export function acceptDialogs(page: Page) {
+  if (dialogPages.has(page)) return;
+  dialogPages.add(page);
+  page.on("dialog", (dialog) => {
+    void dialog.accept().catch(() => {});
+  });
+}
+
+/**
+ * ثبت‌نام یک کاربر تازه از طریق ویزارد ۴ مرحله‌ای /register:
+ * حساب کاربری → مهارت → «خودت را کد بزن» → پیش‌نمایش.
+ * مهارت پیش‌فرض «سازنده» است و فقط برچسب معرفی است، اثری در بازی ندارد.
  *
  * ثبت‌نام موفق به `/?welcome=1` می‌رود و راهنمای شروع (OnboardingTour) را
  * به‌صورت خودکار باز می‌کند. آن مودال focus-trap و بک‌دراپ دارد، پس اگر بسته
@@ -22,29 +40,26 @@ export const ADMIN_PASSWORD = "admin1234";
  */
 export async function registerUser(
   page: Page,
-  opts: { email: string; nickname: string; roleLabel?: string; powerLabel?: string; department?: string } = { email: "", nickname: "" }
+  opts: { email: string; nickname: string; skillLabel?: string; department?: string } = { email: "", nickname: "" }
 ) {
   await page.goto("/register");
 
-  // مرحله ۱: حساب کاربری
+  // مرحله ۱: حساب کاربری (برچسب‌ها با htmlFor به id فیلدها وصل‌اند)
   await page.getByLabel("ایمیل").fill(opts.email);
   await page.getByLabel("رمز عبور").fill(PASSWORD);
   await page.getByLabel("نام مستعار").fill(opts.nickname);
-  await page.getByLabel("دپارتمان").selectOption({ index: 1 });
+  if (opts.department) await page.getByLabel("دپارتمان").selectOption({ label: opts.department });
+  else await page.getByLabel("دپارتمان").selectOption({ index: 1 });
   await page.getByRole("button", { name: "مرحلهٔ بعد" }).click();
 
-  // مرحله ۲: نقش (اولین کارت نقش)
-  await page.getByRole("button", { name: new RegExp(opts.roleLabel ?? "سازنده") }).click();
+  // مرحله ۲: مهارت (کارت‌های ROLES؛ aria-pressed دارند)
+  await page.getByRole("button", { name: new RegExp(opts.skillLabel ?? "سازنده") }).click();
   await page.getByRole("button", { name: "مرحلهٔ بعد" }).click();
 
-  // مرحله ۳: قدرت (اولین کارت قدرت)
-  await page.getByRole("button", { name: new RegExp(opts.powerLabel ?? "هیاهو") }).click();
+  // مرحله ۳: «خودت را کد بزن» — مقادیر پیش‌فرض کافی‌اند، فقط رد می‌شویم
   await page.getByRole("button", { name: "مرحلهٔ بعد" }).click();
 
-  // مرحله ۴: «خودت را کد بزن» — مقادیر پیش‌فرض کافی‌اند، فقط رد می‌شویم
-  await page.getByRole("button", { name: "مرحلهٔ بعد" }).click();
-
-  // مرحله ۵: پیش‌نمایش و ثبت نهایی
+  // مرحله ۴: پیش‌نمایش و ثبت نهایی
   await page.getByRole("button", { name: "ثبت‌نام و ورود به میدان" }).click();
 
   // ثبت‌نام تمام شده وقتی از /register خارج شدیم.
@@ -74,19 +89,28 @@ export async function login(page: Page, email: string, password: string) {
   await page.waitForURL((url) => !url.pathname.startsWith("/login"));
 }
 
-/** فاز بازی را از طریق پنل برگزارکننده (/admin) تغییر می‌دهد؛ فرض بر این است که صفحه از قبل به‌عنوان ادمین لاگین است. */
-export async function setPhaseViaAdmin(page: Page, phaseLabel: string) {
+/**
+ * فاز بازی را از طریق پنل برگزارکننده (/admin) تغییر می‌دهد؛ فرض بر این است که صفحه از قبل به‌عنوان ادمین لاگین است.
+ * فازها: REGISTRATION → IDEATION → SEED_ROUND → BUILD → MARKET → CLOSED (فاز جدای «حراج زنده» دیگر نیست؛
+ * حراج داخل «روز بازار» برگزار می‌شود). گزینه با `value` (کلید فاز) انتخاب می‌شود، نه برچسب فارسی.
+ */
+export async function setPhaseViaAdmin(page: Page, phase: Phase) {
+  // فرم فاز پیش از ارسال confirm می‌پرسد
+  acceptDialogs(page);
   await page.goto("/admin");
   // exact: true لازم است — کارت زمان‌بندی چند فیلد دیگر هم دارد که برچسبشان
   // شامل «فاز» است («پیشروی خودکار فاز»، «مدت فاز ... (ساعت)») و بدون آن
-  // strict mode با هفت تطبیق می‌شکند.
+  // strict mode با چند تطبیق می‌شکند.
   const select = page.getByLabel("فاز", { exact: true });
-  await select.selectOption({ label: phaseLabel });
+  await select.selectOption(phase);
+  // زمان پایان را خالی می‌گذاریم: وگرنه مقدار فاز قبلی در فرم می‌ماند و ممکن است
+  // پیشروی خودکار فاز را راه بیندازد یا صف حراج را در «دقایق پایانی روز بازار» ببندد.
+  await page.locator("#endsAt").fill("");
   await page.getByRole("button", { name: "اعمال" }).click();
   // تا وقتی سرور فاز را ذخیره نکرده برنگرد؛ کانتکست‌های دیگر بلافاصله بعد از
-  // این تابع به صفحه‌های قفل‌شده با فاز می‌روند.
-  await expect(select).toHaveValue(/.+/);
-  await expect(page.getByRole("button", { name: "در حال اعمال…" })).toBeHidden();
+  // این تابع به صفحه‌های قفل‌شده با فاز می‌روند. (ورود به CLOSED تسویه را هم اجرا می‌کند و کندتر است.)
+  await expect(page.getByRole("status").filter({ hasText: "فاز به‌روزرسانی شد" })).toBeVisible({ timeout: 30_000 });
+  await expect(select).toHaveValue(phase);
 }
 
 /**

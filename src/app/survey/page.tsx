@@ -9,7 +9,7 @@ export const metadata = { title: "نظرسنجی پایان بازی" };
 export default async function SurveyPage() {
   const user = await requireUser();
   const { phase } = await getPhase();
-  const open = phase === "AUCTION" || phase === "CLOSED";
+  const open = phase === "MARKET" || phase === "CLOSED";
 
   if (!open) {
     return (

@@ -58,7 +58,6 @@ const PHASE_HREF: Record<Phase, string> = {
   SEED_ROUND: "/invest",
   BUILD: "/build",
   MARKET: "/market",
-  AUCTION: "/auction",
   CLOSED: "/results",
 };
 

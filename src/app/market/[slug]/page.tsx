@@ -1,15 +1,48 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { getPhase, getSettingInt, phaseIndex } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
-import { Container, PageHeader, Locked } from "@/components/ui";
+import { productAiTag } from "@/lib/ai-tag";
+import { Container, PageHeader, Locked, Alert } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
+import { AiTag } from "@/components/AiTag";
 import { fa, coins } from "@/lib/persian";
 import { getProductBySlug, parseTeaser } from "@/lib/product";
-import { salesSummary, userSpentOn, getBuyers, hasHearted, effectivePurchaseCap, spendableBuyCoins } from "@/lib/market";
+import { salesSummary, userSpentOn, getBuyers, hasHearted, spendableBuyCoins } from "@/lib/market";
 import { Gallery } from "./Gallery";
 import { PurchasePanel } from "./PurchasePanel";
+import { AuctionEnqueue } from "./AuctionEnqueue";
+
+type AuctionInfo =
+  | { status: "NONE" }
+  | { status: "SCHEDULED"; ahead: number }
+  | { status: "LIVE" }
+  | { status: "ENDED"; winnerNickname: string | null; finalPrice: number | null };
+
+/** وضعیت حراج نسخهٔ ویژهٔ این محصول (در صف / زنده / تمام‌شده) و تعداد حراج‌های جلوتر در صف. */
+async function auctionInfo(productId: string): Promise<AuctionInfo> {
+  const auction = await prisma.auction.findUnique({
+    where: { productId },
+    select: { status: true, order: true, winnerId: true, finalPrice: true },
+  });
+  if (!auction) return { status: "NONE" };
+  if (auction.status === "LIVE") return { status: "LIVE" };
+  if (auction.status === "ENDED") {
+    const winner = auction.winnerId
+      ? await prisma.user.findUnique({ where: { id: auction.winnerId }, select: { nickname: true } })
+      : null;
+    return { status: "ENDED", winnerNickname: winner?.nickname ?? null, finalPrice: auction.finalPrice };
+  }
+  const ahead = await prisma.auction.count({ where: { status: { in: ["SCHEDULED", "LIVE"] }, order: { lt: auction.order } } });
+  return { status: "SCHEDULED", ahead };
+}
+
+/** آیا صف حراج به‌خاطر دقایق پایانی روز بازار بسته است (همان قاعدهٔ enqueueAuction) */
+function enqueueCutoffPassed(endsAt: Date | null, cutoffMin: number): boolean {
+  return !!endsAt && endsAt.getTime() - Date.now() < cutoffMin * 60_000;
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -25,7 +58,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   // پیش‌نویس محصول (هنوز ثبت نهایی نشده) فقط برای اعضای همان تیم قابل مشاهده است.
   if (!product || (!product.submittedAt && user.teamId !== product.teamId)) notFound();
 
-  const { phase } = await getPhase();
+  const { phase, endsAt } = await getPhase();
   if (phaseIndex(phase) < phaseIndex("BUILD")) {
     return (
       <>
@@ -37,21 +70,28 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
     );
   }
 
-  const [summary, buyers, alreadyHearted, alreadySpent, maxPerTarget, walletBalance] = await Promise.all([
+  const [summary, buyers, alreadyHearted, alreadySpent, walletBalance, live, auction, cutoffMin] = await Promise.all([
     salesSummary(product.id),
     getBuyers(product.id),
     hasHearted(user.id, product.id),
     userSpentOn(user.id, product.id),
-    getSettingInt("max_per_target", DEFAULTS.maxPerTarget),
     spendableBuyCoins(user.id, user.buyWallet),
+    prisma.product.findUnique({ where: { id: product.id }, select: { liveStatus: true, liveUrl: true } }),
+    auctionInfo(product.id),
+    getSettingInt("auction_enqueue_cutoff_min", DEFAULTS.auctionEnqueueCutoffMin),
   ]);
 
   const isOwnTeam = user.teamId === product.teamId;
   const teaser = parseTeaser(product.teaserUrl);
   const hasPurchasedAny = buyers.some((b) => b.userId === user.id);
-  // چانه‌زنی برای کل فاز بازار فعال است (یک‌بار مصرف نیست)، پس powerUsed اینجا نقشی ندارد.
-  const hasBargain = user.power === "BARGAIN";
-  const purchaseCap = effectivePurchaseCap(maxPerTarget, product.price);
+  const aiTag = productAiTag(product);
+  const isLive = live?.liveStatus === "LIVE";
+  const liveUrl = isLive && live && /^https?:\/\//i.test(live.liveUrl) ? live.liveUrl : null;
+  const hasDemo = !!product.demoUrl && /^https?:\/\//i.test(product.demoUrl);
+  const isMarket = phase === "MARKET";
+  const specialName = product.specialName || product.name;
+  // کارت حراج: برای همه وقتی نسخهٔ ویژه تعریف شده یا حراجی ثبت شده؛ برای اعضای تیم در روز بازار همیشه.
+  const showAuctionCard = !!product.specialName || auction.status !== "NONE" || (isOwnTeam && isMarket);
 
   return (
     <>
@@ -61,6 +101,13 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           <Gallery images={product.images} seed={product.teamSlug} />
 
           <div className="card p-4 sm:p-6 space-y-4 anim-rise">
+            {isLive && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="chip-ok">🚀 لایو</span>
+                <span className="text-xs text-brand-slate">این محصول روی بازار استودیو منتشر شده است.</span>
+              </div>
+            )}
+
             <div className="flex items-center gap-3">
               <div className="flex -space-x-2 space-x-reverse">
                 {product.members.map((m) => (
@@ -87,10 +134,27 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               </div>
             )}
 
-            {product.demoUrl && /^https?:\/\//i.test(product.demoUrl) && (
-              <a href={product.demoUrl} target="_blank" rel="noopener noreferrer" className="btn-navy inline-flex">
-                مشاهدهٔ دمو ↗
-              </a>
+            {(liveUrl || hasDemo) && (
+              <div className="flex flex-wrap gap-2">
+                {liveUrl && (
+                  <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="btn-cyan inline-flex">
+                    🚀 نسخهٔ لایو ↗
+                  </a>
+                )}
+                {hasDemo && (
+                  <a href={product.demoUrl} target="_blank" rel="noopener noreferrer" className="btn-navy inline-flex">
+                    مشاهدهٔ دمو ↗
+                  </a>
+                )}
+              </div>
+            )}
+
+            {aiTag && (
+              <div className="rounded-2xl bg-brand-ice px-4 py-3 space-y-1">
+                <div className="text-xs font-bold text-brand-slate">ارزیابی هوش مصنوعی</div>
+                <AiTag tag={aiTag} />
+                <p className="text-[11px] text-brand-slate">این برچسب فقط راهنماست؛ داوری انسانی جداگانه انجام می‌شود.</p>
+              </div>
             )}
           </div>
 
@@ -114,11 +178,9 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             productId={product.id}
             slug={product.teamSlug}
             price={product.price}
-            phaseIsMarket={phase === "MARKET"}
+            phaseIsMarket={isMarket}
             isOwnTeam={isOwnTeam}
-            hasBargain={hasBargain}
             alreadySpent={alreadySpent}
-            maxPerTarget={purchaseCap}
             walletBalance={walletBalance}
             hasPurchasedAny={hasPurchasedAny}
             alreadyHearted={alreadyHearted}
@@ -126,18 +188,50 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             soldCount={summary.sold}
           />
 
-          {product.specialName && (
-            <div className="card p-4 sm:p-6 space-y-2 anim-rise bg-brand-ice">
-              <div className="text-xs font-bold text-brand-cyan-dark">نسخهٔ ویژه</div>
-              <div className="font-black text-brand-navy break-words">{product.specialName}</div>
+          {showAuctionCard && (
+            <div className="card p-4 sm:p-6 space-y-3 anim-rise bg-brand-ice">
+              <div className="text-xs font-bold text-brand-cyan-dark">نسخهٔ ویژه · حراج زنده</div>
+              <div className="font-black text-brand-navy break-words">{specialName}</div>
               {product.specialDesc && <p className="text-sm text-brand-slate leading-6 break-words">{product.specialDesc}</p>}
-              <div className="flex items-center justify-between pt-1">
-                <span className="chip-gold">در حراج زنده</span>
-                <span className="text-sm font-bold text-brand-navy">شروع از {coins(product.specialStart)}</span>
-              </div>
-              <Link href="/auction" className="btn-cyan w-full justify-center">
-                رفتن به حراج زنده
-              </Link>
+              <div className="text-sm font-bold text-brand-navy">شروع از {coins(Math.max(1, product.specialStart))}</div>
+
+              {auction.status === "LIVE" ? (
+                <>
+                  <span className="chip-red">🔴 همین حالا در حراج زنده</span>
+                  <Link href="/auction" className="btn-cyan w-full justify-center">
+                    رفتن به حراج زنده
+                  </Link>
+                </>
+              ) : auction.status === "SCHEDULED" ? (
+                <>
+                  <span className="chip-gold">
+                    در صف حراج · {auction.ahead === 0 ? "نوبت بعدی" : `${fa(auction.ahead)} حراج جلوتر`}
+                  </span>
+                  <Link href="/auction" className="btn-ghost w-full justify-center">
+                    دیدن صف حراج
+                  </Link>
+                </>
+              ) : auction.status === "ENDED" ? (
+                <span className="chip-navy">
+                  {auction.winnerNickname
+                    ? `حراج شد: ${auction.winnerNickname} با ${coins(auction.finalPrice ?? 0)}`
+                    : "حراج بدون برنده تمام شد"}
+                </span>
+              ) : isOwnTeam && isMarket ? (
+                !product.submittedAt ? (
+                  <Alert kind="info">برای فرستادن به حراج، اول محصولت را ثبت نهایی کن.</Alert>
+                ) : enqueueCutoffPassed(endsAt, cutoffMin) ? (
+                  <Alert kind="info">صف حراج در {fa(cutoffMin)} دقیقهٔ پایانی روز بازار بسته است.</Alert>
+                ) : (
+                  <AuctionEnqueue slug={product.teamSlug} cutoffMin={cutoffMin} />
+                )
+              ) : isOwnTeam && phaseIndex(phase) < phaseIndex("MARKET") ? (
+                <p className="text-xs text-brand-slate leading-6">
+                  در «روز بازار» می‌توانی همین‌جا نسخهٔ ویژه را به صف حراج زنده بفرستی.
+                </p>
+              ) : isMarket ? (
+                <p className="text-xs text-brand-slate leading-6">تیم هنوز نسخهٔ ویژه‌اش را به صف حراج نفرستاده است.</p>
+              ) : null}
             </div>
           )}
         </div>

@@ -19,7 +19,7 @@ export default async function AdminAnalyticsPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <Stat label="ثبت‌نامی" value={fa(participation.registered)} />
             <Stat label="عضو تیم" value={fa(participation.inTeam.count)} hint={`${fa(participation.inTeam.pct)}٪`} />
-            <Stat label="سرمایه‌گذار" value={fa(participation.investors.count)} hint={`${fa(participation.investors.pct)}٪`} tone="cyan" />
+            <Stat label="حامی ایده" value={fa(participation.investors.count)} hint={`${fa(participation.investors.pct)}٪`} tone="cyan" />
             <Stat label="خریدار" value={fa(participation.buyers.count)} hint={`${fa(participation.buyers.pct)}٪`} tone="cyan" />
             <Stat label="پیشنهاددهندهٔ حراج" value={fa(participation.bidders.count)} hint={`${fa(participation.bidders.pct)}٪`} tone="red" />
             <Stat label="قلب‌دهنده" value={fa(participation.hearters.count)} hint={`${fa(participation.hearters.pct)}٪`} tone="red" />
@@ -29,11 +29,14 @@ export default async function AdminAnalyticsPage() {
         <section>
           <h2 className="mb-3 text-lg font-black text-brand-navy">نرخ خرج سکه</h2>
           <p className="mb-3 text-xs text-brand-slate">
-            چون کیف اولیهٔ هر کاربر در پایگاه‌داده جداگانه ذخیره نشده، مقدار فعلی تنظیمات «کیف بذر/خرید اولیه» به‌عنوان مبنای همهٔ کاربران فرض شده است.
+            از روی دفتر کل: سکه‌های رایگان اولیه، خریده‌شده و افزودهٔ برگزارکننده همه در مبنا حساب شده‌اند.
           </p>
           <div className="grid sm:grid-cols-2 gap-6">
-            <SpendPanel title="کیف بذر" pct={spend.seed.spentPct} buckets={spend.seed.buckets} />
-            <SpendPanel title="کیف خرید" pct={spend.buy.spentPct} buckets={spend.buy.buckets} />
+            <SpendPanel title="کیف سکه" pct={spend.spentPct} buckets={spend.buckets} />
+            <div className="grid grid-cols-2 gap-3 content-start">
+              <Stat label="سکهٔ فروخته‌شده" value={fa(spend.coinsSold)} hint="پرداخت‌شده با پول" tone="gold" />
+              <Stat label="خریدار سکه" value={fa(spend.coinBuyers)} tone="cyan" />
+            </div>
           </div>
         </section>
 
@@ -139,7 +142,7 @@ function HourlyChart({ data }: { data: HourlyBucket[] }) {
         })}
       </svg>
       <table className="sr-only">
-        <caption>فعالیت ساعتی بازی (سرمایه‌گذاری، خرید، پیشنهاد حراج و قلب)</caption>
+        <caption>فعالیت ساعتی بازی (حمایت، خرید، پیشنهاد حراج و قلب)</caption>
         <thead>
           <tr>
             <th>ساعت</th>

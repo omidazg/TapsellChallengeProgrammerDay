@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { teamManageError } from "@/lib/leader";
+import { teamManageError } from "@/lib/team-access";
 import { getPhase } from "@/lib/phase";
 import { runAnalyst } from "@/lib/analyst";
 import { imageUrlError } from "@/lib/product-utils";
@@ -32,8 +32,6 @@ const ideaSchema = z.object({
       const err = imageUrlError(v);
       if (err) ctx.addIssue({ code: "custom", message: `تصویر جلد: ${err}` });
     }),
-  fundingCap: z.coerce.number().int().min(50, "هدف جذب سرمایه حداقل ۵۰ است").max(600, "هدف جذب سرمایه حداکثر ۶۰۰ است"),
-  revenueShare: z.coerce.number().int().min(20, "سهم سود حداقل ۲۰٪ است").max(60, "سهم سود حداکثر ۶۰٪ است"),
 });
 
 async function assertIdeationEditable() {
@@ -48,11 +46,11 @@ async function assertIdeationEditable() {
 export async function saveIdeaAction(prevState: IdeaActionState, formData: FormData): Promise<IdeaActionState> {
   const user = await requireUser();
   if (!user.teamId) return { error: "ابتدا باید عضو یک تیم باشی" };
-  const leaderError = await teamManageError(user);
-  if (leaderError) return { error: leaderError };
+  const accessError = await teamManageError(user);
+  if (accessError) return { error: accessError };
 
   const values = Object.fromEntries(
-    ["title", "oneLiner", "problem", "audience", "buildPlan", "fundingCap"].map((k) => [k, String(formData.get(k) ?? "")])
+    ["title", "oneLiner", "problem", "audience", "buildPlan"].map((k) => [k, String(formData.get(k) ?? "")])
   );
 
   const phaseError = await assertIdeationEditable();
@@ -76,8 +74,6 @@ export async function saveIdeaAction(prevState: IdeaActionState, formData: FormD
     audience: formData.get("audience"),
     buildPlan: formData.get("buildPlan"),
     coverUrl: formData.get("coverUrl") ?? "",
-    fundingCap: formData.get("fundingCap"),
-    revenueShare: formData.get("revenueShare"),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "ورودی نامعتبر است", values };
@@ -94,8 +90,6 @@ export async function saveIdeaAction(prevState: IdeaActionState, formData: FormD
       audience: data.audience,
       buildPlan: data.buildPlan,
       coverUrl: data.coverUrl ?? "",
-      fundingCap: data.fundingCap,
-      revenueShare: data.revenueShare,
       ...(intent === "submit" ? { submittedAt: new Date() } : {}),
     },
     create: {
@@ -106,8 +100,9 @@ export async function saveIdeaAction(prevState: IdeaActionState, formData: FormD
       audience: data.audience,
       buildPlan: data.buildPlan,
       coverUrl: data.coverUrl ?? "",
-      fundingCap: data.fundingCap,
-      revenueShare: data.revenueShare,
+      // ستون‌های قدیمی (هدف و سهم پیش از بازطراحی)؛ NOT NULL هستند و دیگر استفاده نمی‌شوند.
+      fundingCap: 0,
+      revenueShare: 0,
       ...(intent === "submit" ? { submittedAt: new Date() } : {}),
     },
   });
@@ -130,8 +125,8 @@ export async function saveIdeaAction(prevState: IdeaActionState, formData: FormD
 export async function unsubmitIdeaAction(): Promise<IdeaActionState> {
   const user = await requireUser();
   if (!user.teamId) return { error: "ابتدا باید عضو یک تیم باشی" };
-  const leaderError = await teamManageError(user);
-  if (leaderError) return { error: leaderError };
+  const accessError = await teamManageError(user);
+  if (accessError) return { error: accessError };
 
   const phaseError = await assertIdeationEditable();
   if (phaseError) return { error: phaseError };

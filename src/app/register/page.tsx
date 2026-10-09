@@ -27,7 +27,7 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <PageHeader eyebrow="ثبت‌نام" title="خودت را کد بزن" desc="شخصیت بازی‌ات را بساز، نقش و قدرتت را انتخاب کن و وارد میدان شو." />
+      <PageHeader eyebrow="ثبت‌نام" title="خودت را کد بزن" desc="شخصیت بازی‌ات را بساز، مهارت اصلی‌ات را بگو و وارد میدان شو؛ تنها یا در تیم ۲ و ۳ نفره." />
       <Container>
         <RegisterWizard
           nextUrl={safeNext(next)}

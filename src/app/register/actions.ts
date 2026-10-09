@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { hashPassword, createSession, getSessionUserId } from "@/lib/auth";
 import { accessState, canRegister, type AccessState } from "@/lib/whitelist";
 import { getPhase, getSettingInt } from "@/lib/phase";
-import { DEFAULTS, ROLES, POWERS } from "@/lib/constants";
+import { DEFAULTS, ROLES } from "@/lib/constants";
 import { rateLimit, rateLimitMessage, clientIp, REGISTER_IP_RULE, OTP_IP_RULE } from "@/lib/rate-limit";
 import { normalizePhone } from "@/lib/phone";
 import { requestOtp, verifyOtp, signPhoneProof, checkPhoneProof } from "@/lib/otp";
@@ -20,8 +20,7 @@ const FIELD_ERRORS: Record<string, string> = {
   password: "رمز عبور باید حداقل ۶ نویسه باشد.",
   nickname: "نام مستعار باید بین ۲ تا ۳۰ نویسه باشد.",
   department: "دپارتمان را انتخاب کنید.",
-  role: "یک نقش انتخاب کنید.",
-  power: "یک قدرت انتخاب کنید.",
+  role: "مهارت اصلی‌ات را انتخاب کن.",
   coffee: "میزان قهوه باید بین ۰ تا ۱۰ باشد.",
   bugs: "تعداد باگ باید بین ۰ تا ۱۰۰ باشد.",
   sleep: "ساعت خواب باید بین ۰ تا ۱۲ باشد.",
@@ -34,7 +33,6 @@ const registerSchema = z.object({
   nickname: z.string().trim().min(2).max(30),
   department: z.enum(DEPARTMENTS),
   role: z.enum(Object.keys(ROLES) as [keyof typeof ROLES, ...(keyof typeof ROLES)[]]),
-  power: z.enum(Object.keys(POWERS) as [keyof typeof POWERS, ...(keyof typeof POWERS)[]]),
   coffee: z.number().int().min(0).max(10),
   bugs: z.number().int().min(0).max(100),
   sleep: z.number().int().min(0).max(12),
@@ -179,13 +177,11 @@ export async function registerAction(input: RegisterInput): Promise<RegisterFail
     return fieldFail("phone", PHONE_TAKEN);
   }
 
-  const [seedWallet, buyWallet] = await Promise.all([
-    getSettingInt("seed_wallet", DEFAULTS.seedWallet),
-    getSettingInt("buy_wallet", DEFAULTS.buyWallet),
-  ]);
+  // یک کیف سکهٔ واحد: سکهٔ رایگان اولیه (بقیه را کاربر در صورت تمایل می‌خرد)
+  const startingCoins = await getSettingInt("starting_coins", DEFAULTS.startingCoins);
 
   const passwordHash = await hashPassword(data.password);
-  const avatarSeed = `${data.role}-${data.power}-${data.coffee}-${data.bugs}-${data.sleep}-${data.confidence}-${data.nickname}`;
+  const avatarSeed = `${data.role}-${data.coffee}-${data.bugs}-${data.sleep}-${data.confidence}-${data.nickname}`;
 
   let session: { id: string; sessionVersion: number };
   try {
@@ -197,14 +193,14 @@ export async function registerAction(input: RegisterInput): Promise<RegisterFail
         nickname: data.nickname,
         department: data.department,
         role: data.role,
-        power: data.power,
+        power: "",
         coffee: data.coffee,
         bugs: data.bugs,
         sleep: data.sleep,
         confidence: data.confidence,
         avatarSeed,
-        seedWallet,
-        buyWallet,
+        seedWallet: 0,
+        buyWallet: startingCoins,
       },
       select: { id: true, sessionVersion: true },
     });

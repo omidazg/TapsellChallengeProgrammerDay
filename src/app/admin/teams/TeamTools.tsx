@@ -78,7 +78,7 @@ function AutoComposeCard() {
   return (
     <div className="card p-5 space-y-3 anim-rise">
       <h3 className="font-black text-brand-navy">تشکیل خودکار تیم‌ها</h3>
-      <p className="text-xs text-brand-slate">کاربران بی‌تیم را به تیم‌های نیمه‌کاره‌ای که نقششان را کم دارند اضافه می‌کند؛ در نبود جا، تیم تازه می‌سازد.</p>
+      <p className="text-xs text-brand-slate">کاربران بی‌تیم را به تیم‌های نیمه‌کاره (ترجیحاً تیمی که مهارتشان را ندارد) اضافه می‌کند؛ شرکت‌های فردی دست نمی‌خورند و در نبود جا، تیم تازه ساخته می‌شود.</p>
       {error && <Alert kind="error">{error}</Alert>}
       {summary && (
         <pre dir="rtl" className="whitespace-pre-wrap rounded-xl bg-brand-ice p-3 text-xs text-brand-navy">{summary}</pre>

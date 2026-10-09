@@ -28,7 +28,11 @@ export default async function AdminTeamsPage() {
 
   return (
     <>
-      <PageHeader eyebrow="پنل برگزارکننده" title="تیم‌ها" desc="اعضا، وضعیت ایده و محصول، و خزانهٔ هر تیم." />
+      <PageHeader
+        eyebrow="پنل برگزارکننده"
+        title="تیم‌ها"
+        desc="اعضا (۱ تا ۳ نفر)، وضعیت ایده و محصول، و کسر امتیاز تقلب هر تیم."
+      />
       <Container className="space-y-6">
         <TeamTools teams={allTeams} teamlessUsers={teamlessUsers} />
 
@@ -45,9 +49,10 @@ export default async function AdminTeamsPage() {
                   name: t.name,
                   slug: t.slug,
                   logoSeed: t.logoSeed,
-                  treasury: t.treasury,
+                  solo: t.solo,
                   members: t.members,
-                  leaderId: t.leaderId,
+                  cheatPenalty: t.cheatPenalty,
+                  cheatNote: t.cheatNote,
                   ideaSubmitted: !!t.idea?.submittedAt,
                   productSubmitted: !!t.product?.submittedAt,
                 }}

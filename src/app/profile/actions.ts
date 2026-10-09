@@ -8,6 +8,7 @@ import { normalizePhone } from "@/lib/phone";
 import { requestOtp, verifyOtp } from "@/lib/otp";
 import { toEnDigits } from "@/lib/persian";
 import { rateLimit, rateLimitMessage, clientIp, OTP_IP_RULE } from "@/lib/rate-limit";
+import { isTeamSettingsOpen, updateSkill, type TeamSettingsResult } from "@/lib/team-settings";
 
 const FIELD_ERRORS: Record<string, string> = {
   nickname: "نام مستعار باید بین ۲ تا ۳۰ نویسه باشد.",
@@ -35,7 +36,8 @@ export async function updateProfileAction(input: z.infer<typeof updateSchema>): 
     return { error: FIELD_ERRORS[key] ?? "اطلاعات وارد‌شده نامعتبر است." };
   }
   const data = parsed.data;
-  const avatarSeed = `${user.role}-${user.power}-${data.coffee}-${data.bugs}-${data.sleep}-${data.confidence}-${data.nickname}`;
+  // هم‌شکل بذر آواتار ثبت‌نام (register/actions.ts)
+  const avatarSeed = `${user.role}-${data.coffee}-${data.bugs}-${data.sleep}-${data.confidence}-${data.nickname}`;
 
   await prisma.user.update({
     where: { id: user.id },
@@ -52,6 +54,18 @@ export async function updateProfileAction(input: z.infer<typeof updateSchema>): 
   revalidatePath("/profile");
   revalidatePath("/team");
   return { ok: true };
+}
+
+/** تغییر مهارت اصلی (فقط برچسب پروفایل) — تا پایان «اتاق ایده» */
+export async function updateSkillAction(role: string): Promise<TeamSettingsResult> {
+  const user = await requireUser();
+  if (!(await isTeamSettingsOpen())) return { error: "مهارت فقط تا پایان «اتاق ایده» قابل تغییر است." };
+  const res = await updateSkill(user.id, String(role ?? ""));
+  if (res.ok) {
+    revalidatePath("/profile");
+    revalidatePath("/team");
+  }
+  return res;
 }
 
 // ---------- شمارهٔ موبایل (برای ورود با کد پیامکی) ----------

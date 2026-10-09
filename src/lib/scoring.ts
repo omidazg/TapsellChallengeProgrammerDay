@@ -1,62 +1,51 @@
 import { prisma } from "./db";
-import { bargainDiscountFor, defaultConfig, effectivePurchaseCap, maxSpendable, scoreGame, unspentPenalty } from "./economy/engine";
-import type { EconomyConfig, MemberWallet, ScoreOutput, TeamInput, TeamResult } from "./economy/types";
+import { defaultConfig, scoreGame } from "./economy/engine";
+import type { EconomyConfig, ScoreOutput, TeamInput, TeamResult } from "./economy/types";
 import { DEFAULTS } from "./constants";
 import { getSetting, getSettingInt } from "./phase";
 import { cached } from "./ttl-cache";
+import { PRIZES, type PrizeKey } from "./prizes";
 
 /** پیشوند کلید کش امتیازها؛ برای invalidate("scores:") در جاهایی که امتیاز را تغییر می‌دهند استفاده می‌شود. */
 const SCORES_CACHE_PREFIX = "scores:";
 const SCORES_CACHE_TTL_MS = 15_000;
 
-/** پیش‌فرض درصد سود سرمایه‌گذار وقتی تیم ایده‌ای ثبت نکرده است. */
-const DEFAULT_REVENUE_SHARE = 30;
-
-/**
- * خواندن یک تنظیم اعشاری (مثل `penalty_per_coin` = ۱٫۵).
- * `getSettingInt` عدد را با parseInt می‌برد و ۱٫۵ را ۱ می‌کند؛ برای جریمه باید اعشاری بماند.
- */
-export async function getSettingFloat(key: string, fallback: number): Promise<number> {
-  const raw = await getSetting(key, String(fallback));
-  const n = Number.parseFloat(raw);
-  return Number.isFinite(n) ? n : fallback;
-}
-
 /** برچسب فارسی دلیل تراکنش‌های دفتر کل */
 export const LEDGER_REASON_LABEL: Record<string, string> = {
-  INVEST: "سرمایه‌گذاری",
+  INVEST: "حمایت از ایده",
   PURCHASE: "خرید",
+  AUCTION_WIN: "برد حراج",
+  ADSLOT: "جایگاه تبلیغاتی",
+  COIN_PURCHASE: "خرید سکه",
+  ADMIN: "تنظیم برگزارکننده",
+  // دلیل‌های قدیمی (پیش از بازطراحی)
   BID_HOLD: "توقیف پیشنهاد حراج",
   BID_RELEASE: "آزادسازی پیشنهاد حراج",
-  ADSLOT: "جایگاه تبلیغاتی",
   DIVIDEND: "سود سهام",
   PENALTY: "جریمه",
-  ADMIN: "تنظیم برگزارکننده",
-  AUCTION_WIN: "برد حراج",
   POWER_ANGEL: "سرمایه‌گذاری فرشته",
 };
 
 export const WALLET_LABEL: Record<string, string> = {
-  SEED: "کیف بذر",
-  BUY: "کیف خرید",
-  TREASURY: "خزانهٔ تیم",
+  BUY: "سکه",
+  SEED: "کیف بذر (قدیمی)",
+  TREASURY: "خزانهٔ تیم (قدیمی)",
 };
 
-/** پیکربندی اقتصاد با اعمال مقادیر جدول Setting روی پیش‌فرض‌ها. */
+/** پیکربندی امتیازدهی با اعمال مقادیر جدول Setting روی پیش‌فرض‌ها. */
 export async function configFromSettings(): Promise<EconomyConfig> {
   const base = defaultConfig();
-  const [seedWallet, buyWallet, maxPerTarget, penaltyPerCoin] = await Promise.all([
-    getSettingInt("seed_wallet", DEFAULTS.seedWallet),
-    getSettingInt("buy_wallet", DEFAULTS.buyWallet),
-    getSettingInt("max_per_target", DEFAULTS.maxPerTarget),
-    getSettingFloat("penalty_per_coin", DEFAULTS.penaltyPerCoin),
+  const [supportCap, soloBoostPct, duoBoostPct] = await Promise.all([
+    getSettingInt("support_cap", DEFAULTS.supportCap),
+    getSettingInt("solo_boost_pct", DEFAULTS.soloBoostPct),
+    getSettingInt("duo_boost_pct", DEFAULTS.duoBoostPct),
   ]);
-  return { ...base, seedWallet, buyWallet, maxPerTarget, penaltyPerCoin };
+  return { ...base, supportCap, soloBoostPct, duoBoostPct };
 }
 
 /**
  * همهٔ داده‌های لازم برای امتیازدهی را از پایگاه‌داده جمع می‌کند
- * و به موتور خالص اقتصاد (scoreGame) می‌سپارد.
+ * و به موتور خالص امتیاز (scoreGame) می‌سپارد.
  */
 export async function computeScores(): Promise<ScoreOutput> {
   const config = await configFromSettings();
@@ -64,126 +53,29 @@ export async function computeScores(): Promise<ScoreOutput> {
   const teams = await prisma.team.findMany({
     include: {
       members: { select: { id: true } },
-      idea: { include: { investments: true } },
-      product: { include: { purchases: true, hearts: true } },
+      idea: { include: { investments: { select: { userId: true, amount: true, selfFunded: true } } } },
+      product: { include: { purchases: { select: { userId: true, amount: true } } } },
     },
   });
 
   const teamInputs: TeamInput[] = teams.map((t) => {
-    const investments = (t.idea?.investments ?? []).map((i) => ({
-      userId: i.userId,
-      amount: i.amount,
-      selfFunded: i.selfFunded,
-    }));
-
-    // فروش = همهٔ ردیف‌های Purchase محصول تیم.
-    // برندهٔ حراج زنده هم در settleAuction یک Purchase می‌سازد، پس اینجا دوباره اضافه نمی‌شود.
-    const sales = (t.product?.purchases ?? []).map((p) => ({ userId: p.userId, amount: p.amount }));
-
+    // حمایت مردمی = حمایت از ایده + خرید محصول (برندهٔ حراج هم در settleAuction یک Purchase می‌سازد).
+    const supports = [
+      ...(t.idea?.investments ?? []).filter((i) => !i.selfFunded).map((i) => ({ userId: i.userId, amount: i.amount })),
+      ...(t.product?.purchases ?? []).map((p) => ({ userId: p.userId, amount: p.amount })),
+    ];
+    const p = t.product;
     return {
       teamId: t.id,
       memberIds: t.members.map((m) => m.id),
-      revenueShare: t.idea?.revenueShare ?? DEFAULT_REVENUE_SHARE,
-      investments,
-      sales,
-      hearts: t.product?.hearts.length ?? 0,
-      juryQuality: t.product?.juryQuality ?? null,
-      juryTeaser: t.product?.juryTeaser ?? null,
-      aiQuality: t.product?.aiQuality ?? null,
+      supports,
+      jury: p ? { works: p.juryWorks, value: p.juryValue, pitch: p.juryPitch } : null,
+      aiQuality: p?.aiQuality ?? null,
+      cheatPenalty: t.cheatPenalty,
     };
   });
 
-  const wallets = await buildMemberWallets(config.maxPerTarget);
-
-  return scoreGame(config, teamInputs, wallets);
-}
-
-/**
- * کیف‌پول امتیازدهی هر کاربر را می‌سازد: سکهٔ باقی‌مانده + «سکهٔ خرج‌شدنی»
- * (بیشترین چیزی که هنوز می‌شد روی هدف‌های دیگران خرج کرد؛ جریمه فقط روی این حساب می‌شود).
- *
- * برای همهٔ کاربران (حتی بی‌تیم) ساخته می‌شود؛ scoreGame خودش هنگام جمع‌کردن جریمه/پرتفوی/سلیقهٔ
- * هر تیم فقط کیف‌پول اعضای همان تیم را برمی‌دارد، پس کاربر بی‌تیم روی هیچ تیمی اثر نمی‌گذارد.
- *
- * کوئری‌ها عمداً کم نگه داشته شده‌اند (چند findMany/groupBy، نه N×M کوئری جدا):
- * یک‌بار ایده‌ها/محصولاتِ ثبت‌شده و یک‌بار جمع سرمایه‌گذاری/خرید هر کاربر روی هر هدف خوانده
- * می‌شود؛ بقیه محاسبه در حافظه انجام می‌شود.
- */
-async function buildMemberWallets(maxPerTarget: number, onlyUserId?: string): Promise<MemberWallet[]> {
-  const byUser = onlyUserId ? { userId: onlyUserId } : undefined;
-  const [users, ideas, products, investGroups, purchaseGroups] = await Promise.all([
-    prisma.user.findMany({
-      where: onlyUserId ? { id: onlyUserId } : undefined,
-      select: { id: true, teamId: true, seedWallet: true, buyWallet: true, power: true, shieldTeamId: true },
-    }),
-    prisma.idea.findMany({
-      where: { submittedAt: { not: null } },
-      select: { id: true, teamId: true },
-    }),
-    prisma.product.findMany({
-      where: { submittedAt: { not: null } },
-      select: { id: true, teamId: true, price: true },
-    }),
-    prisma.investment.groupBy({ by: ["userId", "ideaId"], where: byUser, _sum: { amount: true } }),
-    prisma.purchase.groupBy({ by: ["userId", "productId"], where: byUser, _sum: { amount: true } }),
-  ]);
-
-  const investedByUserIdea = new Map<string, number>();
-  for (const g of investGroups) {
-    investedByUserIdea.set(`${g.userId}|${g.ideaId}`, g._sum.amount ?? 0);
-  }
-  const purchasedByUserProduct = new Map<string, number>();
-  for (const g of purchaseGroups) {
-    purchasedByUserProduct.set(`${g.userId}|${g.productId}`, g._sum.amount ?? 0);
-  }
-
-  return users.map((u) => {
-    let seedSpendable = 0;
-    for (const idea of ideas) {
-      if (u.teamId && idea.teamId === u.teamId) continue; // ایدهٔ تیم خودش حساب نمی‌شود
-      const invested = investedByUserIdea.get(`${u.id}|${idea.id}`) ?? 0;
-      seedSpendable += Math.max(0, maxPerTarget - invested);
-    }
-
-    // کیف خرید بخش‌پذیر نیست (هر خرید یک واحد با قیمت ثابت است)، پس «خرج‌شدنی» یعنی
-    // بیشترین مبلغی که با موجودی فعلی و واحدهای باقی‌مانده دقیقاً می‌شد پر کرد.
-    const buyUnits: { cost: number; count: number }[] = [];
-    for (const product of products) {
-      if (product.price <= 0) continue; // محافظتی؛ قیمت معتبر همیشه ≥ ۱ است
-      if (u.teamId && product.teamId === u.teamId) continue; // محصول تیم خودش حساب نمی‌شود
-      const purchased = purchasedByUserProduct.get(`${u.id}|${product.id}`) ?? 0;
-      const cap = effectivePurchaseCap(maxPerTarget, product.price);
-      const remainingRevenue = Math.max(0, cap - purchased);
-      const units = Math.floor(remainingRevenue / product.price);
-      const discount = u.power === "BARGAIN" ? bargainDiscountFor(product.price, DEFAULTS.bargainDiscount) : 0;
-      buyUnits.push({ cost: product.price - discount, count: units });
-    }
-    const buySpendable = maxSpendable(u.buyWallet, buyUnits);
-
-    return {
-      userId: u.id,
-      teamId: u.teamId,
-      seedLeft: u.seedWallet,
-      buyLeft: u.buyWallet,
-      seedSpendable,
-      buySpendable,
-      // سپر فقط روی همان یک تیمی اثر دارد که دارنده‌اش انتخاب کرده (وگرنه بی‌اثر)
-      shieldTeamId: u.power === "SHIELD" ? u.shieldTeamId : null,
-    };
-  });
-}
-
-/**
- * جریمهٔ دقیق سکهٔ خرج‌نشدهٔ یک نفر، با همان منطق امتیازدهی پایانی (برای پیش‌نمایش کیف پول).
- * `spendable` = چند سکه از موجودی فعلی‌اش هنوز واقعاً خرج‌شدنی است.
- */
-export async function personalPenalty(userId: string): Promise<{ penalty: number; spendable: number }> {
-  const config = await configFromSettings();
-  const [w] = await buildMemberWallets(config.maxPerTarget, userId);
-  if (!w) return { penalty: 0, spendable: 0 };
-  const penalty = unspentPenalty(config, [w]);
-  const spendable = Math.min(w.seedLeft, w.seedSpendable) + Math.min(w.buyLeft, w.buySpendable);
-  return { penalty, spendable };
+  return scoreGame(config, teamInputs);
 }
 
 /**
@@ -192,94 +84,86 @@ export async function personalPenalty(userId: string): Promise<{ penalty: number
  *
  * هشدار مهم: settleGame و پیش‌نمایش تسویهٔ ادمین باید همیشه از computeScores خام استفاده کنند
  * (نه این نسخه)، چون تسویه باید روی جدیدترین داده محاسبه شود. پس از نوشتن‌های مؤثر بر امتیاز
- * (settleGame، سرمایه‌گذاری، خرید) با invalidate("scores:") این کش پاک می‌شود.
+ * (تسویه، حمایت، خرید، داوری) با invalidate("scores:") این کش پاک می‌شود.
  */
 export function computeScoresCached(): Promise<ScoreOutput> {
   return cached(SCORES_CACHE_PREFIX, SCORES_CACHE_TTL_MS, computeScores);
 }
 
-export type AwardKey = "champion" | "topSales" | "topCapital" | "popularProduct" | "bestTeaser" | "topInvestor";
+/** کلیدهای Setting برای جوایزی که داوران انتخاب می‌کنند */
+export const AWARD_PICK_KEYS = { ai: "award_ai_team_id", live: "award_live_team_id" } as const;
+
+/** انتخاب داوران برای جوایز «برترین کاربرد هوش مصنوعی» و «بهترین محصول لایو» */
+export async function getAwardPicks(): Promise<{ ai: string | null; live: string | null }> {
+  const [ai, live] = await Promise.all([getSetting(AWARD_PICK_KEYS.ai, ""), getSetting(AWARD_PICK_KEYS.live, "")]);
+  return { ai: ai || null, live: live || null };
+}
+
+export type AwardKey = PrizeKey;
 
 export interface Award {
   key: AwardKey;
   label: string;
   emoji: string;
-  teamId?: string;
-  teamName?: string;
-  userId?: string;
-  userNickname?: string;
+  sharePct: number;
+  teamId: string;
+  teamName: string;
   value: number;
 }
 
 export interface AwardExtra {
   teamNames: Map<string, string>;
-  userNicknames: Map<string, string>;
+  /** تیم انتخاب‌شدهٔ داوران برای هر جایزهٔ انتخابی (null = هنوز انتخاب نشده) */
+  picks: { ai: string | null; live: string | null };
 }
 
-const MIN_INVESTED_FOR_AWARD = 30;
-const MAX_AWARDS_PER_TEAM = 2;
-
-/** جوایز پایان بازی؛ هر تیم حداکثر دو جایزه می‌گیرد (بعد از آن به نفر بعدی می‌رسد). */
+/**
+ * پنج جایزهٔ پایان بازی به ترتیب PRIZES؛ هر پروژه حداکثر یک جایزه می‌گیرد.
+ * جوایز خودکار به نفر بعدی می‌رسند اگر نفر اول قبلاً جایزه گرفته باشد؛ جایزهٔ انتخابی داوران
+ * اگر تیم انتخاب‌شده قبلاً جایزه گرفته باشد اهدا نمی‌شود (پنل داوری این را هشدار می‌دهد).
+ */
 export function computeAwards(output: ScoreOutput, extra: AwardExtra): Award[] {
-  const teamAwardCount = new Map<string, number>();
+  const awarded = new Set<string>();
   const awards: Award[] = [];
+  const byId = new Map(output.teams.map((t) => [t.teamId, t]));
 
-  function pickTeam(key: AwardKey, label: string, emoji: string, metric: (t: TeamResult) => number) {
-    const sorted = [...output.teams].sort((a, b) => metric(b) - metric(a));
-    for (const t of sorted) {
-      // جایزه به معیار صفر تعلق نمی‌گیرد (مثلاً «بهترین تیزر» وقتی هیچ تیزری نمره نگرفته)
-      if (metric(t) <= 0) return;
-      const count = teamAwardCount.get(t.teamId) ?? 0;
-      if (count >= MAX_AWARDS_PER_TEAM) continue;
-      awards.push({ key, label, emoji, teamId: t.teamId, teamName: extra.teamNames.get(t.teamId) ?? "", value: metric(t) });
-      teamAwardCount.set(t.teamId, count + 1);
-      return;
+  const metricOf: Partial<Record<PrizeKey, (t: TeamResult) => number>> = {
+    champion: (t) => t.total,
+    jury: (t) => t.juryAdjusted,
+    people: (t) => t.people,
+  };
+
+  for (const prize of PRIZES) {
+    const give = (t: TeamResult, value: number) => {
+      awards.push({
+        key: prize.key,
+        label: prize.label,
+        emoji: prize.emoji,
+        sharePct: prize.sharePct,
+        teamId: t.teamId,
+        teamName: extra.teamNames.get(t.teamId) ?? "",
+        value,
+      });
+      awarded.add(t.teamId);
+    };
+
+    const metric = metricOf[prize.key];
+    if (metric) {
+      const sorted = [...output.teams].sort((a, b) => metric(b) - metric(a));
+      for (const t of sorted) {
+        // جایزه به معیار صفر تعلق نمی‌گیرد (مثلاً «انتخاب داوران» وقتی هنوز کسی داوری نشده)
+        if (metric(t) <= 0) break;
+        if (awarded.has(t.teamId)) continue;
+        give(t, metric(t));
+        break;
+      }
+      continue;
     }
-  }
 
-  pickTeam("champion", "قهرمان میدان", "🏆", (t) => t.total);
-  pickTeam("topSales", "پرفروش‌ترین", "💰", (t) => t.netSales);
-  pickTeam("topCapital", "بهترین جذب سرمایه", "📈", (t) => t.externalCapital);
-  pickTeam("popularProduct", "محبوب‌ترین محصول", "❤️", (t) => t.hearts);
-  pickTeam("bestTeaser", "بهترین تیزر", "🎬", (t) => t.teaser);
-
-  const byUser = new Map<string, { invested: number; dividend: number }>();
-  for (const d of output.dividends) {
-    const cur = byUser.get(d.userId) ?? { invested: 0, dividend: 0 };
-    cur.invested += d.invested;
-    cur.dividend += d.dividend;
-    byUser.set(d.userId, cur);
-  }
-  let bestUser: { userId: string; roi: number } | null = null;
-  for (const [userId, v] of byUser) {
-    if (v.invested < MIN_INVESTED_FOR_AWARD) continue;
-    const roi = v.dividend / v.invested;
-    if (!bestUser || roi > bestUser.roi) bestUser = { userId, roi };
-  }
-  if (bestUser) {
-    awards.push({
-      key: "topInvestor",
-      label: "بهترین سرمایه‌گذار",
-      emoji: "💎",
-      userId: bestUser.userId,
-      userNickname: extra.userNicknames.get(bestUser.userId) ?? "",
-      value: bestUser.roi,
-    });
+    const pickedId = prize.key === "ai" ? extra.picks.ai : prize.key === "live" ? extra.picks.live : null;
+    const picked = pickedId ? byId.get(pickedId) : undefined;
+    if (picked && !awarded.has(picked.teamId)) give(picked, picked.total);
   }
 
   return awards;
-}
-
-/** فهرست سرمایه‌گذاران برتر بر اساس مجموع سود دریافتی نسبت‌به مجموع سرمایهٔ خارجی. */
-export function topInvestors(output: ScoreOutput): { userId: string; invested: number; dividend: number; roi: number }[] {
-  const byUser = new Map<string, { invested: number; dividend: number }>();
-  for (const d of output.dividends) {
-    const cur = byUser.get(d.userId) ?? { invested: 0, dividend: 0 };
-    cur.invested += d.invested;
-    cur.dividend += d.dividend;
-    byUser.set(d.userId, cur);
-  }
-  return [...byUser.entries()]
-    .map(([userId, v]) => ({ userId, invested: v.invested, dividend: v.dividend, roi: v.invested > 0 ? v.dividend / v.invested : 0 }))
-    .sort((a, b) => b.roi - a.roi);
 }

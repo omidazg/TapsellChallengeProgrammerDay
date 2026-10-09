@@ -4,9 +4,10 @@ import { isLocalUploadUrl } from "@/lib/product-utils";
 import { thumbUrl } from "@/lib/thumb";
 import { requireUser } from "@/lib/auth";
 import { getPhase, phaseIndex, PHASE_LABEL } from "@/lib/phase";
-import { getEffectiveGameValues } from "@/lib/game-values";
+import { prisma } from "@/lib/db";
+import { productAiTag, type AiTagInfo } from "@/lib/ai-tag";
 import { PageHeader, Container, Empty, Locked, Coin } from "@/components/ui";
-import { UnspentReminder } from "@/components/UnspentReminder";
+import { AiTag } from "@/components/AiTag";
 import { fa, coins } from "@/lib/persian";
 import { getMarketProducts, getCurrentAdSlotWinners, type MarketSort } from "@/lib/market";
 import { SalesTicker } from "./SalesTicker";
@@ -22,7 +23,7 @@ const SORTS: { key: MarketSort; label: string }[] = [
 
 export default async function MarketPage({ searchParams }: { searchParams: Promise<{ sort?: string }> }) {
   const user = await requireUser();
-  const { phase, endsAt } = await getPhase();
+  const { phase } = await getPhase();
   const sp = await searchParams;
 
   if (phaseIndex(phase) < phaseIndex("BUILD")) {
@@ -49,13 +50,13 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
   const closed = phaseIndex(phase) > phaseIndex("MARKET");
   const readOnly = browsingOnly || closed;
   const sort = (SORTS.find((s) => s.key === sp.sort)?.key ?? "all") as MarketSort;
-  // سقف و جریمهٔ مؤثر (تنظیم برگزارکننده یا پیش‌فرض) با یک کوئری
-  const values = await getEffectiveGameValues();
-  const maxPerTarget = values.maxPerTarget;
-  const [products, adWinners] = await Promise.all([
-    getMarketProducts(sort, { userId: user.id, maxPerTarget }),
+  const [products, adWinners, aiRows] = await Promise.all([
+    getMarketProducts(sort, { userId: user.id }),
     readOnly ? Promise.resolve([]) : getCurrentAdSlotWinners(),
+    // برچسب هوش مصنوعی کارت‌ها (نمرهٔ داور هوش مصنوعی) — MarketCard این دو فیلد را ندارد.
+    prisma.product.findMany({ where: { submittedAt: { not: null } }, select: { id: true, aiQuality: true, aiNotes: true } }),
   ]);
+  const aiTagById = new Map<string, AiTagInfo | null>(aiRows.map((r) => [r.id, productAiTag(r)]));
 
   const banner = adWinners.find((w) => w.kind === "BANNER");
   const featured = adWinners.find((w) => w.kind === "FEATURED");
@@ -68,7 +69,7 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
       <PageHeader
         eyebrow="فاز فعلی"
         title="بازار"
-        desc={browsingOnly ? "پیش‌نمایش محصولات؛ خرید از فاز «روز بازار» باز می‌شود." : closed ? "روز بازار تمام شد؛ محصولات فقط برای تماشا باز هستند." : "با کیف خریدت از تیم‌های دیگر بخر و قلب بده."}
+        desc={browsingOnly ? "پیش‌نمایش محصولات؛ خرید از فاز «روز بازار» باز می‌شود." : closed ? "روز بازار تمام شد؛ محصولات فقط برای تماشا باز هستند." : "با سکه‌هایت از تیم‌های دیگر بخر و قلب بده؛ هر خرید یعنی حمایت از آن تیم."}
       />
       <Container className="space-y-6">
         {banner && (
@@ -85,16 +86,6 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
         )}
 
         {!readOnly && <SalesTicker buyWallet={user.buyWallet} />}
-
-        {phase === "MARKET" && (
-          <UnspentReminder
-            phase={phase}
-            phaseLabel="فاز «روز بازار»"
-            endsAt={endsAt ? endsAt.toISOString() : null}
-            coinsLeft={user.buyWallet}
-            penaltyPerCoin={values.penaltyPerCoin}
-          />
-        )}
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap gap-2">
@@ -124,16 +115,19 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
                 <Link
                   key={p.id}
                   href={`/market/${p.slug}`}
-                  aria-label={`${p.name} از تیم ${p.teamName}، قیمت ${coins(p.price)}`}
+                  aria-label={`${p.name} از تیم ${p.teamName}، قیمت ${coins(p.price)}${p.live ? "، لایو" : ""}${p.bought ? "، قبلاً خریده‌ای" : ""}`}
                   className="card overflow-hidden anim-rise hover:shadow-lift transition group"
                 >
                   <div className="relative aspect-[8/5]">
                     <Image src={thumbUrl(p.cover)} alt={p.name} fill sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 400px" className="object-cover group-hover:scale-[1.03] transition" unoptimized={!isLocalUploadUrl(p.cover)} />
                     {isFeatured && <span className="chip-gold absolute top-2 right-2">ویژه</span>}
+                    {p.live && <span className="chip-ok absolute top-2 left-2">🚀 لایو</span>}
                   </div>
                   <div className="p-4 space-y-2">
-                    <div className="flex items-center gap-2 text-xs text-brand-slate">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-brand-slate">
                       <span className="font-bold text-brand-navy">{p.teamName}</span>
+                      <AiTag tag={aiTagById.get(p.id) ?? null} compact />
+                      {p.bought && <span className="chip-ok">✓ خریدی</span>}
                     </div>
                     <div className="font-black text-brand-navy truncate">{p.name}</div>
                     {p.tagline && <p className="text-xs text-brand-slate line-clamp-2">{p.tagline}</p>}
@@ -150,8 +144,6 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
                       <span className="chip-navy w-full justify-center mt-1">بازار بسته شد</span>
                     ) : isOwnTeam ? (
                       <span className="chip-navy w-full justify-center mt-1">تیم خودت</span>
-                    ) : p.limitReached ? (
-                      <span className="chip-red w-full justify-center mt-1">به سقف خریدت از این محصول رسیده‌ای</span>
                     ) : (
                       <span className="chip-navy w-full justify-center mt-1 group-hover:bg-brand-mist transition">مشاهده و خرید ←</span>
                     )}

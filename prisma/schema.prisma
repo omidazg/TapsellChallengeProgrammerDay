@@ -17,10 +17,10 @@ model User {
   phone        String?  @unique // موبایل ۰۹xxxxxxxxx برای ورود با کد پیامکی
   passwordHash String
   nickname     String
-  role         String // BUILDER | STORYTELLER | DEALMAKER
-  power        String // HYPE | BARGAIN | ANGEL | SECOND_WIND | INSIDER | SHIELD
+  role         String // مهارت اصلی (فقط برچسب پروفایل): BUILDER | STORYTELLER | DEALMAKER
+  // قدرت‌های ویژه از بازی حذف شده‌اند؛ این سه ستون فقط برای سازگاری با داده‌های قدیمی مانده‌اند.
+  power        String // کاربران تازه: ""
   powerUsed    Boolean  @default(false)
-  // قدرت سپر: تیمی که کاربر یک‌بار (پیش از روز بازار) سرمایه‌گذاری‌اش را روی آن بیمه کرده؛ null = هنوز انتخاب نکرده
   shieldTeamId String?
   coffee       Int      @default(5)
   bugs         Int      @default(50)
@@ -38,8 +38,8 @@ model User {
   teamId String?
   team   Team?   @relation(fields: [teamId], references: [id])
 
-  seedWallet Int @default(100) // کیف بذر
-  buyWallet  Int @default(100) // کیف خرید
+  seedWallet Int @default(100) // قدیمی (کیف بذر)؛ همه‌چیز حالا با یک کیف سکه است (ثبت‌نام ۰ می‌گذارد)
+  buyWallet  Int @default(100) // کیف سکه (سکهٔ رایگان اولیه از starting_coins + سکهٔ خریداری‌شده)
 
   investments       Investment[]
   purchases         Purchase[]
@@ -52,25 +52,31 @@ model User {
   pushSubscriptions PushSubscription[]
   auditLogs         AuditLog[]
   surveyResponse    SurveyResponse?
+  coinOrders        CoinOrder[]
 }
 
 model Team {
-  id         String          @id @default(cuid())
-  name       String          @unique
-  slug       String          @unique
-  logoSeed   String          @default("")
-  treasury   Int             @default(0) // خزانهٔ تیم = سرمایهٔ جذب‌شده
-  // سرپرست تیم با رأی اکثریت اعضا انتخاب می‌شود (src/lib/leader.ts)
+  id              String          @id @default(cuid())
+  name            String          @unique
+  slug            String          @unique
+  logoSeed        String          @default("")
+  treasury        Int             @default(0) // قدیمی (خزانهٔ تیم)؛ دیگر استفاده نمی‌شود
+  // قدیمی: رأی‌گیری سرپرست حذف شده و همهٔ اعضا کارهای تیم را انجام می‌دهند
   leaderId        String?
   leaderElectedAt DateTime?
-  createdAt  DateTime        @default(now())
-  members    User[]
-  idea       Idea?
-  product    Product?
-  invites    TeamInvite[]
-  adSlotBids AdSlotBid[]
-  score      TeamScore?
-  flags      CollusionFlag[]
+  // کسر امتیاز تقلب (با تأیید برگزارکننده) و توضیح آن برای تیم
+  cheatPenalty    Int             @default(0)
+  cheatNote       String          @default("")
+  // شرکت فردی: تیم یک‌نفره‌ای که عضو تازه نمی‌پذیرد (هم‌تیم‌سازی خودکار و لینک دعوت به آن نمی‌رسند)
+  solo            Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  members         User[]
+  idea            Idea?
+  product         Product?
+  invites         TeamInvite[]
+  adSlotBids      AdSlotBid[]
+  score           TeamScore?
+  flags           CollusionFlag[]
 }
 
 model TeamInvite {
@@ -99,8 +105,8 @@ model Idea {
   audience           String
   buildPlan          String // چه چیزی در ۴۸ ساعت ساخته می‌شود
   coverUrl           String                @default("")
-  fundingCap         Int // سقف سرمایه
-  revenueShare       Int // درصد سود سرمایه‌گذار ۲۰..۶۰
+  fundingCap         Int // قدیمی (هدف جذب سرمایه)؛ ایده‌های تازه ۰
+  revenueShare       Int // قدیمی (درصد سود سرمایه‌گذار)؛ ایده‌های تازه ۰
   analystClarity     Int? // ۰..۱۰۰
   analystFeasibility Int?
   analystNovelty     Int?
@@ -140,29 +146,41 @@ model DueDiligenceMessage {
 // ---------- محصول و بازار ----------
 
 model Product {
-  id           String     @id @default(cuid())
-  teamId       String     @unique
-  team         Team       @relation(fields: [teamId], references: [id])
-  name         String
-  tagline      String     @default("")
-  description  String     @default("")
-  demoUrl      String     @default("")
-  teaserUrl    String     @default("")
-  images       String     @default("[]") // JSON array of urls
-  price        Int        @default(20) // ۵..۵۰
-  specialName  String     @default("") // نسخهٔ ویژه برای حراج زنده
-  specialDesc  String     @default("")
-  specialStart Int        @default(20)
-  submittedAt  DateTime?
-  juryQuality  Int? // ۰..۱۰۰ داوران
-  juryTeaser   Int?
-  aiQuality    Int? // پیش‌نمرهٔ هوش مصنوعی
-  aiNotes      String?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  purchases    Purchase[]
-  hearts       Heart[]
-  auction      Auction?
+  id              String     @id @default(cuid())
+  teamId          String     @unique
+  team            Team       @relation(fields: [teamId], references: [id])
+  name            String
+  tagline         String     @default("")
+  description     String     @default("")
+  demoUrl         String     @default("")
+  teaserUrl       String     @default("")
+  images          String     @default("[]") // JSON array of urls
+  price           Int        @default(20) // ۵..۵۰
+  specialName     String     @default("") // نسخهٔ ویژه برای حراج زنده
+  specialDesc     String     @default("")
+  specialStart    Int        @default(20)
+  submittedAt     DateTime?
+  juryQuality     Int? // قدیمی (۰..۱۰۰)
+  juryTeaser      Int? // قدیمی (۰..۱۰۰)
+  // داوری انسانی: سه پرسش، هر کدام ۰..۱۰
+  juryWorks       Int? // آیا محصول واقعاً کار می‌کند؟
+  juryValue       Int? // ارزش واقعی برای کاربر یا گروه پگاه
+  juryPitch       Int? // تیزر و ارائه
+  aiQuality       Int? // داوری هوش مصنوعی ۰..۱۰۰ (همیشه جدا از داور انسانی)
+  aiNotes         String?
+  // انتشار روی بازار استودیو: "" | REQUESTED | PUBLISHING | LIVE | REJECTED
+  liveStatus      String     @default("")
+  liveSourceUrl   String     @default("") // لینک کد/بستهٔ محصول که تیم داده
+  liveRequestNote String     @default("")
+  liveUrl         String     @default("") // لینک محصول منتشرشده
+  liveAdminNote   String     @default("")
+  liveRequestedAt DateTime?
+  liveAt          DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  purchases       Purchase[]
+  hearts          Heart[]
+  auction         Auction?
 }
 
 model Purchase {
@@ -200,7 +218,7 @@ model Auction {
   startPrice Int       @default(20)
   startsAt   DateTime?
   endsAt     DateTime?
-  status     String    @default("SCHEDULED") // SCHEDULED | LIVE | ENDED
+  status     String    @default("SCHEDULED") // SCHEDULED | LIVE | ENDED — تیم در روز بازار محصولش را به صف حراج می‌فرستد
   winnerId   String?
   finalPrice Int?
   extensions Int       @default(0)
@@ -257,7 +275,7 @@ model LedgerEntry {
   teamId    String?
   wallet    String // SEED | BUY | TREASURY
   delta     Int
-  reason    String // INVEST | PURCHASE | BID_HOLD | BID_RELEASE | ADSLOT | DIVIDEND | PENALTY | ADMIN
+  reason    String // INVEST | PURCHASE | AUCTION_WIN | ADSLOT | COIN_PURCHASE | ADMIN (+ قدیمی: DIVIDEND | PENALTY | POWER_ANGEL)
   refId     String?
   createdAt DateTime @default(now())
 
@@ -293,6 +311,18 @@ model TeamScore {
   teaser          Float    @default(0)
   portfolio       Int      @default(0)
   taste           Float    @default(0)
+  // ─── امتیاز سه‌معیاره ───
+  memberCount     Int      @default(0)
+  juryRaw         Float? // ۰..۱۰۰ میانگین سه پرسش داوری؛ null = هنوز داوری نشده
+  juryAdjusted    Float    @default(0) // پس از جبران تیم کوچک
+  people          Float    @default(0) // حمایت مردمی (فرمول درجه‌دو)
+  supporters      Int      @default(0)
+  coinsReceived   Int      @default(0)
+  ai              Float? // ۰..۱۰۰ داوری هوش مصنوعی؛ null = هنوز ارزیابی نشده
+  ptsJury         Float    @default(0)
+  ptsPeople       Float    @default(0)
+  ptsAi           Float    @default(0)
+  cheatPenalty    Int      @default(0)
   computedAt      DateTime @default(now())
 }
 
@@ -352,9 +382,9 @@ model Setting {
 }
 
 // کلیدهای Setting:
-// phase: REGISTRATION | IDEATION | SEED_ROUND | BUILD | MARKET | AUCTION | CLOSED
+// phase: REGISTRATION | IDEATION | SEED_ROUND | BUILD | MARKET | CLOSED  (حراج داخل روز بازار است)
 // phase_ends_at: ISO
-// seed_wallet, buy_wallet, max_per_target, penalty_per_coin ...
+// starting_coins, support_cap, solo_boost_pct, duo_boost_pct, award_ai_team_id ...
 
 // ─── گزارش کارهای ادمین ───
 model AuditLog {
@@ -440,4 +470,25 @@ model OtpCode {
   createdAt  DateTime  @default(now())
 
   @@index([phone, purpose, createdAt])
+}
+
+// ─── خرید سکه با پرداخت واقعی ───
+// هر سکه COIN_PRICE_TOMAN تومان است؛ کل مبلغ پرداخت‌شده به صندوق جایزه اضافه می‌شود.
+model CoinOrder {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  coins      Int
+  amountRial Int
+  status     String    @default("PENDING") // PENDING | PAID | FAILED | CANCELED
+  gateway    String // fake | manual | نام درگاه
+  authority  String? // شناسهٔ تراکنش نزد درگاه
+  refId      String? // کد پیگیری پرداخت موفق
+  note       String    @default("")
+  createdAt  DateTime  @default(now())
+  paidAt     DateTime?
+
+  @@unique([gateway, authority])
+  @@index([userId, createdAt])
+  @@index([status])
 }

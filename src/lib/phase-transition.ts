@@ -1,7 +1,7 @@
 import { setPhase, type Phase } from "./phase";
 import { notifyPhaseChange } from "./notifications";
 import { settleGame } from "./settlement";
-import { resetShieldReminders, runShieldReminders } from "./shield-reminders";
+import { closeAuctionsForGameEnd } from "./auction";
 
 export type TransitionResult = {
   /** فقط وقتی true است که فاز مقصد CLOSED بود و تسویهٔ خودکار با خطا روبه‌رو شد. */
@@ -17,14 +17,9 @@ export type TransitionResult = {
 export async function transitionTo(phase: Phase, endsAt: Date | null): Promise<TransitionResult> {
   await setPhase(phase, endsAt);
   await notifyPhaseChange(phase).catch((e) => console.error("notifyPhaseChange failed", e));
-  if (phase === "REGISTRATION" || phase === "IDEATION") {
-    // دور تازهٔ بازی: یادآورهای یک‌بارهٔ سپر دوباره قابل ارسال شوند.
-    await resetShieldReminders().catch((e) => console.error("resetShieldReminders failed", e));
-  } else if (phase === "SEED_ROUND" || phase === "BUILD") {
-    // یادآور سپر به دارندگانی که هنوز انتخاب نکرده‌اند (یک‌باره؛ زمان‌بند هم همین را هر تیک بررسی می‌کند).
-    await runShieldReminders().catch((e) => console.error("runShieldReminders failed", e));
-  }
   if (phase === "CLOSED") {
+    // حراج زندهٔ روز بازار پیش از تسویه بسته می‌شود تا خرید برنده در امتیاز حساب شود.
+    await closeAuctionsForGameEnd().catch((e) => console.error("closeAuctionsForGameEnd failed", e));
     try {
       await settleGame();
     } catch (e) {

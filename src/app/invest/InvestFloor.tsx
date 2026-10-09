@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { Avatar } from "@/components/Avatar";
+import { AiTag } from "@/components/AiTag";
 import { fa, coins } from "@/lib/persian";
-import { analystAvg, type FloorFilter, type IdeaCardData } from "@/lib/idea";
+import { type FloorFilter, type IdeaCardData } from "@/lib/idea";
 import { Cover } from "@/app/idea/Cover";
 import { thumbUrl } from "@/lib/thumb";
 
 const FILTERS: { key: FloorFilter; label: string }[] = [
   { key: "all", label: "همه" },
-  { key: "lowest", label: "کم‌سرمایه‌ترین" },
-  { key: "topAnalyst", label: "بالاترین رتبهٔ تحلیل‌گر" },
+  { key: "lowest", label: "کم‌حمایت‌ترین" },
+  { key: "topAnalyst", label: "بهترین ارزیابی هوش مصنوعی" },
 ];
 
 export function InvestFloor({
@@ -24,7 +25,7 @@ export function InvestFloor({
   filter: FloorFilter;
   aiOff?: boolean;
 }) {
-  // بدون هوش مصنوعی، رتبهٔ تحلیل‌گر وجود ندارد؛ این گزینهٔ مرتب‌سازی پنهان می‌شود.
+  // بدون هوش مصنوعی، ارزیابی تحلیل‌گر وجود ندارد؛ این گزینهٔ مرتب‌سازی پنهان می‌شود.
   const visibleFilters = aiOff ? FILTERS.filter((f) => f.key !== "topAnalyst") : FILTERS;
   return (
     <div>
@@ -33,6 +34,7 @@ export function InvestFloor({
           <Link
             key={f.key}
             href={f.key === "all" ? "/invest" : `/invest?filter=${f.key}`}
+            aria-current={filter === f.key ? "page" : undefined}
             className={`chip transition ${filter === f.key ? "bg-brand-navy text-white" : "chip-navy hover:bg-brand-mist"}`}
           >
             {f.label}
@@ -42,17 +44,13 @@ export function InvestFloor({
 
       {ideas.length === 0 ? (
         <div className="card p-10 text-center">
-          <div className="text-5xl mb-3">💡</div>
+          <div className="text-5xl mb-3" aria-hidden>💡</div>
           <h3 className="text-xl font-black">هنوز ایده‌ای ثبت نشده</h3>
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 stagger">
           {ideas.map((idea) => {
             const isOwn = ownTeamId !== null && idea.teamId === ownTeamId;
-            const avg = analystAvg(idea);
-            const rawPct = idea.fundingCap > 0 ? Math.round((idea.raised / idea.fundingCap) * 100) : 0;
-            const pct = Math.min(100, rawPct);
-            const overGoal = rawPct > 100;
             return (
               <Link
                 key={idea.id}
@@ -71,35 +69,14 @@ export function InvestFloor({
                   <h3 className="font-black text-brand-navy leading-6 break-words">{idea.title}</h3>
                   <p className="text-sm text-brand-slate line-clamp-2 flex-1 break-words">{idea.oneLiner}</p>
 
-                  {avg !== null && (
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 flex-1 rounded-pill bg-brand-sky overflow-hidden">
-                        <div className="h-full rounded-pill bg-brand-cyan" style={{ width: `${avg}%` }} />
-                      </div>
-                      <span className="text-xs font-bold text-brand-cyan-dark fa-num">{fa(avg)}</span>
-                    </div>
-                  )}
-
                   <div className="flex flex-wrap gap-2">
-                    <span className="chip-gold">سود سرمایه‌گذار {fa(idea.revenueShare)}٪</span>
-                    <span className="chip-navy">{fa(idea.investorCount)} سرمایه‌گذار</span>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 flex-1 rounded-pill bg-brand-sky overflow-hidden">
-                        <div className="h-full rounded-pill bg-brand-red" style={{ width: `${pct}%` }} />
-                      </div>
-                      {overGoal && <span className="chip-red shrink-0 !px-1.5 !py-0 text-[10px]">بیش از هدف 🔥</span>}
-                    </div>
-                    <div className="mt-1 flex justify-between text-xs text-brand-slate fa-num">
-                      <span>{coins(idea.raised)}</span>
-                      <span>از هدف {coins(idea.fundingCap)}</span>
-                    </div>
+                    <AiTag tag={idea.aiTag} compact />
+                    <span className="chip-navy">{fa(idea.investorCount)} حامی</span>
+                    <span className="chip-gold">{coins(idea.raised)}</span>
                   </div>
 
                   <span className={isOwn ? "btn-ghost mt-1 pointer-events-none" : "btn-primary mt-1 pointer-events-none"}>
-                    {isOwn ? "ایدهٔ خودت" : interactive ? "سرمایه‌گذاری" : "مشاهده"}
+                    {isOwn ? "ایدهٔ خودت" : interactive ? "حمایت" : "مشاهده"}
                   </span>
                 </div>
               </Link>

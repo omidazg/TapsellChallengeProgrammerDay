@@ -19,7 +19,7 @@ const surveySchema = z.object({
 
 async function assertOpen() {
   const { phase } = await getPhase();
-  if (phase !== "AUCTION" && phase !== "CLOSED") {
+  if (phase !== "MARKET" && phase !== "CLOSED") {
     return "نظرسنجی فقط از فاز «حراج زنده» تا پایان بازی باز است.";
   }
   return null;

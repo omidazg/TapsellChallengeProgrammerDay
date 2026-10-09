@@ -2,19 +2,16 @@
  * دود-تست تسویهٔ نهایی.
  * اجرا: npx tsx scripts/smoke-settlement.ts
  *
- * روی یک پایگاه‌دادهٔ SQLite موقت (`smoke-settlement.db`) کار می‌کند؛ اسکیمای آن را
- * خود اسکریپت با دستور زیر می‌سازد (DATABASE_URL فقط برای همان فرایند فرزند ست می‌شود):
+ * روی یک پایگاه‌دادهٔ SQLite موقت (createTempDb در scripts/lib/temp-db.ts) کار می‌کند؛ پایگاه‌دادهٔ
+ * اصلی لمس نمی‌شود.
  *
- *     npx prisma db push --url file:./smoke-settlement.db
- *
- * (فایل پیش از اجرا پاک می‌شود، پس نیازی به `--force-reset` — که روی پایگاه‌دادهٔ موجود
- *  مخرب است و برای ایجنت‌ها مسدود شده — نیست.)
- *
- * سناریو: ۲ تیم، سرمایه‌گذاری از مسیر واقعی investCore، خرید، سپس settleGame دوبار.
+ * سناریو: ۳ تیم (سه‌نفره، دونفره و شرکت فردی) + حامیان بی‌تیم. حمایت از ایده‌ها از مسیر واقعی
+ * investCore در «دور حمایت» و خرید محصول از مسیر واقعی purchaseProduct در «روز بازار».
+ * سپس پایان بازی با transitionTo("CLOSED") که تسویه را اجرا می‌کند، و settleGame دوباره
+ * (idempotent). در پایان TeamScore ذخیره‌شده با computeScores و loadSettledOutput مقایسه می‌شود.
  */
 
-import { execFileSync } from "node:child_process";
-import { existsSync, rmSync } from "node:fs";
+import { createTempDb, isTempDatabaseUrl } from "./lib/temp-db";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -35,80 +32,59 @@ try {
   // نصب نیست؛ کاری لازم نیست
 }
 
-const ROOT = path.resolve(__dirname, "..");
-const DB_FILE = path.join(ROOT, "smoke-settlement.db");
-const DB_URL = `file:${DB_FILE.replace(/\\/g, "/")}`;
-
-// باید پیش از import شدن src/lib/db ست شود.
-process.env.DATABASE_URL = DB_URL;
+// DATABASE_URL باید پیش از import شدن src/lib/db تنظیم شود؛ اگر از قبل به یک
+// پایگاه‌دادهٔ موقت اشاره می‌کند (اجرا از run-smokes) همان استفاده می‌شود.
+const ownTempDb = isTempDatabaseUrl(process.env.DATABASE_URL) ? null : createTempDb("settlement");
 
 const checks: { name: string; ok: boolean; detail: string }[] = [];
 function check(name: string, ok: boolean, detail = "") {
   checks.push({ name, ok, detail });
   console.log(`${ok ? "PASS" : "FAIL"} — ${name}${detail ? ` (${detail})` : ""}`);
 }
-
-function cleanTempFiles() {
-  for (const suffix of ["", "-journal", "-wal", "-shm"]) {
-    const f = `${DB_FILE}${suffix}`;
-    if (existsSync(f)) rmSync(f, { force: true });
-  }
-}
-
-/** اسکیمای پایگاه‌دادهٔ موقت را می‌سازد (فایل تازه ساخته می‌شود، پس push خالی است و مخرب نیست). */
-function pushSchema() {
-  cleanTempFiles();
-  execFileSync("npx", ["prisma", "db", "push", "--url", DB_URL], {
-    cwd: ROOT,
-    env: { ...process.env, DATABASE_URL: DB_URL },
-    stdio: "inherit",
-    shell: process.platform === "win32",
-  });
-}
+const near = (a: number | null, b: number | null) =>
+  a === null || b === null ? a === b : Math.abs(a - b) < 1e-6;
 
 async function main() {
-  pushSchema();
-
   const { prisma } = await import("../src/lib/db");
   const { investCore } = await import("../src/lib/invest");
-  const { settleGame, getSettledAt, loadSettledOutput } = await import("../src/lib/settlement");
-  const { setPhase } = await import("../src/lib/phase");
-
-  const PENALTY_PER_COIN = 1.5;
+  const { purchaseProduct } = await import("../src/lib/market");
+  const { computeScores } = await import("../src/lib/scoring");
+  const { settleGame, getSettledAt, loadSettledOutput, SETTLED_AT_KEY } = await import("../src/lib/settlement");
+  const { setPhase, getPhase } = await import("../src/lib/phase");
+  const { transitionTo } = await import("../src/lib/phase-transition");
 
   try {
-    await prisma.setting.create({ data: { key: "penalty_per_coin", value: String(PENALTY_PER_COIN) } });
-    await prisma.setting.create({ data: { key: "max_per_target", value: "40" } });
-
     // ---------- تیم‌ها، کاربران، ایده‌ها و محصولات ----------
+    const SPEC = [
+      { key: "alpha", name: "تیم آلفا", members: 3, solo: false, jury: [9, 9, 8] as const, ai: 70, price: 20 },
+      { key: "beta", name: "تیم بتا", members: 2, solo: false, jury: [7, 8, 7] as const, ai: 90, price: 15 },
+      { key: "gamma", name: "شرکت فردی گاما", members: 1, solo: true, jury: [8, 8, 8] as const, ai: null, price: 10 },
+    ];
     const teamIds: Record<string, string> = {};
     const ideaIds: Record<string, string> = {};
     const productIds: Record<string, string> = {};
-    const userIds: Record<string, string> = {};
+    const memberIds: Record<string, string[]> = {};
 
-    const SPEC = [
-      { key: "alpha", name: "تیم آلفا", revenueShare: 50, jury: 90 },
-      { key: "beta", name: "تیم بتا", revenueShare: 40, jury: 70 },
-    ];
+    let n = 0;
+    const mkUser = (key: string, teamId: string | null) =>
+      prisma.user.create({
+        data: {
+          email: `settle-${key}-${n++}@example.test`,
+          passwordHash: "x",
+          nickname: `کاربر ${key}`,
+          role: "DEALMAKER",
+          power: "",
+          teamId,
+          seedWallet: 0,
+          buyWallet: 200,
+        },
+      });
 
     for (const t of SPEC) {
-      const team = await prisma.team.create({ data: { name: t.name, slug: `smoke-${t.key}` } });
+      const team = await prisma.team.create({ data: { name: t.name, slug: `smoke-${t.key}`, solo: t.solo } });
       teamIds[t.key] = team.id;
-      for (let i = 1; i <= 2; i++) {
-        const u = await prisma.user.create({
-          data: {
-            email: `settle-${t.key}-${i}@example.test`,
-            passwordHash: "x",
-            nickname: `${t.name} ${i}`,
-            role: "DEALMAKER",
-            power: "HYPE",
-            teamId: team.id,
-            seedWallet: 100,
-            buyWallet: 100,
-          },
-        });
-        userIds[`${t.key}${i}`] = u.id;
-      }
+      memberIds[t.key] = [];
+      for (let i = 0; i < t.members; i++) memberIds[t.key].push((await mkUser(`${t.key}${i}`, team.id)).id);
       const idea = await prisma.idea.create({
         data: {
           teamId: team.id,
@@ -117,247 +93,165 @@ async function main() {
           problem: "مسئله",
           audience: "مخاطب",
           buildPlan: "برنامه",
-          fundingCap: 200,
-          revenueShare: t.revenueShare,
+          fundingCap: 0,
+          revenueShare: 0,
           submittedAt: new Date(),
         },
       });
       ideaIds[t.key] = idea.id;
       const product = await prisma.product.create({
-        data: { teamId: team.id, name: `محصول ${t.name}`, price: 20, submittedAt: new Date(), juryQuality: t.jury, juryTeaser: t.jury - 10 },
+        data: {
+          teamId: team.id,
+          name: `محصول ${t.name}`,
+          price: t.price,
+          submittedAt: new Date(),
+          juryWorks: t.jury[0],
+          juryValue: t.jury[1],
+          juryPitch: t.jury[2],
+          aiQuality: t.ai,
+        },
       });
       productIds[t.key] = product.id;
     }
+    const fans = await Promise.all([0, 1, 2, 3].map((i) => mkUser(`fan${i}`, null)));
 
-    // ---------- سرمایه‌گذاری از مسیر واقعی (تا دفتر کل خزانه هم آزموده شود) ----------
+    // ---------- دور حمایت: investCore ----------
     await setPhase("SEED_ROUND", null);
-    const invests = [
-      { team: "alpha", user: "beta1", amount: 40 },
-      { team: "alpha", user: "beta2", amount: 20 },
-      { team: "beta", user: "alpha1", amount: 30 },
-    ];
-    for (const iv of invests) {
-      const res = await investCore(prisma, userIds[iv.user], ideaIds[iv.team], iv.amount);
-      if (!res.ok) throw new Error(`investCore شکست خورد: ${res.error}`);
-    }
-
-    // سرمایه‌گذاری خودی از مسیر واقعی دیگر ممکن نیست (ممنوع شده): وارسی رد شدنش
-    const selfAttempt = await investCore(prisma, userIds["alpha2"], ideaIds["alpha"], 10);
-    check("investCore سرمایه‌گذاری خودی را رد می‌کند", selfAttempt.ok === false, JSON.stringify(selfAttempt));
-
-    // دادهٔ قدیمی (پیش از ممنوعیت): یک ردیف Investment خودیِ alpha2 مستقیم ساخته می‌شود، دقیقاً
-    // همان‌طور که مسیر واقعی پیش از این تغییر می‌ساخت (خزانه + سطر دفتر کل TREASURY هم دارد)،
-    // تا وارسی شود که سرمایه‌گذاری خودیِ قدیمی هنوز از سرمایهٔ بیرونی/سود کنار گذاشته می‌شود.
-    const legacySelfInvestment = await prisma.investment.create({
-      data: { ideaId: ideaIds["alpha"], userId: userIds["alpha2"], amount: 10, selfFunded: true },
-    });
-    await prisma.user.update({ where: { id: userIds["alpha2"] }, data: { seedWallet: { decrement: 10 } } });
-    await prisma.team.update({ where: { id: teamIds["alpha"] }, data: { treasury: { increment: 10 } } });
-    await prisma.ledgerEntry.create({
-      data: {
-        userId: userIds["alpha2"],
-        teamId: teamIds["alpha"],
-        wallet: "TREASURY",
-        delta: 10,
-        reason: "INVEST",
-        refId: legacySelfInvestment.id,
-      },
-    });
-
-    const alphaTeam = await prisma.team.findUniqueOrThrow({ where: { id: teamIds["alpha"] } });
-    check("خزانهٔ آلفا = ۴۰+۲۰+۱۰ = ۷۰", alphaTeam.treasury === 70, `=${alphaTeam.treasury}`);
-    const treasuryRows = await prisma.ledgerEntry.findMany({ where: { wallet: "TREASURY", teamId: teamIds["alpha"] } });
-    check("سه سطر TREASURY برای آلفا ثبت شد", treasuryRows.length === 3, `=${treasuryRows.length}`);
-    check(
-      "جمع سطرهای TREASURY با خزانه برابر است",
-      treasuryRows.reduce((a, r) => a + r.delta, 0) === alphaTeam.treasury,
-      `ledger=${treasuryRows.reduce((a, r) => a + r.delta, 0)} treasury=${alphaTeam.treasury}`
-    );
-    const investmentCount = await prisma.investment.count();
-    const treasuryAll = await prisma.ledgerEntry.count({ where: { wallet: "TREASURY", reason: "INVEST" } });
-    check("برای هر سرمایه‌گذاری یک سطر TREASURY هست", treasuryAll === investmentCount, `${treasuryAll}/${investmentCount}`);
-
-    // بک‌فیل نباید چیزی اضافه کند (ایدمپوتنت)
-    {
-      const existing = await prisma.ledgerEntry.findMany({
-        where: { wallet: "TREASURY", reason: "INVEST", refId: { not: null } },
-        select: { refId: true },
-      });
-      const done = new Set(existing.map((e) => e.refId));
-      const all = await prisma.investment.findMany({ select: { id: true } });
-      const missing = all.filter((i) => !done.has(i.id)).length;
-      check("بک‌فیل خزانه چیزی برای ساختن ندارد", missing === 0, `missing=${missing}`);
-    }
-
-    // ---------- خرید ----------
-    const buy = async (teamKey: string, userKey: string, amount: number) => {
-      await prisma.purchase.create({ data: { productId: productIds[teamKey], userId: userIds[userKey], amount } });
-      await prisma.user.update({ where: { id: userIds[userKey] }, data: { buyWallet: { decrement: amount } } });
-      await prisma.ledgerEntry.create({
-        data: { userId: userIds[userKey], teamId: teamIds[teamKey], wallet: "BUY", delta: -amount, reason: "PURCHASE" },
-      });
+    const inv = async (userId: string, key: string, amount: number) => {
+      const r = await investCore(prisma, userId, ideaIds[key], amount);
+      if (!r.ok) throw new Error(`حمایت ناموفق: ${r.error}`);
+      return r;
     };
-    await buy("alpha", "beta1", 30);
-    await buy("alpha", "beta2", 20);
-    await buy("beta", "alpha1", 25);
+    await inv(fans[0].id, "alpha", 30);
+    await inv(fans[1].id, "alpha", 10);
+    await inv(fans[2].id, "beta", 25);
+    await inv(fans[3].id, "gamma", 40);
+    await inv(memberIds.beta[0], "alpha", 5); // حمایت بین‌تیمی
+    const ownTeam = await investCore(prisma, memberIds.alpha[0], ideaIds.alpha, 5);
+    check("حمایت از ایدهٔ تیم خود رد شد", !ownTeam.ok, ownTeam.ok ? "پذیرفته شد" : ownTeam.error);
 
-    // انتظار: آلفا gross=۵۰، سهم ۵۰٪ → استخر ۲۵، سرمایهٔ خارجی ۶۰ → beta1=۱۶، beta2=۸
-    //         بتا gross=۲۵، سهم ۴۰٪ → استخر ۱۰، سرمایهٔ خارجی ۳۰ → alpha1=۱۰
-    const EXPECTED = { beta1: 16, beta2: 8, alpha1: 10 } as const;
-    const EXPECTED_TOTAL = EXPECTED.beta1 + EXPECTED.beta2 + EXPECTED.alpha1;
+    // ---------- روز بازار: purchaseProduct ----------
+    await setPhase("MARKET", null);
+    const buy = async (userId: string, key: string) => {
+      const r = await purchaseProduct(userId, productIds[key]);
+      if (!r.ok) throw new Error(`خرید ناموفق: ${r.error}`);
+      return r;
+    };
+    await buy(fans[0].id, "beta");
+    await buy(fans[1].id, "beta");
+    await buy(fans[2].id, "gamma");
+    await buy(fans[2].id, "gamma"); // خرید تکراری مجاز است
+    await buy(memberIds.gamma[0], "alpha");
+    const ownBuy = await purchaseProduct(memberIds.beta[1], productIds.beta);
+    check("خرید از محصول تیم خود رد شد", !ownBuy.ok, ownBuy.ok ? "پذیرفته شد" : ownBuy.error);
 
-    const before = await prisma.user.findMany({ select: { id: true, buyWallet: true, seedWallet: true } });
-    const buyBefore = new Map(before.map((u) => [u.id, u.buyWallet]));
-    const leftoverBefore = before.reduce((a, u) => a + u.buyWallet + u.seedWallet, 0);
+    const fan0 = await prisma.user.findUniqueOrThrow({ where: { id: fans[0].id } });
+    check("کیف حامی پس از حمایت و خرید درست کم شد (۲۰۰ − ۳۰ − ۱۵)", fan0.buyWallet === 155, `=${fan0.buyWallet}`);
 
-    // ---------- تسویه (بار اول) ----------
-    await setPhase("CLOSED", null);
-    const first = await settleGame();
-    check("تسویهٔ اول alreadySettled=false", first.alreadySettled === false, String(first.alreadySettled));
-    check(`مجموع سود پرداختی = ${EXPECTED_TOTAL}`, first.dividendsPaid === EXPECTED_TOTAL, `=${first.dividendsPaid}`);
-    check("نتیجهٔ دو تیم ثبت شد", first.teams === 2, `=${first.teams}`);
+    // ---------- پیش از پایان بازی ----------
+    check("پیش از پایان بازی settled_at خالی است", (await getSettledAt()) === null);
+    const before = await computeScores();
+
+    // ---------- پایان بازی: transitionTo("CLOSED") تسویه را اجرا می‌کند ----------
+    const tr = await transitionTo("CLOSED", null);
+    check("انتقال به CLOSED بدون خطای تسویه", !tr.settleFailed, JSON.stringify(tr));
+    check("فاز CLOSED شد", (await getPhase()).phase === "CLOSED");
 
     const settledAt = await getSettledAt();
-    check("کلید settled_at نوشته شد", !!settledAt, settledAt ? settledAt.toISOString() : "null");
+    check("settled_at ثبت شد", settledAt !== null, settledAt?.toISOString() ?? "null");
 
-    const scoreRows = await prisma.teamScore.findMany();
-    check("برای هر دو تیم سطر TeamScore هست", scoreRows.length === 2, `=${scoreRows.length}`);
+    const rows = await prisma.teamScore.findMany({ orderBy: { rank: "asc" } });
+    check("برای هر تیم یک ردیف TeamScore", rows.length === SPEC.length, `تعداد=${rows.length}`);
     check(
-      "ستون‌های TeamScore پر شده‌اند (مجموع فروش ناخالص = ۷۵)",
-      scoreRows.reduce((a, s) => a + s.grossSales, 0) === 75,
-      `=${scoreRows.reduce((a, s) => a + s.grossSales, 0)}`
-    );
-    check(
-      "computedAt همان زمان تسویه است",
-      scoreRows.every((s) => Math.abs(s.computedAt.getTime() - (settledAt?.getTime() ?? 0)) < 2000),
-      scoreRows.map((s) => s.computedAt.toISOString()).join(" ")
+      "computedAt همهٔ ردیف‌ها = settled_at",
+      !!settledAt && rows.every((r) => r.computedAt.getTime() === settledAt.getTime())
     );
 
-    // جریمه باید روی کیف‌پول‌های *پیش از* واریز سود، و فقط روی سکهٔ «خرج‌شدنی» حساب شده باشد
-    // (min(left, spendable))، نه کل مانده — leftoverBefore دیگر معیار درستی نیست.
-    // مقدار زیر دستی از روی فیکسچر محاسبه شده (۲ ایده/محصول ثبت‌شده، قیمت=۲۰، سقف=۴۰):
-    //   alpha1: seedSpendable=max(0,40−30)=10، buySpendable=floor(max(0,40−25)/20)*20=0 → min(70,10)+min(75,0)=10
-    //   alpha2: seedSpendable=max(0,40−0)=40، buySpendable=floor(40/20)*20=40 → min(90,40)+min(100,40)=80
-    //   beta1:  seedSpendable=max(0,40−40)=0،  buySpendable=floor(max(0,40−30)/20)*20=0 → min(60,0)+min(70,0)=0
-    //   beta2:  seedSpendable=max(0,40−20)=20، buySpendable=floor(max(0,40−20)/20)*20=20 → min(80,20)+min(80,20)=40
-    //   جمع = ۱۰+۸۰+۰+۴۰ = ۱۳۰
-    const penaltyTotal = scoreRows.reduce((a, s) => a + s.unspentPenalty, 0);
-    const EXPECTED_UNSPENT_SPENDABLE_COINS = 130;
-    check(
-      "جریمهٔ خرج‌نشده فقط روی سکهٔ خرج‌شدنیِ پیش از واریز سود حساب شد",
-      Math.abs(penaltyTotal - PENALTY_PER_COIN * EXPECTED_UNSPENT_SPENDABLE_COINS) < 1e-6,
-      `penalty=${penaltyTotal} انتظار=${PENALTY_PER_COIN * EXPECTED_UNSPENT_SPENDABLE_COINS} (leftoverBefore خام=${leftoverBefore})`
-    );
-
-    const divRows1 = await prisma.ledgerEntry.findMany({ where: { reason: "DIVIDEND", wallet: "BUY" } });
-    check("سه سطر DIVIDEND ساخته شد", divRows1.length === 3, `=${divRows1.length}`);
-    check(
-      "هر سطر DIVIDEND refId تیم سرمایه‌پذیر دارد",
-      divRows1.every((r) => r.refId === teamIds["alpha"] || r.refId === teamIds["beta"]),
-      divRows1.map((r) => String(r.refId).slice(0, 6)).join(" ")
-    );
-    for (const [key, amount] of Object.entries(EXPECTED)) {
-      const u = await prisma.user.findUniqueOrThrow({ where: { id: userIds[key] } });
-      check(
-        `کیف خرید ${key} به اندازهٔ ${amount} زیاد شد`,
-        u.buyWallet === (buyBefore.get(u.id) ?? 0) + amount,
-        `${buyBefore.get(u.id)} → ${u.buyWallet}`
-      );
+    const byTeamBefore = new Map(before.teams.map((t) => [t.teamId, t]));
+    let allMatch = true;
+    const mismatches: string[] = [];
+    for (const r of rows) {
+      const t = byTeamBefore.get(r.teamId);
+      const same =
+        !!t &&
+        r.memberCount === t.memberCount &&
+        near(r.juryRaw, t.juryRaw) &&
+        near(r.juryAdjusted, t.juryAdjusted) &&
+        near(r.people, t.people) &&
+        r.supporters === t.supporters &&
+        r.coinsReceived === t.coinsReceived &&
+        near(r.ai, t.ai) &&
+        near(r.ptsJury, t.pts.jury) &&
+        near(r.ptsPeople, t.pts.people) &&
+        near(r.ptsAi, t.pts.ai) &&
+        r.cheatPenalty === t.cheatPenalty &&
+        near(r.total, t.total) &&
+        r.rank === t.rank;
+      if (!same) {
+        allMatch = false;
+        mismatches.push(r.teamId);
+      }
     }
+    check("TeamScore ذخیره‌شده = خروجی computeScores", allMatch, mismatches.join(","));
+    check("رتبه‌ها ۱..n و یکتا", rows.map((r) => r.rank).join(",") === "1,2,3", rows.map((r) => r.rank).join(","));
 
-    // ---------- تسویه (بار دوم) ----------
+    const gammaRow = rows.find((r) => r.teamId === teamIds.gamma)!;
+    check("شرکت فردی: memberCount=۱ و داوری با ۱۵٪ جبران", gammaRow.memberCount === 1 && near(gammaRow.juryAdjusted, 80 * 1.15), `${gammaRow.juryAdjusted}`);
+    const betaRow = rows.find((r) => r.teamId === teamIds.beta)!;
+    check("بتا: حامیان ۳ (حمایت ۲۵ + دو خرید ۱۵)، سکهٔ دریافتی ۵۵", betaRow.supporters === 3 && betaRow.coinsReceived === 55, `${betaRow.supporters}/${betaRow.coinsReceived}`);
+    const alphaRow = rows.find((r) => r.teamId === teamIds.alpha)!;
+    check(
+      "آلفا: حمایت بین‌تیمی و خرید عضو گاما حساب شد (۴ حامی، ۶۵ سکه)",
+      alphaRow.supporters === 4 && alphaRow.coinsReceived === 65,
+      `${alphaRow.supporters}/${alphaRow.coinsReceived}`
+    );
+
+    // ---------- loadSettledOutput ----------
+    const loaded = await loadSettledOutput();
+    const loadedById = new Map(loaded.teams.map((t) => [t.teamId, t]));
+    const loadOk = before.teams.every((t) => {
+      const l = loadedById.get(t.teamId);
+      return (
+        !!l &&
+        l.boostPct === t.boostPct &&
+        near(l.total, t.total) &&
+        l.rank === t.rank &&
+        near(l.pts.jury, t.pts.jury) &&
+        near(l.pts.people, t.pts.people) &&
+        near(l.pts.ai, t.pts.ai)
+      );
+    });
+    check("loadSettledOutput همان نتیجه را بازسازی می‌کند (با درصد جبران)", loadOk, loaded.teams.map((t) => `${t.rank}:${t.boostPct}%`).join(" "));
+
+    // ---------- idempotency ----------
+    // تغییر داده پس از تسویه نباید روی نتیجهٔ ثبت‌شده اثر بگذارد.
+    await prisma.product.update({ where: { id: productIds.gamma }, data: { juryWorks: 0, juryValue: 0, juryPitch: 0 } });
     const second = await settleGame();
-    check("تسویهٔ دوم alreadySettled=true", second.alreadySettled === true, String(second.alreadySettled));
-    check("تسویهٔ دوم همان مجموع سود را گزارش می‌کند", second.dividendsPaid === EXPECTED_TOTAL, `=${second.dividendsPaid}`);
-
-    const divRows2 = await prisma.ledgerEntry.findMany({ where: { reason: "DIVIDEND", wallet: "BUY" } });
-    check("سطرهای DIVIDEND تکراری نشدند", divRows2.length === divRows1.length, `${divRows1.length} → ${divRows2.length}`);
-    for (const [key, amount] of Object.entries(EXPECTED)) {
-      const u = await prisma.user.findUniqueOrThrow({ where: { id: userIds[key] } });
-      check(
-        `کیف خرید ${key} بار دوم تغییر نکرد`,
-        u.buyWallet === (buyBefore.get(u.id) ?? 0) + amount,
-        `=${u.buyWallet}`
-      );
-    }
-    const scoreRows2 = await prisma.teamScore.findMany();
-    check("TeamScore تکراری ساخته نشد", scoreRows2.length === 2, `=${scoreRows2.length}`);
-
-    // ---------- آیتم ۳۵: ستون‌های خام rank/selfCapital/quality/teaser ----------
-    const alphaScore = scoreRows2.find((s) => s.teamId === teamIds["alpha"])!;
-    const betaScore = scoreRows2.find((s) => s.teamId === teamIds["beta"])!;
-    check("rank آلفا و بتا هرکدام یک‌بار ۱ و ۲ است", new Set([alphaScore.rank, betaScore.rank]).size === 2 && [1, 2].includes(alphaScore.rank) && [1, 2].includes(betaScore.rank), `alpha=${alphaScore.rank} beta=${betaScore.rank}`);
-    check("selfCapital آلفا = ۱۰ (سرمایه‌گذاری خودیِ alpha2)", alphaScore.selfCapital === 10, `=${alphaScore.selfCapital}`);
-    check("selfCapital بتا = ۰ (سرمایه‌گذاری خودی نداشت)", betaScore.selfCapital === 0, `=${betaScore.selfCapital}`);
-    check("quality آلفا = ۹۰ (نمرهٔ خام داور)", alphaScore.quality === 90, `=${alphaScore.quality}`);
-    check("teaser آلفا = ۸۰ (نمرهٔ خام تیزر داور)", alphaScore.teaser === 80, `=${alphaScore.teaser}`);
-    check("quality بتا = ۷۰", betaScore.quality === 70, `=${betaScore.quality}`);
-    check("teaser بتا = ۶۰", betaScore.teaser === 60, `=${betaScore.teaser}`);
-
-    // پرتفوی: سود سرمایه‌گذاری‌های اعضا روی تیم‌های دیگر، به تیم *سرمایه‌گذار* می‌رسد
-    //   آلفا: alpha1 روی بتا سرمایه‌گذاری کرد و ۱۰ سود گرفت → پرتفوی آلفا = ۱۰
-    //   بتا: beta1+beta2 روی آلفا سرمایه‌گذاری کردند و ۱۶+۸=۲۴ سود گرفتند → پرتفوی بتا = ۲۴
-    check("portfolio آلفا = ۱۰ (سود alpha1 روی بتا)", alphaScore.portfolio === 10, `=${alphaScore.portfolio}`);
-    check("portfolio بتا = ۲۴ (سود beta1+beta2 روی آلفا)", betaScore.portfolio === 24, `=${betaScore.portfolio}`);
-
-    // سلیقه: Σ خرید اعضا از تیم‌های دیگر × کیفیت مؤثر فروشنده / ۱۰۰
-    //   بتا: beta1 (۳۰×۹۰/۱۰۰=۲۷) + beta2 (۲۰×۹۰/۱۰۰=۱۸) از آلفا → ۴۵
-    //   آلفا: alpha1 (۲۵×۷۰/۱۰۰=۱۷٫۵) از بتا → ۱۷٫۵
-    check("taste آلفا = ۱۷٫۵", Math.abs(alphaScore.taste - 17.5) < 1e-9, `=${alphaScore.taste}`);
-    check("taste بتا = ۴۵", Math.abs(betaScore.taste - 45) < 1e-9, `=${betaScore.taste}`);
-
-    // مسیر جدید loadSettledOutput باید همین مقادیر خام را مستقیم بخواند (بدون بازسازی)
-    const outputNew = await loadSettledOutput();
-    const alphaOutNew = outputNew.teams.find((t) => t.teamId === teamIds["alpha"])!;
-    const betaOutNew = outputNew.teams.find((t) => t.teamId === teamIds["beta"])!;
-    check("loadSettledOutput (مسیر جدید): selfCapital آلفا از ستون خوانده شد", alphaOutNew.selfCapital === 10, `=${alphaOutNew.selfCapital}`);
-    check("loadSettledOutput (مسیر جدید): quality/teaser آلفا از ستون خوانده شد", alphaOutNew.quality === 90 && alphaOutNew.teaser === 80, `q=${alphaOutNew.quality} t=${alphaOutNew.teaser}`);
+    check("settleGame دوم alreadySettled برمی‌گرداند", second.alreadySettled, JSON.stringify(second));
+    check("settleGame دوم همان settledAt را برمی‌گرداند", !!settledAt && second.settledAt.getTime() === settledAt.getTime());
+    check("settleGame دوم تعداد تیم‌ها را درست گزارش می‌کند", second.teams === SPEC.length, `=${second.teams}`);
+    const rowsAfter = await prisma.teamScore.findMany();
+    const gammaAfter = rowsAfter.find((r) => r.teamId === teamIds.gamma)!;
     check(
-      "loadSettledOutput (مسیر جدید): portfolio/taste از ستون خوانده شدند",
-      alphaOutNew.portfolio === 10 && Math.abs(alphaOutNew.taste - 17.5) < 1e-9 && betaOutNew.portfolio === 24 && Math.abs(betaOutNew.taste - 45) < 1e-9,
-      `alpha portfolio=${alphaOutNew.portfolio} taste=${alphaOutNew.taste}; beta portfolio=${betaOutNew.portfolio} taste=${betaOutNew.taste}`
+      "تسویهٔ دوم TeamScore را بازنویسی نکرد",
+      rowsAfter.length === rows.length && near(gammaAfter.juryAdjusted, gammaRow.juryAdjusted) && near(gammaAfter.total, gammaRow.total)
     );
-    check(
-      "loadSettledOutput (مسیر جدید): pts.portfolio/pts.taste هم بازسازی شدند",
-      alphaOutNew.pts.portfolio === alphaScore.ptsPortfolio && alphaOutNew.pts.taste === alphaScore.ptsTaste,
-      `pts.portfolio=${alphaOutNew.pts.portfolio} pts.taste=${alphaOutNew.pts.taste}`
-    );
-    check("loadSettledOutput (مسیر جدید): rank با ستون rank یکی است", alphaOutNew.rank === alphaScore.rank && betaOutNew.rank === betaScore.rank, `alpha=${alphaOutNew.rank}/${alphaScore.rank}`);
-    check(
-      "loadSettledOutput (مسیر جدید): مجموع total با مسیر بازمحاسبه یکی است",
-      Math.abs(alphaOutNew.total - alphaScore.total) < 1e-9 && Math.abs(betaOutNew.total - betaScore.total) < 1e-9,
-      `alpha=${alphaOutNew.total}/${alphaScore.total}`
-    );
+    const settledRows = await prisma.setting.count({ where: { key: SETTLED_AT_KEY } });
+    check("فقط یک ردیف settled_at", settledRows === 1);
 
-    // ---------- سازگاری با سطرهای قدیمی: rank=۰ باید مسیر بازسازی قدیمی را فعال کند ----------
-    await prisma.teamScore.updateMany({ data: { rank: 0 } });
-    const outputLegacy = await loadSettledOutput();
-    const alphaOutLegacy = outputLegacy.teams.find((t) => t.teamId === teamIds["alpha"])!;
-    const betaOutLegacy = outputLegacy.teams.find((t) => t.teamId === teamIds["beta"])!;
+    // تسویهٔ هم‌زمان (single-flight) پس از پاک کردن نشانه: هر دو فراخوانی یک نتیجه می‌دهند.
+    await prisma.setting.delete({ where: { key: SETTLED_AT_KEY } });
+    const [c1, c2] = await Promise.all([settleGame(), settleGame()]);
     check(
-      "بک‌آپشن: rank=۰ → بازسازی قدیمی فعال می‌شود (رتبه‌ها همچنان ۱ و ۲ درست)",
-      new Set([alphaOutLegacy.rank, betaOutLegacy.rank]).size === 2 && [1, 2].includes(alphaOutLegacy.rank!) && [1, 2].includes(betaOutLegacy.rank!),
-      `alpha=${alphaOutLegacy.rank} beta=${betaOutLegacy.rank}`
+      "دو settleGame هم‌زمان یک‌بار ثبت می‌کنند",
+      c1.settledAt.getTime() === c2.settledAt.getTime() && (await prisma.setting.count({ where: { key: SETTLED_AT_KEY } })) === 1
     );
-    check(
-      "بک‌آپشن: selfCapital آلفا با بازسازی از Investment همان ۱۰ است",
-      alphaOutLegacy.selfCapital === 10,
-      `=${alphaOutLegacy.selfCapital}`
-    );
-    check(
-      "بک‌آپشن: total ها با مسیر جدید یکسان می‌ماند (idempotent در محاسبه)",
-      Math.abs(alphaOutLegacy.total - alphaScore.total) < 1e-9 && Math.abs(betaOutLegacy.total - betaScore.total) < 1e-9,
-      `alpha=${alphaOutLegacy.total}/${alphaScore.total}`
-    );
-    // بازگرداندن ستون rank به حالت درست (برای پاکیزگی، هرچند فرایند در حال پایان است)
-    await prisma.teamScore.update({ where: { teamId: teamIds["alpha"] }, data: { rank: alphaScore.rank } });
-    await prisma.teamScore.update({ where: { teamId: teamIds["beta"] }, data: { rank: betaScore.rank } });
   } catch (err) {
     console.error(err);
     check("اجرای بدون خطا", false, String(err));
   } finally {
     await prisma.$disconnect();
-    cleanTempFiles();
+    ownTempDb?.cleanup();
   }
 
   const failed = checks.filter((c) => !c.ok);

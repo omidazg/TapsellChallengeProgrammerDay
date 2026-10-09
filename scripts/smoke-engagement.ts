@@ -46,7 +46,7 @@ async function main() {
         passwordHash: "x",
         nickname: `کاربر ${n}`,
         role: "DEALMAKER",
-        power: "HYPE",
+        power: "",
         coffee: 5,
         bugs: 50,
         sleep: 7,
@@ -72,8 +72,8 @@ async function main() {
         problem: "مسئله‌ای که حل می‌کند",
         audience: "مخاطب هدف",
         buildPlan: "برنامهٔ ساخت",
-        fundingCap: 500,
-        revenueShare: 30,
+        fundingCap: 0,
+        revenueShare: 0,
       },
     });
   }
@@ -229,8 +229,13 @@ async function main() {
 
     check(
       "نرخ خرج سکه صفر است (هیچ کیفی در این آزمون دست‌نخورده)",
-      analytics.spend.seed.spentPct === 0 && analytics.spend.buy.spentPct === 0,
+      analytics.spend.spentPct === 0 && analytics.spend.coinsSold === 0 && analytics.spend.coinBuyers === 0,
       JSON.stringify(analytics.spend)
+    );
+    check(
+      "همهٔ کاربران در بازهٔ خرج ۰–۲۵٪ هستند",
+      analytics.spend.buckets[0]?.count === analytics.spend.buckets.reduce((a, b) => a + b.count, 0),
+      JSON.stringify(analytics.spend.buckets)
     );
   } finally {
     console.log("\n# پاک‌سازی");

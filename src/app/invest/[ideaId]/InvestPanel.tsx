@@ -3,12 +3,13 @@
 import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import dynamic from "next/dynamic";
 import { coins, fa, toEnDigits } from "@/lib/persian";
 import { Alert } from "@/components/ui";
 import { investAction, type InvestActionState } from "../actions";
 
-// کانفتی جشن فقط پس از سرمایه‌گذاری/استفاده از قدرت موفق لازم است؛ با ssr:false و mount شرطی
+// کانفتی جشن فقط پس از حمایت موفق لازم است؛ با ssr:false و mount شرطی
 // زیر، باندل آن تا اولین رویداد موفق بارگذاری نمی‌شود.
 const Celebrate = dynamic(() => import("@/components/Celebrate").then((m) => m.Celebrate), { ssr: false });
 
@@ -16,25 +17,27 @@ function SubmitButton() {
   const status = useFormStatus();
   return (
     <button type="submit" disabled={status.pending} className="btn-primary w-full">
-      {status.pending ? "در حال ثبت…" : "ثبت سرمایه‌گذاری"}
+      {status.pending ? "در حال ثبت…" : "ثبت حمایت"}
     </button>
   );
 }
 
 export function InvestPanel({
   ideaId,
-  seedWallet,
-  maxAllowed,
-  maxPerTarget,
+  spendable,
+  alreadyGiven,
+  supportCap,
 }: {
   ideaId: string;
-  seedWallet: number;
-  maxAllowed: number;
-  /** سقف مؤثر سرمایه‌گذاری روی یک ایده (تنظیم برگزارکننده یا پیش‌فرض) */
-  maxPerTarget: number;
+  /** سکهٔ قابل‌خرج (موجودی منهای رزرو حراج زنده) */
+  spendable: number;
+  /** حمایت قبلی همین کاربر از همین ایده */
+  alreadyGiven: number;
+  /** سقف اثر هر نفر روی امتیاز حمایت مردمی یک پروژه */
+  supportCap: number;
 }) {
   const [state, formAction] = useActionState<InvestActionState, FormData>(investAction, {});
-  const [amount, setAmount] = useState(1);
+  const [amount, setAmount] = useState(10);
   // متن خام ورودی عددی هنگام تایپ (null = نمایش مقدار فعلی)؛ تا کاربر بتواند موقتاً فیلد را خالی کند.
   const [typed, setTyped] = useState<string | null>(null);
   const [celebrate, setCelebrate] = useState(false);
@@ -49,18 +52,24 @@ export function InvestPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
+  const maxAllowed = spendable;
   if (maxAllowed <= 0) {
     return (
-      <Alert kind="info">
-        دیگر امکان سرمایه‌گذاری بیشتر روی این ایده را نداری (به سقف {coins(maxPerTarget)} خودت روی این ایده رسیده‌ای
-        یا کیف بذرت خالی است).
-      </Alert>
+      <div className="space-y-3">
+        {state.ok && <Alert kind="ok">حمایت ثبت شد.</Alert>}
+        <Alert kind="info">سکهٔ قابل‌خرجی نداری.</Alert>
+        <Link href="/coins" className="btn-ghost w-full justify-center">
+          خرید سکه
+        </Link>
+      </div>
     );
   }
 
-  // اگر سقف مجاز کم شده باشد، مقدار انتخاب‌شده را محدود نگه می‌داریم.
+  // اگر موجودی کم شده باشد، مقدار انتخاب‌شده را محدود نگه می‌داریم.
   const value = Math.min(Math.max(amount, 1), maxAllowed);
-  const after = seedWallet - value;
+  const after = spendable - value;
+  // بیش از سقف اثر، در امتیاز حساب نمی‌شود (خرج ممنوع نیست؛ فقط هشدار می‌دهیم)
+  const overCap = alreadyGiven + value > supportCap;
 
   function onTyped(raw: string) {
     // ارقام فارسی/عربی پذیرفته می‌شوند؛ هر نویسهٔ غیرعددی حذف می‌شود.
@@ -75,21 +84,17 @@ export function InvestPanel({
     setTyped(n === Number(digits) ? digits : String(n));
   }
 
-  const quick: { label: string; amount: number }[] = [
-    { label: "۲۵٪", amount: Math.max(1, Math.floor(maxAllowed * 0.25)) },
-    { label: "۵۰٪", amount: Math.max(1, Math.floor(maxAllowed * 0.5)) },
-    { label: "حداکثر", amount: maxAllowed },
-  ];
+  const quick = [5, 10, 20].filter((n) => n <= maxAllowed);
 
   return (
     <form action={formAction} className="space-y-4">
-      {celebrate && <Celebrate message="سرمایه‌گذاری ثبت شد 🌱" show onDone={() => setCelebrate(false)} />}
+      {celebrate && <Celebrate message="حمایت ثبت شد 💚" show onDone={() => setCelebrate(false)} />}
       <input type="hidden" name="ideaId" value={ideaId} />
       {state.error && <Alert kind="error">{state.error}</Alert>}
-      {state.ok && <Alert kind="ok">سرمایه‌گذاری ثبت شد.</Alert>}
+      {state.ok && <Alert kind="ok">حمایت ثبت شد.</Alert>}
 
       <div>
-        <label className="label" htmlFor="amount">مبلغ سرمایه‌گذاری</label>
+        <label className="label" htmlFor="amount">مبلغ حمایت</label>
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -148,28 +153,35 @@ export function InvestPanel({
             onBlur={() => setTyped(null)}
             className="input w-28 min-h-11 text-center font-black fa-num"
           />
-          <div className="flex flex-1 gap-2 min-w-[12rem]">
-            {quick.map((q) => (
-              <button
-                key={q.label}
-                type="button"
-                aria-pressed={value === q.amount}
-                onClick={() => {
-                  setAmount(q.amount);
-                  setTyped(null);
-                }}
-                className={`flex-1 min-h-11 ${value === q.amount ? "btn-navy" : "btn-ghost"} !px-2`}
-              >
-                {q.label}
-              </button>
-            ))}
-          </div>
+          {quick.length > 0 && (
+            <div className="flex flex-1 gap-2 min-w-[12rem]">
+              {quick.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  aria-pressed={value === q}
+                  onClick={() => {
+                    setAmount(q);
+                    setTyped(null);
+                  }}
+                  className={`flex-1 min-h-11 ${value === q ? "btn-navy" : "btn-ghost"} !px-2 fa-num`}
+                >
+                  {fa(q)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <p className="text-sm text-brand-slate">
-        پس از سرمایه‌گذاری: موجودی {coins(after)}
-      </p>
+      {overCap && (
+        <p className="text-xs text-amber-700">
+          از هر نفر فقط {coins(supportCap)} برای هر پروژه در امتیاز «حمایت مردمی» حساب می‌شود؛ حمایت بیشتر مجاز است
+          اما امتیاز بیشتری نمی‌سازد.
+        </p>
+      )}
+
+      <p className="text-sm text-brand-slate">پس از حمایت: سکهٔ قابل‌خرج {coins(after)}</p>
 
       <SubmitButton />
     </form>

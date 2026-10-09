@@ -3,17 +3,22 @@
 import { useState, useTransition } from "react";
 import type { Team, TeamInvite, User } from "@prisma/client";
 import { Alert, Locked } from "@/components/ui";
-import { createTeamAction, joinMatchmakingAction, acceptInviteAction, declineInviteAction } from "./actions";
+import { fa } from "@/lib/persian";
+import { createTeamAction, joinMatchmakingAction, acceptInviteAction, declineInviteAction, goSoloAction } from "./actions";
 
 type InviteRow = TeamInvite & { team: Team; inviter: User };
+
+/** درصد جبران تیم کوچک در داوری انسانی */
+export type TeamBoost = { solo: number; duo: number };
 
 export function NoTeamPanel({
   invites,
   formingOpen,
+  boost,
 }: {
   invites: InviteRow[];
-  registrationOpen?: boolean;
   formingOpen: boolean;
+  boost: TeamBoost;
 }) {
   return (
     <div className="space-y-8">
@@ -29,10 +34,14 @@ export function NoTeamPanel({
       )}
 
       {formingOpen ? (
-        <div className="grid gap-6 md:grid-cols-2">
-          <CreateTeamCard />
-          <MatchmakingCard />
-        </div>
+        <>
+          <div className="grid gap-6 md:grid-cols-3">
+            <CreateTeamCard />
+            <MatchmakingCard />
+            <SoloCard boost={boost} />
+          </div>
+          <TeamSizeNote boost={boost} />
+        </>
       ) : (
         <Locked
           title="تشکیل تیم بسته است"
@@ -106,7 +115,7 @@ function CreateTeamCard() {
     <form onSubmit={submit} className="card p-6 anim-rise">
       <div className="text-3xl" aria-hidden>🚀</div>
       <h3 className="mt-2 text-lg font-black text-brand-navy">ساخت تیم</h3>
-      <p className="mt-1 text-sm text-brand-slate">یک اسم برای تیمت انتخاب کن و بنیان‌گذارش باش.</p>
+      <p className="mt-1 text-sm text-brand-slate">یک اسم برای تیمت انتخاب کن و یک یا دو هم‌تیمی دعوت کن.</p>
       {error && (
         <div className="mt-3" id="create-team-error">
           <Alert kind="error">{error}</Alert>
@@ -147,7 +156,7 @@ function MatchmakingCard() {
     <div className="card p-6 anim-rise">
       <div className="text-3xl" aria-hidden>🧲</div>
       <h3 className="mt-2 text-lg font-black text-brand-navy">تیم برایم پیدا کن</h3>
-      <p className="mt-1 text-sm text-brand-slate">به یک تیم نیازمند نقش تو ملحق می‌شوی؛ اگر جایی نبود، تیم تازه‌ای برایت ساخته می‌شود.</p>
+      <p className="mt-1 text-sm text-brand-slate">به تیمی که جای خالی دارد (ترجیحاً تیمی که مهارت تو را ندارد) ملحق می‌شوی؛ اگر جایی نبود، تیم تازه‌ای برایت ساخته می‌شود.</p>
       {error && (
         <div className="mt-3">
           <Alert kind="error">{error}</Alert>
@@ -156,6 +165,50 @@ function MatchmakingCard() {
       <button type="button" onClick={join} disabled={pending} className="btn-cyan mt-8 w-full">
         {pending ? "در حال جست‌وجو…" : "پیدا کردن تیم"}
       </button>
+    </div>
+  );
+}
+
+/** شرکت فردی: تیم یک‌نفرهٔ بسته که هم‌تیمی نمی‌پذیرد (بعداً از اتاق تیم قابل باز کردن است) */
+function SoloCard({ boost }: { boost: TeamBoost }) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function go() {
+    if (!window.confirm("فردی شرکت می‌کنی؟ تیم یک‌نفره‌ای به نام خودت ساخته می‌شود و تا وقتی بازش نکنی هم‌تیمی نمی‌پذیرد.")) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await goSoloAction();
+      if (res.error) setError(res.error);
+    });
+  }
+
+  return (
+    <div className="card p-6 anim-rise">
+      <div className="text-3xl" aria-hidden>🧑‍🚀</div>
+      <h3 className="mt-2 text-lg font-black text-brand-navy">شرکت فردی</h3>
+      <p className="mt-1 text-sm text-brand-slate">
+        تنها بازی کن؛ نمرهٔ داوری انسانی‌ات <b className="fa-num text-brand-navy">{fa(boost.solo)}٪</b> جبران می‌گیرد. هر وقت خواستی (تا پایان «اتاق ایده») می‌توانی تیمت را برای هم‌تیمی باز کنی.
+      </p>
+      {error && (
+        <div className="mt-3">
+          <Alert kind="error">{error}</Alert>
+        </div>
+      )}
+      <button type="button" onClick={go} disabled={pending} className="btn-ghost mt-4 w-full">
+        {pending ? "در حال ثبت…" : "فردی شرکت می‌کنم"}
+      </button>
+    </div>
+  );
+}
+
+/** توضیح کوتاه اندازهٔ تیم و جبران تیم کوچک */
+function TeamSizeNote({ boost }: { boost: TeamBoost }) {
+  return (
+    <div className="card p-5 bg-brand-ice anim-rise text-sm text-brand-navy leading-7">
+      <b>تیم‌ها ۱ تا ۳ نفره‌اند.</b> تیم کوچک‌تر در داوری انسانی جبران می‌گیرد: شرکت فردی{" "}
+      <b className="fa-num">+{fa(boost.solo)}٪</b> و تیم دونفره <b className="fa-num">+{fa(boost.duo)}٪</b>. مهارت اعضا فقط برای معرفی است
+      و شرط شرکت نیست؛ تشکیل یا تکمیل تیم تا پایان فاز «اتاق ایده» باز است.
     </div>
   );
 }

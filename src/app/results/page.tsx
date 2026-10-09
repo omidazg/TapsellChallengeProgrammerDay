@@ -3,16 +3,17 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getPhase } from "@/lib/phase";
-import { SCORE_WEIGHTS } from "@/lib/constants";
-import { SCORE_CATEGORY_ORDER, SCORE_CATEGORY_LABELS } from "@/lib/score-labels";
-import { computeScoresCached, computeAwards } from "@/lib/scoring";
+import { computeScoresCached, computeAwards, getAwardPicks } from "@/lib/scoring";
 import { getSettledAt, loadSettledOutput } from "@/lib/settlement";
-import { loadTimeline } from "@/lib/timeline";
-import { TrendChart } from "@/components/TrendChart";
+import { PRIZES, prizeAmountMillion, PRIZE_POOL_BASE_MILLION_TOMAN } from "@/lib/prizes";
+import { getPrizePoolCached } from "@/lib/prize-pool";
+import type { TeamResult } from "@/lib/economy/types";
 import { PageHeader, Container, Stat, Locked, Empty, Alert } from "@/components/ui";
+import { Avatar } from "@/components/Avatar";
 import { fa, coins, jdatetime } from "@/lib/persian";
+import { ScoreBreakdown, juryDetail, millionFa as million } from "./ScoreBreakdown";
 
-// کانفتی فقط برای ۳ تیم برتر رندر می‌شود؛ با next/dynamic از باندل اصلی صفحهٔ نتایج جدا می‌ماند.
+// کانفتی فقط برای تیم‌های برتر/برنده رندر می‌شود؛ با next/dynamic از باندل اصلی صفحهٔ نتایج جدا می‌ماند.
 const Confetti = dynamic(() => import("./Confetti").then((m) => m.Confetti));
 
 export const metadata = { title: "نتایج" };
@@ -26,7 +27,7 @@ export default async function ResultsPage() {
       <>
         <PageHeader eyebrow="نتایج" title="نتایج پایانی" desc="نتایج بعد از پایان بازی نمایش داده می‌شود." />
         <Container>
-          <Locked title="هنوز بازی تمام نشده" desc="نتایج و جوایز فقط در فاز «پایان بازی» قابل مشاهده‌اند." />
+          <Locked title="هنوز بازی تمام نشده" desc="رتبه‌بندی، ریزامتیازها و جوایز فقط در فاز «پایان بازی» قابل مشاهده‌اند." />
         </Container>
       </>
     );
@@ -35,57 +36,34 @@ export default async function ResultsPage() {
   const settledAt = await getSettledAt();
   const settled = !!settledAt;
 
-  const [output, teams, users, investments, purchases, myDividendRows, timeline] = await Promise.all([
+  const [output, teams, picks, pool, investments, purchases] = await Promise.all([
     settled ? loadSettledOutput() : computeScoresCached(),
-    prisma.team.findMany({ select: { id: true, name: true } }),
-    prisma.user.findMany({ select: { id: true, nickname: true } }),
-    prisma.investment.findMany({ where: { userId: user.id }, include: { idea: { include: { team: true } } } }),
-    prisma.purchase.findMany({ where: { userId: user.id }, include: { product: { include: { team: true } } } }),
-    prisma.ledgerEntry.findMany({ where: { userId: user.id, reason: "DIVIDEND", wallet: "BUY" } }),
-    loadTimeline(),
+    prisma.team.findMany({ select: { id: true, name: true, logoSeed: true, cheatNote: true } }),
+    getAwardPicks(),
+    getPrizePoolCached(),
+    prisma.investment.findMany({ where: { userId: user.id, selfFunded: false }, select: { amount: true, idea: { select: { teamId: true } } } }),
+    prisma.purchase.findMany({ where: { userId: user.id }, select: { amount: true, product: { select: { teamId: true } } } }),
   ]);
 
+  const teamMap = new Map(teams.map((t) => [t.id, t]));
   const teamNames = new Map(teams.map((t) => [t.id, t.name]));
-  const userNicknames = new Map(users.map((u) => [u.id, u.nickname]));
-  const awards = computeAwards(output, { teamNames, userNicknames });
+  const awards = computeAwards(output, { teamNames, picks });
+  const awardByKey = new Map(awards.map((a) => [a.key, a]));
 
-  const myTeam = user.teamId ? output.teams.find((t) => t.teamId === user.teamId) : undefined;
-  const myDividends = output.dividends.filter((d) => d.userId === user.id);
-  // سود واقعاً واریزشده = جمع سطرهای DIVIDEND دفتر کل خودِ کاربر
-  const receivedDividends = myDividendRows.reduce((a, e) => a + e.delta, 0);
-  const estimatedDividends = myDividends.reduce((a, d) => a + d.dividend, 0);
-  // چند ردیف سرمایه‌گذاری روی یک تیم = چند خط سود؛ برای نمایش، هر تیم را یک‌جا جمع می‌کنیم
-  const dividendByTeam = new Map<string, number>();
-  for (const d of myDividends) dividendByTeam.set(d.teamId, (dividendByTeam.get(d.teamId) ?? 0) + d.dividend);
-  const investedByIdea = new Map<string, { ideaId: string; title: string; teamId: string; teamName: string; amount: number }>();
-  for (const inv of investments) {
-    const cur = investedByIdea.get(inv.ideaId);
-    if (cur) cur.amount += inv.amount;
-    else
-      investedByIdea.set(inv.ideaId, {
-        ideaId: inv.ideaId,
-        title: inv.idea.title,
-        teamId: inv.idea.teamId,
-        teamName: inv.idea.team.name,
-        amount: inv.amount,
-      });
-  }
-  const myInvestments = [...investedByIdea.values()];
-
-  // سکهٔ فعلاً باقی‌ماندهٔ من (بذر + خرید)؛ جریمهٔ دقیق سکهٔ خرج‌نشده در سطح تیم محاسبه و
-  // در myTeam.unspentPenalty نشان داده می‌شود (به «سکهٔ خرج‌شدنی» هر بازیکن روی اهداف
-  // باقی‌ماندهٔ بازار وابسته است، نه فقط موجودی کیف).
-  const myCoinsLeft = user.seedWallet + user.buyWallet;
-
-  const showConfetti = settled && !!myTeam && (myTeam.rank ?? 99) <= 3;
-
-  // فهرست کامل تیم‌ها به ترتیب رتبه، برای جدول رده‌بندی و انتخاب ۶ تیم برتر نمودار روند
   const ranked = [...output.teams].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
-  const zeroSeries = new Array(timeline.bucketEndsAt.length).fill(0);
-  const trendTeams = ranked.slice(0, 6).map((t) => {
-    const s = timeline.series.find((ts) => ts.teamId === t.teamId);
-    return { teamId: t.teamId, name: teamNames.get(t.teamId) ?? t.teamId, sales: s?.sales ?? zeroSeries, capital: s?.capital ?? zeroSeries };
-  });
+  const myTeam = user.teamId ? ranked.find((t) => t.teamId === user.teamId) : undefined;
+  const myAward = myTeam ? awards.find((a) => a.teamId === myTeam.teamId) : undefined;
+
+  // سهم خودِ من در حمایت مردمی پروژه‌های دیگر (حمایت از ایده + خرید محصول و برد حراج)
+  const supportedTeams = new Set<string>();
+  let givenCoins = 0;
+  for (const s of [...investments.map((i) => ({ amount: i.amount, teamId: i.idea.teamId })), ...purchases.map((p) => ({ amount: p.amount, teamId: p.product.teamId }))]) {
+    if (s.teamId === user.teamId) continue;
+    supportedTeams.add(s.teamId);
+    givenCoins += s.amount;
+  }
+
+  const showConfetti = settled && !!myTeam && ((myTeam.rank ?? 99) <= 3 || !!myAward);
 
   return (
     <>
@@ -93,18 +71,13 @@ export default async function ResultsPage() {
       <PageHeader
         eyebrow="نتایج"
         title={`نتایج بازی برای ${user.nickname}`}
-        desc={settled ? "سودها پرداخت شد؛ این خلاصهٔ عملکرد توست." : "این خلاصهٔ عملکرد توست؛ تسویهٔ نهایی هنوز انجام نشده است."}
+        desc={settled ? "نتیجهٔ نهایی ثبت شد." : "پیش‌نمایش نتایج؛ ثبت نهایی هنوز انجام نشده است."}
       />
       <Container className="space-y-10">
         {settled ? (
-          <Alert kind="ok">
-            💸 سودها پرداخت شد — سهم تو {coins(receivedDividends)} بود و به کیف خرید واریز شد.
-            {settledAt && <> (تسویه در {jdatetime(settledAt)})</>}
-          </Alert>
+          <Alert kind="ok">✅ نتیجهٔ نهایی ثبت شد{settledAt && <> (در {jdatetime(settledAt)})</>}.</Alert>
         ) : (
-          <Alert kind="info">
-            ⏳ در انتظار تسویهٔ نهایی برگزارکننده — امتیازها و سودهای زیر پیش‌نمایش‌اند و هنوز پرداخت نشده‌اند.
-          </Alert>
+          <Alert kind="info">⏳ در انتظار ثبت نهایی برگزارکننده — امتیازها و جوایز زیر پیش‌نمایش‌اند و ممکن است تغییر کنند.</Alert>
         )}
 
         {myTeam ? (
@@ -113,179 +86,137 @@ export default async function ResultsPage() {
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger">
               <Stat label="رتبهٔ تیم" value={`#${fa(myTeam.rank ?? 0)}`} tone="gold" />
               <Stat label="امتیاز کل" value={fa(Math.round(myTeam.total))} tone="navy" />
-              <Stat label="فروش خالص" value={coins(myTeam.netSales)} tone="cyan" />
-              <Stat label="سرمایهٔ خارجی" value={coins(myTeam.externalCapital)} tone="red" />
+              <Stat label="حامیان تیم" value={fa(myTeam.supporters)} tone="cyan" />
+              <Stat
+                label="جایزه"
+                value={myAward ? `${myAward.emoji} ${myAward.label}` : "—"}
+                hint={myAward ? `${million(prizeAmountMillion(pool, myAward.sharePct))} میلیون تومان` : undefined}
+                tone="red"
+              />
             </div>
             <div className="card p-5 overflow-x-auto anim-rise">
               <h3 className="font-bold text-brand-navy mb-3">ریزامتیاز تیم</h3>
-              <table className="w-full text-sm">
-                <caption className="sr-only">امتیاز تیم به تفکیک معیار</caption>
-                <thead>
-                  <tr className="text-right text-brand-slate border-b border-brand-mist">
-                    <th scope="col" className="px-3 py-2 font-bold">معیار</th>
-                    <th scope="col" className="px-3 py-2 font-bold">امتیاز</th>
-                    <th scope="col" className="px-3 py-2 font-bold">حداکثر</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {SCORE_CATEGORY_ORDER.map((k) => (
-                    <ScoreRow
-                      key={k}
-                      label={`${SCORE_CATEGORY_LABELS[k].emoji} ${SCORE_CATEGORY_LABELS[k].label}`}
-                      value={myTeam.pts[k]}
-                      max={SCORE_WEIGHTS[k]}
-                    />
-                  ))}
-                  <tr>
-                    <td className="px-3 py-2 font-bold text-brand-red">جریمهٔ خرج‌نشده</td>
-                    <td className="px-3 py-2 font-bold text-brand-red fa-num" colSpan={2}>
-                      {"−"}
-                      {fa(Math.round(myTeam.unspentPenalty))}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+              <ScoreBreakdown result={myTeam} cheatNote={teamMap.get(myTeam.teamId)?.cheatNote} caption="ریزامتیاز تیم تو به تفکیک معیار" />
             </div>
           </section>
         ) : (
           <Empty title="عضو هیچ تیمی نبودی" desc="امتیاز تیمی برای تو ثبت نشده است." />
         )}
 
-        <section className="grid sm:grid-cols-3 gap-4 stagger">
-          <Stat
-            label={settled ? "سود سرمایه‌گذاری دریافتی" : "سود سرمایه‌گذاری (برآوردی)"}
-            value={coins(settled ? receivedDividends : estimatedDividends)}
-            hint={settled ? "واریزشده به کیف خرید" : "پس از تسویهٔ نهایی واریز می‌شود"}
-            tone="cyan"
-          />
-          <Stat label="مجموع خرید در بازار" value={coins(purchases.reduce((a, p) => a + p.amount - p.discount, 0))} tone="red" />
-          <Stat label="سکهٔ باقی‌ماندهٔ من (بذر + خرید)" value={coins(myCoinsLeft)} hint="سکهٔ قابل‌خرجِ باقی‌مانده در جریمهٔ تیم حساب شده است" tone="navy" />
+        <section className="grid sm:grid-cols-2 gap-4 stagger">
+          <Stat label="پروژه‌هایی که حمایت کردی" value={fa(supportedTeams.size)} hint="با حمایت از ایده، خرید محصول یا برد حراج" tone="cyan" />
+          <Stat label="سکه‌ای که به پروژه‌های دیگر دادی" value={coins(givenCoins)} tone="navy" />
         </section>
 
         <section>
-          <h2 className="text-lg font-black text-brand-navy mb-3">سرمایه‌گذاری‌های من</h2>
-          {myInvestments.length === 0 ? (
-            <Empty title="سرمایه‌گذاری نکردی" />
-          ) : (
-            <div className="card overflow-x-auto anim-rise">
-              <table className="w-full text-sm">
-                <caption className="sr-only">سرمایه‌گذاری‌های من</caption>
-                <thead>
-                  <tr className="text-right text-brand-slate border-b border-brand-mist">
-                    <th scope="col" className="px-4 py-3 font-bold">ایده</th>
-                    <th scope="col" className="px-4 py-3 font-bold">مبلغ</th>
-                    <th scope="col" className="px-4 py-3 font-bold">{settled ? "سود دریافتی" : "سود برآوردی"}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {myInvestments.map((inv) => {
-                    const div = dividendByTeam.get(inv.teamId) ?? 0;
-                    return (
-                      <tr key={inv.ideaId} className="border-b border-brand-mist last:border-0">
-                        <td className="px-4 py-3">{inv.title} <span className="text-brand-slate text-xs">({inv.teamName})</span></td>
-                        <td className="px-4 py-3 fa-num">{fa(inv.amount)}</td>
-                        <td className="px-4 py-3 fa-num text-emerald-700 font-bold">{fa(div)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+            <h2 className="text-lg font-black text-brand-navy">جوایز</h2>
+            <span className="chip-navy !text-xs fa-num">
+              صندوق جایزه: {million(pool.totalMillion)} میلیون تومان
+            </span>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger">
+            {PRIZES.map((p) => {
+              const award = awardByKey.get(p.key);
+              const pickId = p.key === "ai" ? picks.ai : p.key === "live" ? picks.live : null;
+              const pending = p.how === "pick" && !pickId ? "در انتظار انتخاب داوران" : "اهدا نشد";
+              const mine = !!award && award.teamId === user.teamId;
+              return (
+                <div key={p.key} className={`card p-5 text-center anim-pop ${mine ? "ring-2 ring-brand-red" : ""}`}>
+                  <div className="text-3xl mb-2" aria-hidden>{p.emoji}</div>
+                  <div className="font-black text-brand-navy">{p.label}</div>
+                  <div className="mt-0.5 text-xs text-brand-slate">{p.criterion}</div>
+                  <div className="mt-2 font-black text-brand-cyan-dark fa-num">
+                    {million(prizeAmountMillion(pool, p.sharePct))} میلیون تومان
+                    <span className="font-normal text-xs text-brand-slate"> ({fa(p.sharePct)}٪)</span>
+                  </div>
+                  <div className="mt-2 text-sm">
+                    {award ? (
+                      <Link href={`/results/${award.teamId}/report`} className="font-bold text-brand-navy hover:text-brand-cyan-dark hover:underline">
+                        {award.teamName || "—"}
+                      </Link>
+                    ) : (
+                      <span className="text-brand-slate">{pending}</span>
+                    )}
+                    {mine && <span className="chip-red !text-[11px] mr-1.5">تیم تو</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="mt-3 text-xs text-brand-slate fa-num">
+            هر پروژه حداکثر یک جایزه می‌برد. صندوق = پایهٔ {million(PRIZE_POOL_BASE_MILLION_TOMAN)} + خرید سکه {million(pool.extraMillion)} میلیون تومان.
+          </p>
         </section>
 
         <section>
-          <h2 className="text-lg font-black text-brand-navy mb-3">خریدهای من</h2>
-          {purchases.length === 0 ? (
-            <Empty title="خریدی ثبت نشده" />
+          <h2 className="text-lg font-black text-brand-navy mb-3">رتبه‌بندی نهایی همهٔ تیم‌ها</h2>
+          {ranked.length === 0 ? (
+            <Empty title="هیچ تیمی ثبت نشده" />
           ) : (
             <div className="card overflow-x-auto anim-rise">
-              <table className="w-full text-sm">
-                <caption className="sr-only">خریدهای من</caption>
+              <table className="w-full text-sm min-w-[760px]">
+                <caption className="sr-only">رتبه‌بندی نهایی همهٔ تیم‌ها با ریزامتیاز سه معیار</caption>
                 <thead>
                   <tr className="text-right text-brand-slate border-b border-brand-mist">
-                    <th scope="col" className="px-4 py-3 font-bold">محصول</th>
+                    <th scope="col" className="px-4 py-3 font-bold">رتبه</th>
                     <th scope="col" className="px-4 py-3 font-bold">تیم</th>
-                    <th scope="col" className="px-4 py-3 font-bold">مبلغ پرداختی</th>
+                    <th scope="col" className="px-4 py-3 font-bold">🧑‍⚖️ داوری انسانی</th>
+                    <th scope="col" className="px-4 py-3 font-bold">👥 حمایت مردمی</th>
+                    <th scope="col" className="px-4 py-3 font-bold">🤖 هوش مصنوعی</th>
+                    <th scope="col" className="px-4 py-3 font-bold">کسر تقلب</th>
+                    <th scope="col" className="px-4 py-3 font-bold">امتیاز کل</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {purchases.map((p) => (
-                    <tr key={p.id} className="border-b border-brand-mist last:border-0">
-                      <td className="px-4 py-3">{p.product.name}</td>
-                      <td className="px-4 py-3 text-brand-slate">{p.product.team.name}</td>
-                      <td className="px-4 py-3 fa-num">{fa(p.amount - p.discount)}</td>
-                    </tr>
+                  {ranked.map((t) => (
+                    <RankRow key={t.teamId} t={t} team={teamMap.get(t.teamId)} own={t.teamId === user.teamId} />
                   ))}
                 </tbody>
               </table>
             </div>
           )}
         </section>
-
-        <section>
-          <h2 className="text-lg font-black text-brand-navy mb-3">رتبه‌بندی نهایی همهٔ تیم‌ها</h2>
-          <div className="card overflow-x-auto anim-rise">
-            <table className="w-full text-sm min-w-[560px]">
-              <caption className="sr-only">رتبه‌بندی نهایی همهٔ تیم‌ها</caption>
-              <thead>
-                <tr className="text-right text-brand-slate border-b border-brand-mist">
-                  <th scope="col" className="px-4 py-3 font-bold">رتبه</th>
-                  <th scope="col" className="px-4 py-3 font-bold">تیم</th>
-                  <th scope="col" className="px-4 py-3 font-bold">فروش خالص</th>
-                  <th scope="col" className="px-4 py-3 font-bold">سرمایهٔ خارجی</th>
-                  <th scope="col" className="px-4 py-3 font-bold">امتیاز کل</th>
-                  <th scope="col" className="px-4 py-3 font-bold">گزارش</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ranked.map((t) => (
-                  <tr key={t.teamId} className={`border-b border-brand-mist last:border-0 ${t.teamId === user.teamId ? "bg-brand-ice" : ""}`}>
-                    <td className="px-4 py-3 font-black fa-num text-brand-navy">{fa(t.rank ?? 0)}</td>
-                    <td className="px-4 py-3 font-bold text-brand-navy">{teamNames.get(t.teamId) ?? t.teamId}</td>
-                    <td className="px-4 py-3 fa-num">{fa(t.netSales)}</td>
-                    <td className="px-4 py-3 fa-num">{fa(t.externalCapital)}</td>
-                    <td className="px-4 py-3 font-black fa-num">{fa(Math.round(t.total))}</td>
-                    <td className="px-4 py-3">
-                      <Link href={`/results/${t.teamId}/report`} className="text-brand-cyan-dark hover:underline font-bold">
-                        مشاهدهٔ گزارش
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section>
-          <h2 className="text-lg font-black text-brand-navy mb-3">روند بازار</h2>
-          <TrendChart bucketEndsAt={timeline.bucketEndsAt} teams={trendTeams} />
-        </section>
-
-        <section>
-          <h2 className="text-lg font-black text-brand-navy mb-3">جوایز میدان</h2>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger">
-            {awards.map((a) => (
-              <div key={a.key} className="card p-5 text-center anim-pop">
-                <div className="text-3xl mb-2" aria-hidden>{a.emoji}</div>
-                <div className="font-black text-brand-navy">{a.label}</div>
-                <div className="mt-1 text-sm text-brand-slate">{a.teamName || a.userNickname || "—"}</div>
-              </div>
-            ))}
-          </div>
-        </section>
       </Container>
     </>
   );
 }
 
-function ScoreRow({ label, value, max }: { label: string; value: number; max: number }) {
+function RankRow({ t, team, own }: { t: TeamResult; team?: { name: string; logoSeed: string; cheatNote: string }; own: boolean }) {
+  const jury = juryDetail(t);
   return (
-    <tr className="border-b border-brand-mist last:border-0">
-      <td className="px-3 py-2">{label}</td>
-      <td className="px-3 py-2 font-bold fa-num">{fa(Math.round(value))}</td>
-      <td className="px-3 py-2 text-brand-slate fa-num">{fa(max)}</td>
+    <tr className={`border-b border-brand-mist last:border-0 align-top ${own ? "bg-brand-ice" : ""}`}>
+      <td className="px-4 py-3 font-black fa-num text-brand-navy">{fa(t.rank ?? 0)}</td>
+      <td className="px-4 py-3">
+        <Link href={`/results/${t.teamId}/report`} className="flex items-center gap-2 font-bold text-brand-navy hover:text-brand-cyan-dark hover:underline">
+          <Avatar seed={team?.logoSeed || t.teamId} size={26} />
+          <span>{team?.name ?? "—"}</span>
+          {own && <span className="chip-red !text-[11px]">تیم تو</span>}
+        </Link>
+      </td>
+      <td className="px-4 py-3 fa-num">
+        <div className="font-bold">{fa(Math.round(t.pts.jury))}</div>
+        <div className="text-xs text-brand-slate">{jury ?? "داوری نشده"}</div>
+      </td>
+      <td className="px-4 py-3 fa-num">
+        <div className="font-bold">{fa(Math.round(t.pts.people))}</div>
+        <div className="text-xs text-brand-slate">{fa(t.supporters)} حامی</div>
+      </td>
+      <td className="px-4 py-3 fa-num">
+        <div className="font-bold">{fa(Math.round(t.pts.ai))}</div>
+        <div className="text-xs text-brand-slate">{t.ai == null ? "ارزیابی نشده" : `${fa(Math.round(t.ai))} از ۱۰۰`}</div>
+      </td>
+      <td className="px-4 py-3 fa-num">
+        {t.cheatPenalty > 0 ? (
+          <>
+            <div className="font-bold text-brand-red">−{fa(t.cheatPenalty)}</div>
+            {team?.cheatNote && <div className="text-xs text-brand-red max-w-[16rem]">{team.cheatNote}</div>}
+          </>
+        ) : (
+          <span className="text-brand-slate">—</span>
+        )}
+      </td>
+      <td className="px-4 py-3 font-black fa-num text-brand-navy">{fa(Math.round(t.total))}</td>
     </tr>
   );
 }

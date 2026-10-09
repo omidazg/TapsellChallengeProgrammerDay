@@ -1,8 +1,12 @@
+import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getPhase, PHASE_LABEL } from "@/lib/phase";
-import { computeScores } from "@/lib/scoring";
-import { getSettledAt } from "@/lib/settlement";
+import { computeAwards, computeScores, getAwardPicks } from "@/lib/scoring";
+import { getSettledAt, loadSettledOutput } from "@/lib/settlement";
+import { getPrizePool } from "@/lib/prize-pool";
+import { PRIZES, formatMillion, prizeAmountMillion } from "@/lib/prizes";
+import { SCORE_WEIGHTS } from "@/lib/constants";
 import { SCORE_CATEGORY_ORDER, SCORE_CATEGORY_LABELS } from "@/lib/score-labels";
 import { PageHeader, Container, Stat, Alert, Empty } from "@/components/ui";
 import { fa, coins, jdatetime } from "@/lib/persian";
@@ -10,38 +14,35 @@ import { SettleButton } from "./SettleButton";
 
 export const metadata = { title: "تسویهٔ نهایی" };
 
+function round1(n: number) {
+  return Math.round(n * 10) / 10;
+}
+
 export default async function AdminSettlementPage() {
   await requireAdmin();
 
-  const [{ phase }, settledAt, output, teams] = await Promise.all([
+  const [{ phase }, settledAt, teams, pool, picks] = await Promise.all([
     getPhase(),
     getSettledAt(),
-    computeScores(),
     prisma.team.findMany({ select: { id: true, name: true } }),
+    getPrizePool(),
+    getAwardPicks(),
   ]);
-  const users = await prisma.user.findMany({ select: { id: true, nickname: true } });
+  // پس از تسویه همان اعداد ثبت‌شده (TeamScore) نمایش داده می‌شود؛ پیش از آن، بازمحاسبهٔ زنده.
+  const output = settledAt ? await loadSettledOutput() : await computeScores();
 
   const teamNames = new Map(teams.map((t) => [t.id, t.name]));
-  const userNicknames = new Map(users.map((u) => [u.id, u.nickname]));
-
-  const previewDividends = output.dividends.filter((d) => d.dividend > 0);
-  const previewTotal = previewDividends.reduce((a, d) => a + d.dividend, 0);
-  const totalPenalty = output.teams.reduce((a, t) => a + t.unspentPenalty, 0);
-
-  const paidAgg = settledAt
-    ? await prisma.ledgerEntry.aggregate({
-        where: { reason: "DIVIDEND", wallet: "BUY" },
-        _sum: { delta: true },
-        _count: true,
-      })
-    : null;
+  const rows = [...output.teams].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
+  const awards = computeAwards(output, { teamNames, picks });
+  const totalPenalty = rows.reduce((a, t) => a + t.cheatPenalty, 0);
+  const unjudged = rows.filter((t) => t.juryRaw === null).length;
 
   return (
     <>
       <PageHeader
         eyebrow="پنل برگزارکننده"
         title="تسویهٔ نهایی"
-        desc="پیش از فشردن دکمه، پیش‌نمایش امتیازها و سود سرمایه‌گذاران را بررسی کن. تسویه فقط یک‌بار انجام می‌شود."
+        desc="پیش از فشردن دکمه، امتیاز سه‌معیارهٔ تیم‌ها و جوایز را بررسی کن. تسویه فقط یک‌بار انجام می‌شود."
       />
       <Container className="space-y-8">
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger">
@@ -49,14 +50,14 @@ export default async function AdminSettlementPage() {
           <Stat
             label="وضعیت تسویه"
             value={settledAt ? "تسویه شد" : "تسویه نشده"}
-            hint={settledAt ? jdatetime(settledAt) : "هنوز سودی پرداخت نشده است"}
+            hint={settledAt ? jdatetime(settledAt) : "امتیازها هنوز قفل نشده‌اند"}
             tone={settledAt ? "cyan" : "red"}
           />
-          <Stat label="تیم‌های میدان" value={fa(output.teams.length)} tone="navy" />
+          <Stat label="تیم‌های میدان" value={fa(rows.length)} hint={unjudged > 0 ? `${fa(unjudged)} تیم بدون نمرهٔ داوری` : undefined} tone="navy" />
           <Stat
-            label={settledAt ? "سود پرداخت‌شده" : "سود قابل پرداخت (پیش‌نمایش)"}
-            value={coins(settledAt ? paidAgg?._sum.delta ?? 0 : previewTotal)}
-            hint={settledAt ? `${fa(paidAgg?._count ?? 0)} سطر دفتر کل` : `${fa(previewDividends.length)} سرمایه‌گذار`}
+            label="صندوق جایزه"
+            value={fa(formatMillion(pool.totalMillion))}
+            hint={`میلیون تومان · ${fa(formatMillion(pool.extraMillion))} میلیون از خرید سکه`}
             tone="gold"
           />
         </div>
@@ -64,127 +65,111 @@ export default async function AdminSettlementPage() {
         {!settledAt && phase !== "CLOSED" && (
           <Alert kind="info">
             هنوز در فاز «{PHASE_LABEL[phase]}» هستیم. با رفتن به فاز «پایان بازی» تسویه به‌صورت خودکار اجرا می‌شود؛
-            اجرای دستی هم ممکن است ولی مقادیر پس از آن قفل می‌شوند.
+            اجرای دستی هم ممکن است ولی امتیازها پس از آن قفل می‌شوند.
           </Alert>
         )}
         {settledAt && (
           <Alert kind="ok">
-            تسویهٔ نهایی در {jdatetime(settledAt)} انجام شده است. جدول زیر فقط یک بازمحاسبهٔ نمایشی است و روی نتایج ثبت‌شده اثری ندارد.
+            تسویهٔ نهایی در {jdatetime(settledAt)} انجام شده است. جدول زیر همان نتیجهٔ ثبت‌شده است.
           </Alert>
         )}
 
-        <div className="card p-6 anim-rise space-y-4">
+        <div className="card p-4 sm:p-6 anim-rise space-y-4">
           <h2 className="text-lg font-black text-brand-navy">اجرای تسویه</h2>
           <p className="text-sm text-brand-slate">
-            با اجرای تسویه: سود هر سرمایه‌گذار خارجی به کیف خرید او واریز و در دفتر کل ثبت می‌شود،
-            جریمهٔ سکهٔ خرج‌نشدهٔ هر تیم (در این پیش‌نمایش {fa(Math.round(totalPenalty * 10) / 10)} امتیاز)
-            در نتیجهٔ تیم ثبت می‌گردد و امتیاز همهٔ تیم‌ها قفل می‌شود.
+            با اجرای تسویه، امتیاز هر تیم از سه معیار (داوری انسانی {fa(SCORE_WEIGHTS.jury)}، حمایت مردمی {fa(SCORE_WEIGHTS.people)} و
+            داوری هوش مصنوعی {fa(SCORE_WEIGHTS.ai)} امتیاز) منهای کسر تقلب
+            {totalPenalty > 0 && <> (در مجموع {fa(totalPenalty)} امتیاز)</>} ثبت و قفل می‌شود. سکه‌ای جابه‌جا نمی‌شود.
+            انتخاب جوایز داوران در{" "}
+            <Link href="/admin/jury#award-picks" className="font-bold text-brand-cyan-dark hover:underline">داوری و جوایز</Link>{" "}
+            پس از تسویه هم قابل تغییر است.
           </p>
           <SettleButton settled={!!settledAt} phaseClosed={phase === "CLOSED"} />
         </div>
 
-        <section>
-          <h2 className="text-lg font-black text-brand-navy mb-3">پیش‌نمایش امتیاز تیم‌ها</h2>
-          {output.teams.length === 0 ? (
-            <Empty title="هنوز تیمی ثبت نشده" />
-          ) : (
-            <div className="card overflow-x-auto anim-rise">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-right text-brand-slate border-b border-brand-mist">
-                    <th className="px-4 py-3 font-bold">رتبه</th>
-                    <th className="px-4 py-3 font-bold">تیم</th>
-                    <th className="px-4 py-3 font-bold">فروش ناخالص</th>
-                    <th className="px-4 py-3 font-bold">سود پرداختی</th>
-                    <th className="px-4 py-3 font-bold">فروش خالص</th>
-                    <th className="px-4 py-3 font-bold">سرمایهٔ خارجی</th>
-                    <th className="px-4 py-3 font-bold">جریمهٔ خرج‌نشده</th>
-                    <th className="px-4 py-3 font-bold">امتیاز کل</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {output.teams.map((t) => (
-                    <tr key={t.teamId} className="border-b border-brand-mist last:border-0">
-                      <td className="px-4 py-3 fa-num font-black text-brand-navy">{fa(t.rank ?? 0)}</td>
-                      <td className="px-4 py-3">{teamNames.get(t.teamId) ?? t.teamId}</td>
-                      <td className="px-4 py-3 fa-num">{fa(t.grossSales)}</td>
-                      <td className="px-4 py-3 fa-num">{fa(t.dividendsPaid)}</td>
-                      <td className="px-4 py-3 fa-num">{fa(t.netSales)}</td>
-                      <td className="px-4 py-3 fa-num">{fa(t.externalCapital)}</td>
-                      <td className="px-4 py-3 fa-num text-brand-red">
-                        {"−"}
-                        {fa(Math.round(t.unspentPenalty * 10) / 10)}
-                      </td>
-                      <td className="px-4 py-3 fa-num font-black">{fa(Math.round(t.total))}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+        <section aria-labelledby="prizes-title">
+          <h2 id="prizes-title" className="text-lg font-black text-brand-navy mb-3">
+            جوایز {settledAt ? "" : "(پیش‌نمایش با امتیازهای فعلی)"}
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {PRIZES.map((p) => {
+              const award = awards.find((a) => a.key === p.key);
+              return (
+                <div key={p.key} className="card p-4 space-y-1">
+                  <div className="text-sm font-black text-brand-navy">
+                    <span aria-hidden>{p.emoji}</span> {p.label}
+                  </div>
+                  <div className="text-xs text-brand-slate fa-num">
+                    {fa(p.sharePct)}٪ · {fa(formatMillion(prizeAmountMillion(pool, p.sharePct)))} میلیون تومان
+                  </div>
+                  <div className="text-sm font-bold">
+                    {award ? (
+                      <span className="text-emerald-700">{award.teamName}</span>
+                    ) : (
+                      <span className="text-brand-slate">{p.how === "pick" ? "هنوز انتخاب نشده" : "—"}</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </section>
 
-        <section>
-          <h2 className="text-lg font-black text-brand-navy mb-3">ریزامتیاز وزنی تیم‌ها (پیش‌نمایش)</h2>
-          {output.teams.length === 0 ? (
+        <section aria-labelledby="scores-title">
+          <h2 id="scores-title" className="text-lg font-black text-brand-navy mb-3">
+            {settledAt ? "امتیاز ثبت‌شدهٔ تیم‌ها" : "پیش‌نمایش امتیاز تیم‌ها"}
+          </h2>
+          {rows.length === 0 ? (
             <Empty title="هنوز تیمی ثبت نشده" />
           ) : (
             <div className="card overflow-x-auto anim-rise">
-              <table className="w-full text-sm min-w-[900px]">
+              <table className="w-full text-sm min-w-[960px]">
+                <caption className="sr-only">امتیاز سه‌معیارهٔ تیم‌ها</caption>
                 <thead>
                   <tr className="text-right text-brand-slate border-b border-brand-mist">
-                    <th className="px-3 py-2 font-bold">تیم</th>
+                    <th scope="col" className="px-3 py-3 font-bold">رتبه</th>
+                    <th scope="col" className="px-3 py-3 font-bold">تیم</th>
+                    <th scope="col" className="px-3 py-3 font-bold">اعضا</th>
+                    <th scope="col" className="px-3 py-3 font-bold whitespace-nowrap">داوری انسانی (خام → با جبران)</th>
+                    <th scope="col" className="px-3 py-3 font-bold whitespace-nowrap">حامیان / سکه</th>
+                    <th scope="col" className="px-3 py-3 font-bold whitespace-nowrap">هوش مصنوعی</th>
                     {SCORE_CATEGORY_ORDER.map((k) => (
-                      <th key={k} className="px-3 py-2 font-bold whitespace-nowrap">
+                      <th key={k} scope="col" className="px-3 py-3 font-bold whitespace-nowrap">
                         {SCORE_CATEGORY_LABELS[k].emoji} {SCORE_CATEGORY_LABELS[k].label}
+                        <span className="text-[10px] font-normal"> /{fa(SCORE_WEIGHTS[k])}</span>
                       </th>
                     ))}
-                    <th className="px-3 py-2 font-bold text-brand-red">جریمه</th>
-                    <th className="px-3 py-2 font-bold">امتیاز کل</th>
+                    <th scope="col" className="px-3 py-3 font-bold text-brand-red whitespace-nowrap">کسر تقلب</th>
+                    <th scope="col" className="px-3 py-3 font-bold whitespace-nowrap">امتیاز کل</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {output.teams.map((t) => (
+                  {rows.map((t) => (
                     <tr key={t.teamId} className="border-b border-brand-mist last:border-0">
+                      <td className="px-3 py-2 fa-num font-black text-brand-navy">{fa(t.rank ?? 0)}</td>
                       <td className="px-3 py-2 font-bold text-brand-navy">{teamNames.get(t.teamId) ?? t.teamId}</td>
-                      {SCORE_CATEGORY_ORDER.map((k) => (
-                        <td key={k} className="px-3 py-2 fa-num">{fa(Math.round(t.pts[k]))}</td>
-                      ))}
-                      <td className="px-3 py-2 fa-num text-brand-red">
-                        {"−"}
-                        {fa(Math.round(t.unspentPenalty * 10) / 10)}
+                      <td className="px-3 py-2 fa-num">
+                        {fa(t.memberCount)}
+                        {t.boostPct > 0 && <span className="text-xs text-amber-600"> (+{fa(t.boostPct)}٪)</span>}
                       </td>
-                      <td className="px-3 py-2 fa-num font-black">{fa(Math.round(t.total))}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        <section>
-          <h2 className="text-lg font-black text-brand-navy mb-3">پیش‌نمایش سود سرمایه‌گذاران</h2>
-          {previewDividends.length === 0 ? (
-            <Empty title="سودی برای پرداخت نیست" desc="هیچ سرمایه‌گذاری خارجی با سود مثبت وجود ندارد." />
-          ) : (
-            <div className="card overflow-x-auto anim-rise">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-right text-brand-slate border-b border-brand-mist">
-                    <th className="px-4 py-3 font-bold">سرمایه‌گذار</th>
-                    <th className="px-4 py-3 font-bold">تیم سرمایه‌پذیر</th>
-                    <th className="px-4 py-3 font-bold">سرمایه</th>
-                    <th className="px-4 py-3 font-bold">سود</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewDividends.map((d) => (
-                    <tr key={`${d.userId}-${d.teamId}`} className="border-b border-brand-mist last:border-0">
-                      <td className="px-4 py-3">{userNicknames.get(d.userId) ?? d.userId}</td>
-                      <td className="px-4 py-3 text-brand-slate">{teamNames.get(d.teamId) ?? d.teamId}</td>
-                      <td className="px-4 py-3 fa-num">{fa(d.invested)}</td>
-                      <td className="px-4 py-3 fa-num font-black text-emerald-600">{fa(d.dividend)}</td>
+                      <td className="px-3 py-2 fa-num whitespace-nowrap">
+                        {t.juryRaw === null ? (
+                          <span className="text-brand-slate">داوری نشده</span>
+                        ) : (
+                          <>
+                            {fa(round1(t.juryRaw))} → {fa(round1(t.juryAdjusted))}
+                          </>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 fa-num whitespace-nowrap">
+                        {fa(t.supporters)} / {coins(t.coinsReceived)}
+                      </td>
+                      <td className="px-3 py-2 fa-num">{t.ai === null ? <span className="text-brand-slate">—</span> : fa(round1(t.ai))}</td>
+                      {SCORE_CATEGORY_ORDER.map((k) => (
+                        <td key={k} className="px-3 py-2 fa-num">{fa(round1(t.pts[k]))}</td>
+                      ))}
+                      <td className="px-3 py-2 fa-num text-brand-red">{t.cheatPenalty > 0 ? `−${fa(t.cheatPenalty)}` : "—"}</td>
+                      <td className="px-3 py-2 fa-num font-black">{fa(round1(t.total))}</td>
                     </tr>
                   ))}
                 </tbody>

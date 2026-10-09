@@ -2,7 +2,7 @@ import type { Phase } from "./phases";
 
 /**
  * قفل تنظیمات اقتصادی بازی پس از شروع.
- * قوانین اقتصادی (کیف‌ها، سقف‌ها، جریمه، گام حراج) باید پیش از شروع بازی ثابت و شفاف باشند؛
+ * قوانین اقتصادی (سکهٔ اولیه، سقف اثر حمایت، جبران تیم کوچک، قیمت‌ها و گام حراج) باید پیش از شروع بازی ثابت و شفاف باشند؛
  * به محض خروج از فاز REGISTRATION دیگر برگزارکننده نمی‌تواند آن‌ها را تغییر دهد.
  * کلیدهای عملیاتی (زمان‌بندی/لجستیک) مثل market_starts_at و auction_duration_sec
  * و همهٔ تنظیمات زمان‌بند خودکار همچنان قابل‌تغییر می‌مانند.
@@ -12,11 +12,16 @@ import type { Phase } from "./phases";
 
 /** کلیدهای اقتصادی که پس از شروع بازی قفل می‌شوند */
 export const LOCKED_AFTER_START_KEYS = [
-  "seed_wallet",
-  "buy_wallet",
-  "max_per_target",
-  "penalty_per_coin",
+  "starting_coins",
+  "support_cap",
+  "solo_boost_pct",
+  "duo_boost_pct",
+  "max_bought_coins_per_user",
   "bid_increment",
+  "adslot_price_banner",
+  "adslot_price_featured",
+  "adslot_price_push",
+  "adslot_max_per_team",
 ] as const;
 export type LockedSettingKey = (typeof LOCKED_AFTER_START_KEYS)[number];
 

@@ -3,14 +3,15 @@
  *
  * فقط بخش‌های خالص کتابخانه را می‌آزماید، نه سرور-اکشن‌ها (که به کوکی/نشست نیاز دارند).
  *
- * اجرا (پایگاه‌دادهٔ موقت، بدون دست‌زدن به dev.db واقعی):
- *   DATABASE_URL="file:<tmp>.db" npx prisma migrate deploy
- *   DATABASE_URL="file:<tmp>.db" npx tsx scripts/smoke-admin-audit.ts
- *
- * (این اسکریپت خودش migrate deploy را اجرا نمی‌کند؛ فرض می‌کند DATABASE_URL از قبل
- * به یک پایگاه‌دادهٔ SQLite با اسکیمای اعمال‌شده اشاره می‌کند — مطابق قرارداد بقیهٔ
- * اسکریپت‌های scripts/smoke-*.ts در این پروژه.)
+ * اجرا: npx tsx scripts/smoke-admin-audit.ts
+ * اگر DATABASE_URL از قبل به یک پایگاه‌دادهٔ موقت اشاره نکند (اجرای مستقل)، خود اسکریپت با
+ * createTempDb یکی می‌سازد؛ پایگاه‌دادهٔ اصلی هرگز لمس نمی‌شود.
  */
+
+import { createTempDb, isTempDatabaseUrl } from "./lib/temp-db";
+
+// DATABASE_URL باید پیش از import شدن src/lib/db (که lib/admin آن را می‌کشد) تنظیم شود.
+const ownTempDb = isTempDatabaseUrl(process.env.DATABASE_URL) ? null : createTempDb("admin-audit");
 
 let passed = 0;
 let failed = 0;
@@ -36,11 +37,6 @@ function formDataOf(values: Record<string, string>): FormData {
 }
 
 async function main() {
-  if (!process.env.DATABASE_URL) {
-    console.log("FAIL  DATABASE_URL تنظیم نشده؛ به یک فایل موقت اشاره بده (پایگاه‌دادهٔ اصلی را لمس نکن).");
-    process.exit(1);
-  }
-
   const {
     parseGameSettings,
     parseSchedulerSettings,
@@ -66,60 +62,49 @@ async function main() {
     );
 
     // ---------- تنظیمات بازی: ورودی معتبر ----------
-    const validGame = formDataOf({
-      seed_wallet: "100",
-      buy_wallet: "100",
-      max_per_target: "40",
-      penalty_per_coin: "1.5",
+    const baseGame: Record<string, string> = {
+      starting_coins: "200",
+      support_cap: "50",
+      solo_boost_pct: "15",
+      duo_boost_pct: "7",
+      max_bought_coins_per_user: "1000",
       bid_increment: "2",
       auction_duration_sec: "300",
+      adslot_price_banner: "60",
+      adslot_price_featured: "40",
+      adslot_price_push: "80",
+      adslot_max_per_team: "2",
       market_starts_at: "",
-    });
-    const parsedGame = parseGameSettings(validGame);
+    };
+    eq("فرم آزمون همهٔ کلیدهای SETTING_KEYS را دارد", JSON.stringify(Object.keys(baseGame).sort()), JSON.stringify([...SETTING_KEYS].sort()));
+    const parsedGame = parseGameSettings(formDataOf(baseGame));
     check("تنظیمات بازی معتبر: بدون خطا", parsedGame.ok, parsedGame);
     if (parsedGame.ok) {
-      eq("penalty_per_coin غیرصحیح مجاز است (۱.۵)", parsedGame.data.penalty_per_coin, 1.5);
+      eq("starting_coins به عدد تبدیل شد", parsedGame.data.starting_coins, 200);
+      eq("solo_boost_pct به عدد تبدیل شد", parsedGame.data.solo_boost_pct, 15);
       eq("market_starts_at خالی مجاز است", parsedGame.data.market_starts_at, "");
     }
+    const withDate = parseGameSettings(formDataOf({ ...baseGame, market_starts_at: "2026-10-10T12:00" }));
+    check("تنظیمات بازی: زمان شروع بازار معتبر پذیرفته می‌شود", withDate.ok, withDate);
 
-    // ---------- تنظیمات بازی: ورودی نامعتبر (فیلد خالی) ----------
-    const missingGame = formDataOf({
-      seed_wallet: "100",
-      buy_wallet: "100",
-      max_per_target: "40",
-      penalty_per_coin: "1",
-      bid_increment: "2",
-      auction_duration_sec: "", // خالی → باید رد شود
-      market_starts_at: "",
-    });
-    const parsedMissing = parseGameSettings(missingGame);
-    check("تنظیمات بازی: فیلد خالی رد می‌شود", !parsedMissing.ok, parsedMissing);
-
-    // ---------- تنظیمات بازی: ورودی نامعتبر (کمتر از حداقل) ----------
-    const tooShort = formDataOf({
-      seed_wallet: "100",
-      buy_wallet: "100",
-      max_per_target: "40",
-      penalty_per_coin: "1",
-      bid_increment: "2",
-      auction_duration_sec: "5", // کمتر از حداقل ۱۰
-      market_starts_at: "",
-    });
-    const parsedShort = parseGameSettings(tooShort);
-    check("تنظیمات بازی: مدت حراج کمتر از حداقل رد می‌شود", !parsedShort.ok, parsedShort);
-
-    // ---------- تنظیمات بازی: تاریخ نامعتبر ----------
-    const badDate = formDataOf({
-      seed_wallet: "100",
-      buy_wallet: "100",
-      max_per_target: "40",
-      penalty_per_coin: "1",
-      bid_increment: "2",
-      auction_duration_sec: "300",
-      market_starts_at: "not-a-date",
-    });
-    const parsedBadDate = parseGameSettings(badDate);
-    check("تنظیمات بازی: زمان شروع بازار نامعتبر رد می‌شود", !parsedBadDate.ok, parsedBadDate);
+    // ---------- تنظیمات بازی: ورودی‌های نامعتبر ----------
+    const rejectCases: [string, Record<string, string>][] = [
+      ["فیلد خالی (auction_duration_sec) رد می‌شود", { ...baseGame, auction_duration_sec: "" }],
+      ["مدت حراج کمتر از حداقل (۱۰) رد می‌شود", { ...baseGame, auction_duration_sec: "5" }],
+      ["زمان شروع بازار نامعتبر رد می‌شود", { ...baseGame, market_starts_at: "not-a-date" }],
+      ["سقف اثر حمایت صفر رد می‌شود", { ...baseGame, support_cap: "0" }],
+      ["درصد جبران بیش از ۱۰۰ رد می‌شود", { ...baseGame, solo_boost_pct: "150" }],
+      ["سکهٔ اولیهٔ منفی رد می‌شود", { ...baseGame, starting_coins: "-1" }],
+      ["سکهٔ اولیهٔ اعشاری رد می‌شود", { ...baseGame, starting_coins: "1.5" }],
+      ["قیمت جایگاه صفر رد می‌شود", { ...baseGame, adslot_price_banner: "0" }],
+    ];
+    for (const [label, values] of rejectCases) {
+      const r = parseGameSettings(formDataOf(values));
+      check(`تنظیمات بازی: ${label}`, !r.ok, r);
+    }
+    const missingKey = { ...baseGame };
+    delete missingKey.duo_boost_pct;
+    check("تنظیمات بازی: کلید غایب رد می‌شود", !parseGameSettings(formDataOf(missingKey)).ok);
 
     // ---------- تنظیمات زمان‌بند: ورودی معتبر، شامل چک‌باکس غایب ----------
     const validScheduler = formDataOf({
@@ -130,7 +115,6 @@ async function main() {
       phase_hours_SEED_ROUND: "24",
       phase_hours_BUILD: "48",
       phase_hours_MARKET: "6",
-      phase_hours_AUCTION: "2",
     });
     const parsedScheduler = parseSchedulerSettings(validScheduler);
     check("تنظیمات زمان‌بند معتبر: بدون خطا", parsedScheduler.ok, parsedScheduler);
@@ -148,7 +132,6 @@ async function main() {
       phase_hours_SEED_ROUND: "24",
       phase_hours_BUILD: "48",
       phase_hours_MARKET: "6",
-      phase_hours_AUCTION: "2",
     });
     const parsedNegative = parseSchedulerSettings(negativeScheduler);
     check("تنظیمات زمان‌بند: عدد منفی رد می‌شود", !parsedNegative.ok, parsedNegative);
@@ -158,9 +141,12 @@ async function main() {
       const after = await saveSettings(parsedGame.data, async (key, value) => {
         await prisma.setting.upsert({ where: { key }, update: { value }, create: { key, value } });
       });
-      const row = await prisma.setting.findUnique({ where: { key: "seed_wallet" } });
-      eq("saveSettings مقدار seed_wallet را در جدول Setting نوشت", row?.value, "100");
-      eq("خروجی saveSettings مقدار بعد از ذخیره را برمی‌گرداند", after.seed_wallet, "100");
+      const row = await prisma.setting.findUnique({ where: { key: "starting_coins" } });
+      eq("saveSettings مقدار starting_coins را در جدول Setting نوشت", row?.value, "200");
+      eq("خروجی saveSettings مقدار بعد از ذخیره را برمی‌گرداند", after.starting_coins, "200");
+      eq("saveSettings همهٔ کلیدها را نوشت", await prisma.setting.count({ where: { key: { in: [...SETTING_KEYS] } } }), SETTING_KEYS.length);
+      const { getSettingsMap } = await import("../src/lib/admin");
+      eq("getSettingsMap مقدار ذخیره‌شده را برمی‌گرداند", (await getSettingsMap()).support_cap, "50");
     }
 
     // ---------- audit(): ثبت موفق یک ردیف ----------
@@ -170,7 +156,7 @@ async function main() {
         passwordHash: "x",
         nickname: "دود-تست",
         role: "BUILDER",
-        power: "HYPE",
+        power: "",
       },
     });
     const beforeCount = await prisma.auditLog.count();
@@ -223,6 +209,7 @@ async function main() {
     } catch {
       /* پاکسازی بهترین‌تلاش */
     }
+    ownTempDb?.cleanup();
   }
 
   console.log("");
@@ -234,5 +221,6 @@ async function main() {
 main().catch((e) => {
   console.error("SMOKE: FAIL — خطای غیرمنتظره");
   console.error(e);
+  ownTempDb?.cleanup();
   process.exit(1);
 });

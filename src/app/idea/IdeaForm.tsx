@@ -3,7 +3,6 @@
 import { useActionState, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import Image from "next/image";
-import { fa } from "@/lib/persian";
 import { Alert } from "@/components/ui";
 import { ImageUploadField } from "@/components/ImageUploadField";
 import { useDraftAutosave, type DraftValues } from "@/hooks/useDraftAutosave";
@@ -18,8 +17,6 @@ type IdeaInput = {
   audience: string;
   buildPlan: string;
   coverUrl: string;
-  fundingCap: number;
-  revenueShare: number;
 };
 
 function randomCover() {
@@ -28,7 +25,7 @@ function randomCover() {
 }
 
 /** فیلدهایی که پیش‌نویس محلی‌شان ذخیره می‌شود */
-const DRAFT_FIELDS = ["title", "oneLiner", "problem", "audience", "buildPlan", "coverUrl", "fundingCap", "revenueShare"] as const;
+const DRAFT_FIELDS = ["title", "oneLiner", "problem", "audience", "buildPlan", "coverUrl"] as const;
 
 function SubmitButtons() {
   const status = useFormStatus();
@@ -55,7 +52,6 @@ export function IdeaForm({
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [coverUrl, setCoverUrl] = useState(initial?.coverUrl ?? "");
-  const [revenueShare, setRevenueShare] = useState(initial?.revenueShare ?? 30);
 
   // مقادیر فعلی سرور، به همان شکلی که در FormData ظاهر می‌شوند
   const baseline: DraftValues = {
@@ -65,8 +61,6 @@ export function IdeaForm({
     audience: [initial?.audience ?? ""],
     buildPlan: [initial?.buildPlan ?? ""],
     coverUrl: [initial?.coverUrl ?? ""],
-    fundingCap: [String(initial?.fundingCap ?? 200)],
-    revenueShare: [String(initial?.revenueShare ?? 30)],
   };
   const draft = useDraftAutosave({
     key: `idea:${draftKey}`,
@@ -75,10 +69,6 @@ export function IdeaForm({
     baseline,
     controlled: {
       coverUrl: (vals) => setCoverUrl(vals[0] ?? ""),
-      revenueShare: (vals) => {
-        const n = Number(vals[0]);
-        if (Number.isFinite(n)) setRevenueShare(Math.min(60, Math.max(20, Math.round(n))));
-      },
     },
   });
 
@@ -160,42 +150,6 @@ export function IdeaForm({
             )}
           </div>
         )}
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-5">
-        <div>
-          <label className="label" htmlFor="fundingCap">هدف جذب سرمایه (۵۰ تا ۶۰۰ سکه)</label>
-          <input
-            id="fundingCap"
-            name="fundingCap"
-            type="number"
-            min={50}
-            max={600}
-            step={10}
-            defaultValue={v.fundingCap ?? initial?.fundingCap ?? 200}
-            required
-            className="input"
-          />
-          <p className="mt-1 text-xs text-brand-slate">
-            این یک هدف است، نه سقف سخت؛ سرمایه‌گذاران می‌توانند بیشتر از این هم روی ایده‌ات بگذارند.
-          </p>
-        </div>
-        <div>
-          <label className="label" htmlFor="revenueShare">سهم سود سرمایه‌گذار: {fa(revenueShare)}٪</label>
-          <input
-            id="revenueShare"
-            name="revenueShare"
-            type="range"
-            min={20}
-            max={60}
-            value={revenueShare}
-            onChange={(e) => setRevenueShare(Number(e.target.value))}
-            className="w-full accent-brand-red"
-          />
-          <p className="mt-1 text-xs text-brand-slate">
-            از هر ۱۰۰ سکه فروش، {fa(revenueShare)} سکه به سرمایه‌گذاران می‌رسد.
-          </p>
-        </div>
       </div>
 
       <SubmitButtons />

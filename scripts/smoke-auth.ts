@@ -40,14 +40,12 @@ async function main() {
     slugify,
   } = await import("../src/lib/team");
 
-  async function makeUser(n: string, role: string, power: string) {
-    const [seedWallet, buyWallet] = await Promise.all([
-      getSettingInt("seed_wallet", DEFAULTS.seedWallet),
-      getSettingInt("buy_wallet", DEFAULTS.buyWallet),
-    ]);
+  // همان مسیر ثبت‌نام (src/app/register/actions.ts): کیف سکه = starting_coins، بدون قدرت ویژه.
+  async function makeUser(n: string, role: string) {
+    const buyWallet = await getSettingInt("starting_coins", DEFAULTS.startingCoins);
     const nickname = `آزمون ${n}`;
     const stats = { coffee: 5, bugs: 50, sleep: 7, confidence: 100 };
-    const avatarSeed = `${role}-${power}-${stats.coffee}-${stats.bugs}-${stats.sleep}-${stats.confidence}-${nickname}`;
+    const avatarSeed = `${role}-${stats.coffee}-${stats.bugs}-${stats.sleep}-${stats.confidence}-${nickname}`;
     return prisma.user.create({
       data: {
         email: mail(n),
@@ -55,10 +53,10 @@ async function main() {
         nickname,
         department: "بک‌اند",
         role,
-        power,
+        power: "",
         ...stats,
         avatarSeed,
-        seedWallet,
+        seedWallet: 0,
         buyWallet,
       },
     });
@@ -71,19 +69,23 @@ async function main() {
     await setPhase("REGISTRATION", original.endsAt);
 
     console.log("\n# ۱ — ساخت کاربر و رمز");
-    const u1 = await makeUser("a", "BUILDER", "HYPE");
-    const u2 = await makeUser("b", "STORYTELLER", "BARGAIN");
-    const u3 = await makeUser("c", "DEALMAKER", "ANGEL");
-    const u4 = await makeUser("d", "BUILDER", "SHIELD");
+    const u1 = await makeUser("a", "BUILDER");
+    const u2 = await makeUser("b", "STORYTELLER");
+    const u3 = await makeUser("c", "DEALMAKER");
+    const u4 = await makeUser("d", "BUILDER");
     check("رمز هش شده ذخیره می‌شود", u1.passwordHash.startsWith("$2") && !u1.passwordHash.includes("secret123"));
     check("رمز درست تأیید می‌شود", await verifyPassword("secret123", u1.passwordHash));
     check("رمز غلط رد می‌شود", !(await verifyPassword("wrong", u1.passwordHash)));
     check(
-      "avatarSeed از role-power-اعداد-نام ساخته می‌شود",
-      u1.avatarSeed === `BUILDER-HYPE-5-50-7-100-${u1.nickname}`,
+      "avatarSeed از مهارت-اعداد-نام ساخته می‌شود",
+      u1.avatarSeed === `BUILDER-5-50-7-100-${u1.nickname}`,
       u1.avatarSeed
     );
-    check("کیف بذر/خرید از تنظیمات پر می‌شود", u1.seedWallet > 0 && u1.buyWallet > 0);
+    check(
+      "کیف سکه از starting_coins پر می‌شود و کیف بذر قدیمی صفر است",
+      u1.buyWallet === DEFAULTS.startingCoins && u1.seedWallet === 0 && u1.power === "",
+      JSON.stringify({ buyWallet: u1.buyWallet, seedWallet: u1.seedWallet, power: u1.power })
+    );
 
     console.log("\n# ۲ — ساخت تیم و اسلاگ");
     check("slugify نام فارسی ASCII می‌دهد", /^[a-z0-9-]+$/.test(slugify("تیم نمونه")));
@@ -184,9 +186,9 @@ async function main() {
 
     // دعوت‌ها از تیم تازهٔ u4 فرستاده می‌شود؛ تیم u1 پر است و
     // خطای «تیم پر است» قبولی جعلی برای آزمون قفل فاز می‌ساخت.
-    // مرز واقعی: از «دور سرمایه‌گذاری» به بعد تشکیل تیم بسته است.
+    // مرز واقعی: از «دور حمایت» به بعد تشکیل تیم بسته است.
     await setPhase("SEED_ROUND", original.endsAt);
-    const u5 = await makeUser("e", "BUILDER", "HYPE");
+    const u5 = await makeUser("e", "BUILDER");
     const mkLate = await createTeamForUser(u5.id, "تیم دیرهنگام");
     check("ساخت تیم بعد از «اتاق ایده» رد می‌شود", !!mkLate.error, JSON.stringify(mkLate));
     const invLate = await inviteToTeam(u4.id, mail("late"));

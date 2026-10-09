@@ -1,200 +1,100 @@
 /**
- * موتور اقتصاد — خالص، بدون وابستگی به پایگاه داده یا هر چیز خارجی.
+ * موتور امتیاز — خالص، بدون وابستگی به پایگاه داده یا هر چیز خارجی.
  * پیاده‌سازی قرارداد در ./types.ts
+ *
+ * سه معیار (جمع وزن‌ها ۱۰۰۰):
+ *   داوری انسانی  — میانگین سه پرسش داوری × جبران تیم کوچک
+ *   حمایت مردمی   — (Σ √min(سکهٔ هر حامی، سقف))²  (تأمین مالی درجه‌دو)
+ *   داوری هوش مصنوعی — نمرهٔ ۰..۱۰۰ داور هوش مصنوعی
+ * هر معیار نسبت به بهترین پروژهٔ همان معیار سنجیده می‌شود؛ سپس کسر تقلب کم می‌شود.
  */
 
-import { COMMUNITY_POINTS, DEFAULTS, SCORE_WEIGHTS } from "@/lib/constants";
-import type {
-  DividendLine,
-  EconomyConfig,
-  MemberWallet,
-  ScoreOutput,
-  TeamInput,
-  TeamResult,
-} from "./types";
+import { DEFAULTS, SCORE_WEIGHTS } from "@/lib/constants";
+import type { EconomyConfig, JuryScores, ScoreOutput, TeamInput, TeamResult } from "./types";
 
 /** پیکربندی پیش‌فرض ساخته‌شده از ثابت‌های پروژه. */
 export function defaultConfig(): EconomyConfig {
   return {
-    seedWallet: DEFAULTS.seedWallet,
-    buyWallet: DEFAULTS.buyWallet,
-    maxPerTarget: DEFAULTS.maxPerTarget,
-    penaltyPerCoin: DEFAULTS.penaltyPerCoin,
-    minRevenueShare: DEFAULTS.minRevenueShare,
-    maxRevenueShare: DEFAULTS.maxRevenueShare,
-    roiSmoothing: DEFAULTS.roiSmoothing,
-    shieldFloor: DEFAULTS.shieldFloor,
-    community: { ...COMMUNITY_POINTS },
+    supportCap: DEFAULTS.supportCap,
+    soloBoostPct: DEFAULTS.soloBoostPct,
+    duoBoostPct: DEFAULTS.duoBoostPct,
     weights: { ...SCORE_WEIGHTS },
   };
-}
-
-/**
- * سود سهام هر تیم را بر اساس سرمایه‌گذاران خارجی (غیر selfFunded) محاسبه می‌کند.
- * dividend هر سرمایه‌گذار = floor(grossSales * revenueShare/100 * invested/externalCapital)
- *
- * portfolioCredit اعتبار امتیاز پرتفوی است: برابر dividend، مگر برای تنها سرمایه‌گذاری‌ای
- * که دارندهٔ «سپر» یک‌بار بیمه‌اش کرده (shieldTargets: userId → teamId) — فقط برای همان
- * جفت (کاربر، تیم) حداقل floor(invested × shieldFloor) تضمین می‌شود.
- * این فقط روی امتیاز اثر دارد؛ سکهٔ واقعی پرداختی (dividend) هرگز تغییر نمی‌کند.
- * هر سرمایه‌گذار خارجی (حتی با سود صفر) یک سطر می‌گیرد، پس جفتِ بیمه‌شده با سود صفر هم اعتبارش را می‌گیرد.
- */
-export function computeDividends(
-  team: TeamInput,
-  shieldFloor: number,
-  shieldTargets: ReadonlyMap<string, string>
-): DividendLine[] {
-  const grossSales = sum(team.sales.map((s) => s.amount));
-  const externalInvestments = team.investments.filter((i) => !i.selfFunded);
-  const externalCapital = sum(externalInvestments.map((i) => i.amount));
-
-  if (externalCapital <= 0) return [];
-
-  const pool = grossSales * (team.revenueShare / 100);
-
-  // چند سرمایه‌گذاری یک نفر روی یک تیم، یک سهم‌دار واحد است؛ اول جمع می‌شود
-  // بعد گرد به پایین می‌شود تا هر سرمایه‌گذار دقیقاً یک سطر سود بگیرد.
-  const byUser = new Map<string, number>();
-  for (const inv of externalInvestments) {
-    byUser.set(inv.userId, (byUser.get(inv.userId) ?? 0) + inv.amount);
-  }
-
-  return [...byUser.entries()].map(([userId, invested]) => {
-    const dividend = Math.floor((pool * invested) / externalCapital);
-    const portfolioCredit =
-      shieldTargets.get(userId) === team.teamId ? shieldedCredit(dividend, invested, shieldFloor) : dividend;
-    return { userId, teamId: team.teamId, invested, dividend, portfolioCredit };
-  });
-}
-
-/**
- * اعتبار پرتفوی سرمایه‌گذاریِ بیمه‌شده با سپر: max(dividend, floor(invested × shieldFloor)).
- * (بازپرداخت مجازی؛ فقط در امتیاز پرتفوی حساب می‌شود.) تسویه هم برای بازسازی از همین استفاده می‌کند.
- */
-export function shieldedCredit(dividend: number, invested: number, shieldFloor: number): number {
-  return Math.max(dividend, Math.floor(invested * shieldFloor));
-}
-
-/**
- * جریمهٔ سکهٔ خرج‌نشده برای مجموعهٔ اعضای یک تیم.
- * فقط سکه‌ای جریمه می‌شود که «می‌شد» خرج شود: min(seedLeft, seedSpendable) + min(buyLeft, buySpendable).
- * (نسخهٔ قبلی معافیت ثابت «سپر = ۱۰ سکه» داشت؛ سپر دیگر روی جریمه اثر ندارد،
- * فقط روی امتیاز پرتفوی — نگاه کنید computeDividends.)
- */
-export function unspentPenalty(config: EconomyConfig, wallets: MemberWallet[]): number {
-  let totalUnspent = 0;
-  for (const w of wallets) {
-    totalUnspent += Math.min(w.seedLeft, w.seedSpendable) + Math.min(w.buyLeft, w.buySpendable);
-  }
-  return config.penaltyPerCoin * totalUnspent;
 }
 
 function sum(arr: number[]): number {
   return arr.reduce((a, b) => a + b, 0);
 }
 
-interface ValidationArgs {
-  amount: number;
-  alreadyOnTarget: number;
-  walletLeft: number;
-  maxPerTarget: number;
-  isOwnTeam: boolean;
+/** درصد جبران تیم کوچک بر اساس تعداد اعضا (۳ نفر یا بیشتر، یا تیم خالی: صفر). */
+export function smallTeamBoostPct(config: Pick<EconomyConfig, "soloBoostPct" | "duoBoostPct">, memberCount: number): number {
+  if (memberCount <= 0) return 0;
+  if (memberCount === 1) return config.soloBoostPct;
+  if (memberCount === 2) return config.duoBoostPct;
+  return 0;
+}
+
+/**
+ * نمرهٔ ۰..۱۰۰ داوری انسانی: میانگین پرسش‌هایی که داور نمره داده (هر کدام ۰..۱۰) × ۱۰.
+ * اگر هیچ پرسشی نمره نگرفته باشد null (هنوز داوری نشده).
+ */
+export function juryRawScore(jury: JuryScores | null): number | null {
+  if (!jury) return null;
+  const given = [jury.works, jury.value, jury.pitch].filter((v): v is number => typeof v === "number");
+  if (given.length === 0) return null;
+  const clamped = given.map((v) => Math.min(10, Math.max(0, v)));
+  return (sum(clamped) / clamped.length) * 10;
+}
+
+/**
+ * حمایت مردمی یک پروژه به روش تأمین مالی درجه‌دو: سکه‌های هر حامی جمع می‌شود، تا `cap` بریده
+ * می‌شود، از آن جذر گرفته می‌شود و جمع جذرها به توان دو می‌رسد.
+ * «۱۰ نفر که هر کدام ۱۰ سکه بدهند، ۱۰ برابرِ یک نفر با ۱۰۰ سکه می‌ارزند.»
+ * اعضای خود تیم (excludeUserIds) حساب نمی‌شوند.
+ */
+export function peopleSupport(
+  supports: { userId: string; amount: number }[],
+  cap: number,
+  excludeUserIds: ReadonlySet<string> = new Set()
+): { score: number; supporters: number; coins: number } {
+  const byUser = new Map<string, number>();
+  for (const s of supports) {
+    if (excludeUserIds.has(s.userId) || s.amount <= 0) continue;
+    byUser.set(s.userId, (byUser.get(s.userId) ?? 0) + s.amount);
+  }
+  let rootSum = 0;
+  let coins = 0;
+  for (const amount of byUser.values()) {
+    coins += amount;
+    rootSum += Math.sqrt(Math.min(amount, Math.max(0, cap)));
+  }
+  return { score: rootSum * rootSum, supporters: byUser.size, coins };
 }
 
 type ValidationResult = { ok: true } | { ok: false; error: string };
 
-/** اعتبارسنجی سرمایه‌گذاری روی یک ایده. سرمایه‌گذاری روی تیم خود ممنوع است. */
-export function validateInvestment(args: ValidationArgs): ValidationResult {
-  const { amount, alreadyOnTarget, walletLeft, maxPerTarget, isOwnTeam } = args;
+interface SpendArgs {
+  amount: number;
+  walletLeft: number;
+  isOwnTeam: boolean;
+}
 
-  if (isOwnTeam) {
-    return { ok: false, error: "نمی‌توانی روی ایدهٔ تیم خودت سرمایه‌گذاری کنی" };
-  }
-  if (amount <= 0) {
-    return { ok: false, error: "مبلغ سرمایه‌گذاری باید مثبت باشد" };
-  }
-  if (amount > walletLeft) {
-    return { ok: false, error: "موجودی کیف بذر کافی نیست" };
-  }
-  if (alreadyOnTarget + amount > maxPerTarget) {
-    return { ok: false, error: `سقف سرمایه‌گذاری روی هر ایده ${faDigits(maxPerTarget)} سکه است` };
-  }
+/** اعتبارسنجی حمایت از یک ایده. حمایت از پروژهٔ خود ممنوع است؛ قانون دیگری نیست. */
+export function validateInvestment(args: SpendArgs): ValidationResult {
+  const { amount, walletLeft, isOwnTeam } = args;
+  if (isOwnTeam) return { ok: false, error: "نمی‌توانی از ایدهٔ تیم خودت حمایت کنی" };
+  if (amount <= 0) return { ok: false, error: "مبلغ حمایت باید مثبت باشد" };
+  if (amount > walletLeft) return { ok: false, error: "سکهٔ کافی نداری" };
   return { ok: true };
 }
 
 /** اعتبارسنجی خرید از یک محصول. */
-export function validatePurchase(args: ValidationArgs): ValidationResult {
-  const { amount, alreadyOnTarget, walletLeft, maxPerTarget, isOwnTeam } = args;
-
-  if (isOwnTeam) {
-    return { ok: false, error: "نمی‌توانی از تیم خودت بخری" };
-  }
-  if (amount <= 0) {
-    return { ok: false, error: "مبلغ خرید باید مثبت باشد" };
-  }
-  if (amount > walletLeft) {
-    return { ok: false, error: "موجودی کیف خرید کافی نیست" };
-  }
-  if (alreadyOnTarget + amount > maxPerTarget) {
-    return { ok: false, error: `سقف خرید از هر محصول ${faDigits(maxPerTarget)} سکه است` };
-  }
+export function validatePurchase(args: SpendArgs): ValidationResult {
+  const { amount, walletLeft, isOwnTeam } = args;
+  if (isOwnTeam) return { ok: false, error: "نمی‌توانی از تیم خودت بخری" };
+  if (amount <= 0) return { ok: false, error: "مبلغ خرید باید مثبت باشد" };
+  if (amount > walletLeft) return { ok: false, error: "سکهٔ کافی نداری" };
   return { ok: true };
-}
-
-// تبدیل عدد به رقم فارسی برای پیام‌های خطا
-function faDigits(n: number): string {
-  const persian = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"];
-  return String(n).replace(/[0-9]/g, (d) => persian[Number(d)]);
-}
-
-/**
- * تخفیف قدرت «چانه‌زنی» روی یک واحد (سکه). حداقل ۱ تا روی محصولات ارزان هم اثر داشته باشد.
- * فروشنده همچنان قیمت کامل را می‌گیرد؛ این فقط مبلغی است که خریدار کمتر می‌پردازد.
- * بازار (پرداخت) و امتیازدهی (buySpendable) هر دو باید از همین تابع استفاده کنند.
- */
-export function bargainDiscountFor(price: number, rate: number): number {
-  if (price <= 1) return 0;
-  return Math.min(price - 1, Math.max(1, Math.round(price * rate)));
-}
-
-/**
- * سقف مؤثر خرید یک نفر از یک محصول (بر حسب درآمد فروشنده).
- * هر خریدار همیشه دست‌کم یک واحد می‌تواند بخرد، حتی اگر برگزارکننده سقف را
- * پایین‌تر از قیمت محصولی که قبلاً ثبت شده بیاورد.
- */
-export function effectivePurchaseCap(maxPerTarget: number, price: number): number {
-  return Math.max(maxPerTarget, price);
-}
-
-/**
- * بیشترین مبلغی که با بودجهٔ `budget` واقعاً می‌شود خرج کرد، وقتی هر خرید یک «واحد» با
- * هزینهٔ ثابت است (items: هزینهٔ هر واحد و تعداد واحد مجاز). این یک subset-sum کران‌دار است.
- *
- * چرا لازم است: کیف خرید بخش‌پذیر نیست. اگر ۷ سکه مانده و ارزان‌ترین محصول ۱۰ سکه است،
- * آن ۷ سکه «خرج‌شدنی» نیست و نباید جریمه شود. بودجه کوچک است (حداکثر چند صد سکه)،
- * پس جدول بولی به طول budget+1 کاملاً ارزان است.
- */
-export function maxSpendable(budget: number, items: { cost: number; count: number }[]): number {
-  const cap = Math.max(0, Math.floor(budget));
-  if (cap === 0) return 0;
-  const reach = new Uint8Array(cap + 1);
-  reach[0] = 1;
-  for (const { cost, count } of items) {
-    if (cost <= 0 || count <= 0) continue;
-    const n = Math.min(count, Math.floor(cap / cost));
-    for (let k = 0; k < n; k++) {
-      let changed = false;
-      for (let v = cap; v >= cost; v--) {
-        if (!reach[v] && reach[v - cost]) {
-          reach[v] = 1;
-          changed = true;
-        }
-      }
-      if (!changed) break;
-    }
-  }
-  for (let v = cap; v > 0; v--) if (reach[v]) return v;
-  return 0;
 }
 
 /** کمترین مبلغ مجاز برای پیشنهاد بعدی حراج. */
@@ -210,136 +110,52 @@ export function shouldExtendAuction(nowMs: number, endsAtMs: number, windowSec: 
   return remainingMs <= windowSec * 1000 && remainingMs > 0;
 }
 
-type BasePartial = Omit<TeamResult, "pts" | "total" | "rank" | "portfolio" | "taste">;
-
 /** موتور اصلی امتیازدهی: همهٔ تیم‌ها را می‌گیرد و نتیجهٔ کامل رتبه‌بندی‌شده برمی‌گرداند. */
-export function scoreGame(
-  config: EconomyConfig,
-  teams: TeamInput[],
-  wallets: MemberWallet[]
-): ScoreOutput {
-  const walletByUser = new Map(wallets.map((w) => [w.userId, w]));
-  // سپر: هر دارنده حداکثر یک تیم هدف دارد (userId → teamId)
-  const shieldTargets = new Map<string, string>();
-  for (const w of wallets) if (w.shieldTeamId) shieldTargets.set(w.userId, w.shieldTeamId);
-
-  const allDividends: DividendLine[] = [];
-  const basePartials: BasePartial[] = [];
-
-  for (const team of teams) {
-    const dividends = computeDividends(team, config.shieldFloor, shieldTargets);
-    allDividends.push(...dividends);
-
-    const grossSales = sum(team.sales.map((s) => s.amount));
-    const dividendsPaid = sum(dividends.map((d) => d.dividend));
-    const netSales = grossSales - dividendsPaid;
-    const externalCapital = sum(
-      team.investments.filter((i) => !i.selfFunded).map((i) => i.amount)
-    );
-    const selfCapital = sum(
-      team.investments.filter((i) => i.selfFunded).map((i) => i.amount)
-    );
-    const investorRoi = dividendsPaid / (externalCapital + config.roiSmoothing);
-    const uniqueBuyers = new Set(team.sales.map((s) => s.userId)).size;
-    const quality = team.juryQuality ?? team.aiQuality ?? 0;
-    const teaser = team.juryTeaser ?? 0;
-
-    const teamWallets = wallets.filter((w) => team.memberIds.includes(w.userId));
-    const penalty = unspentPenalty(config, teamWallets);
-
-    basePartials.push({
+export function scoreGame(config: EconomyConfig, teams: TeamInput[]): ScoreOutput {
+  const partials = teams.map((team) => {
+    const memberCount = team.memberIds.length;
+    const juryRaw = juryRawScore(team.jury);
+    const boostPct = smallTeamBoostPct(config, memberCount);
+    const juryAdjusted = juryRaw == null ? 0 : juryRaw * (1 + boostPct / 100);
+    const support = peopleSupport(team.supports, config.supportCap, new Set(team.memberIds));
+    return {
       teamId: team.teamId,
-      grossSales,
-      dividendsPaid,
-      netSales,
-      externalCapital,
-      selfCapital,
-      investorRoi,
-      uniqueBuyers,
-      hearts: team.hearts,
-      quality,
-      teaser,
-      unspentPenalty: penalty,
-    });
-  }
+      memberCount,
+      juryRaw,
+      boostPct,
+      juryAdjusted,
+      people: support.score,
+      supporters: support.supporters,
+      coinsReceived: support.coins,
+      ai: team.aiQuality == null ? null : Math.min(100, Math.max(0, team.aiQuality)),
+      cheatPenalty: Math.max(0, team.cheatPenalty),
+    };
+  });
 
-  // پرتفوی: اعتبار هر خط سود به تیمِ *سرمایه‌گذار* اضافه می‌شود (نه تیم سرمایه‌پذیر).
-  // سرمایه‌گذاری روی تیم خود هرگز اینجا نمی‌رسد (computeDividends خودی‌ها را حذف می‌کند)،
-  // اما برای اطمینان دوباره بررسی می‌شود.
-  const portfolioByTeam = new Map<string, number>();
-  for (const d of allDividends) {
-    const investorTeamId = walletByUser.get(d.userId)?.teamId ?? null;
-    if (!investorTeamId || investorTeamId === d.teamId) continue;
-    portfolioByTeam.set(investorTeamId, (portfolioByTeam.get(investorTeamId) ?? 0) + d.portfolioCredit);
-  }
-
-  // سلیقه: خرید اعضای یک تیم از محصولات باکیفیتِ تیم‌های دیگر.
-  const qualityByTeam = new Map(basePartials.map((t) => [t.teamId, t.quality]));
-  const tasteByTeam = new Map<string, number>();
-  for (const team of teams) {
-    const sellerQuality = qualityByTeam.get(team.teamId) ?? 0;
-    for (const s of team.sales) {
-      const buyerTeamId = walletByUser.get(s.userId)?.teamId ?? null;
-      if (!buyerTeamId || buyerTeamId === team.teamId) continue;
-      tasteByTeam.set(buyerTeamId, (tasteByTeam.get(buyerTeamId) ?? 0) + (s.amount * sellerQuality) / 100);
-    }
-  }
-
-  const partials: Omit<TeamResult, "pts" | "total" | "rank">[] = basePartials.map((t) => ({
-    ...t,
-    portfolio: portfolioByTeam.get(t.teamId) ?? 0,
-    taste: tasteByTeam.get(t.teamId) ?? 0,
-  }));
-
-  const maxOf = (pick: (t: (typeof partials)[number]) => number) =>
-    Math.max(0, ...partials.map(pick));
-
-  const community = (t: (typeof partials)[number]) =>
-    t.uniqueBuyers * config.community.uniqueBuyer + t.hearts * config.community.heart;
-
-  const maxNetSales = maxOf((t) => t.netSales);
-  const maxQuality = maxOf((t) => t.quality);
-  const maxCapital = maxOf((t) => t.externalCapital);
-  const maxRoi = maxOf((t) => t.investorRoi);
-  const maxTeaser = maxOf((t) => t.teaser);
-  const maxCommunity = maxOf(community);
-  const maxPortfolio = maxOf((t) => t.portfolio);
-  const maxTaste = maxOf((t) => t.taste);
-
+  const maxOf = (pick: (t: (typeof partials)[number]) => number) => Math.max(0, ...partials.map(pick));
+  const maxJury = maxOf((t) => t.juryAdjusted);
+  const maxPeople = maxOf((t) => t.people);
+  const maxAi = maxOf((t) => t.ai ?? 0);
   const ratio = (value: number, max: number) => (max > 0 ? value / max : 0);
 
   const results: TeamResult[] = partials.map((t) => {
     const pts = {
-      sales: config.weights.sales * ratio(t.netSales, maxNetSales),
-      quality: config.weights.quality * ratio(t.quality, maxQuality),
-      capital: config.weights.capital * ratio(t.externalCapital, maxCapital),
-      roi: config.weights.roi * ratio(t.investorRoi, maxRoi),
-      teaser: config.weights.teaser * ratio(t.teaser, maxTeaser),
-      community: config.weights.community * ratio(community(t), maxCommunity),
-      portfolio: config.weights.portfolio * ratio(t.portfolio, maxPortfolio),
-      taste: config.weights.taste * ratio(t.taste, maxTaste),
+      jury: config.weights.jury * ratio(t.juryAdjusted, maxJury),
+      people: config.weights.people * ratio(t.people, maxPeople),
+      ai: config.weights.ai * ratio(t.ai ?? 0, maxAi),
     };
-    const rawTotal =
-      pts.sales +
-      pts.quality +
-      pts.capital +
-      pts.roi +
-      pts.teaser +
-      pts.community +
-      pts.portfolio +
-      pts.taste -
-      t.unspentPenalty;
-    const total = Math.max(0, rawTotal);
+    const total = Math.max(0, pts.jury + pts.people + pts.ai - t.cheatPenalty);
     return { ...t, pts, total };
   });
 
   results.sort((a, b) => {
     if (b.total !== a.total) return b.total - a.total;
-    return b.netSales - a.netSales;
+    if (b.people !== a.people) return b.people - a.people;
+    return b.juryAdjusted - a.juryAdjusted;
   });
   results.forEach((r, i) => {
     r.rank = i + 1;
   });
 
-  return { teams: results, dividends: allDividends };
+  return { teams: results };
 }

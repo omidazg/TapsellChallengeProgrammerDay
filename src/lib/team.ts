@@ -4,9 +4,8 @@ import { getPhase, phaseIndex } from "./phase";
 import { ROLES, type RoleKey } from "./constants";
 import { notifyUser } from "./notifications";
 import { fa } from "./persian";
-import { syncLeader } from "./leader";
 
-/** ظرفیت هر تیم */
+/** ظرفیت هر تیم (۱ تا ۳ نفر؛ تیم یک‌نفره = شرکت فردی) */
 export const TEAM_FULL = 3;
 
 /** نتیجهٔ استاندارد اکشن‌های تیم */
@@ -28,6 +27,8 @@ const ERR = {
   leaveHasIdea: "تیم شما ایده یا محصول ثبت کرده؛ برای ترک تیم با برگزارکننده هماهنگ کن.",
   raced: "وضعیت تیم تغییر کرده است؛ صفحه را تازه کن و دوباره تلاش کن.",
   teamNotFound: "تیمی با این لینک پیدا نشد.",
+  soloClosed: "این شرکت‌کننده فردی بازی می‌کند و هم‌تیمی نمی‌پذیرد.",
+  soloHasMates: "تیمت عضو دیگری دارد؛ شرکت فردی فقط برای تیم یک‌نفره است.",
 } as const;
 
 /** تیم به‌همراه اعضا، ایده، محصول و دعوت‌های در انتظار */
@@ -52,7 +53,7 @@ export type RoleCoverage = {
   present: boolean;
 };
 
-/** پوشش سه نقش در بین اعضای تیم */
+/** پوشش مهارت‌ها در بین اعضای تیم (فقط برای نمایش؛ شرط شرکت نیست) */
 export function roleCoverage(members: { role: string }[]): RoleCoverage[] {
   const present = new Set(members.map((m) => m.role));
   return (Object.keys(ROLES) as RoleKey[]).map((role) => ({
@@ -173,8 +174,58 @@ export async function createTeamForUser(userId: string, name: string): Promise<T
 }
 
 /**
- * هم‌تیم‌سازی خودکار: تیمی که نقش کاربر را ندارد و جا دارد (پرترین تیم اول،
- * تا تیم‌های نیمه‌کاره کامل شوند)؛ در نبودِ چنین تیمی، تیم تازه ساخته می‌شود.
+ * شرکت فردی: برای کاربر بی‌تیم یک تیم یک‌نفرهٔ «بسته» می‌سازد (نامش همان نام مستعار کاربر است)؛
+ * برای عضو تنهای یک تیم، همان تیم را بسته می‌کند. تیم فردی در هم‌تیم‌سازی خودکار و لینک دعوت عضو نمی‌پذیرد.
+ * تیم فردی در امتیاز داوری جبران تیم کوچک می‌گیرد (solo_boost_pct).
+ */
+export async function goSolo(userId: string): Promise<TeamResult> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return { error: ERR.noUser };
+  if (!(await isTeamFormingPhase())) return { error: ERR.phase };
+
+  if (user.teamId) {
+    const count = await prisma.user.count({ where: { teamId: user.teamId } });
+    if (count > 1) return { error: ERR.soloHasMates };
+    await prisma.$transaction([
+      prisma.team.update({ where: { id: user.teamId }, data: { solo: true } }),
+      prisma.teamInvite.updateMany({ where: { teamId: user.teamId, status: "PENDING" }, data: { status: "DECLINED" } }),
+    ]);
+    return { ok: true };
+  }
+
+  // نام تیم فردی = نام مستعار؛ اگر گرفته شده بود، پسوند عددی
+  const base = user.nickname.trim().slice(0, 32) || "شرکت‌کنندهٔ فردی";
+  let name = base;
+  for (let i = 2; await prisma.team.findUnique({ where: { name } }); i++) name = `${base} ${fa(i)}`;
+  const slug = await uniqueSlug(name);
+  try {
+    await prisma.$transaction(async (tx) => {
+      const team = await tx.team.create({ data: { name, slug, logoSeed: slug, solo: true } });
+      const moved = await tx.user.updateMany({ where: { id: userId, teamId: null }, data: { teamId: team.id } });
+      if (moved.count === 0) throw new Error("RACED");
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === "RACED") return { error: ERR.alreadyInTeam };
+    if ((e as { code?: string })?.code === "P2002") return { error: ERR.nameTaken };
+    console.error("goSolo failed", e);
+    return { error: ERR.raced };
+  }
+  return { ok: true };
+}
+
+/** تیم فردی را دوباره برای پذیرفتن هم‌تیمی باز می‌کند. */
+export async function openSoloTeam(userId: string): Promise<TeamResult> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return { error: ERR.noUser };
+  if (!(await isTeamFormingPhase())) return { error: ERR.phase };
+  if (!user.teamId) return { error: ERR.notInTeam };
+  await prisma.team.update({ where: { id: user.teamId }, data: { solo: false } });
+  return { ok: true };
+}
+
+/**
+ * هم‌تیم‌سازی خودکار: تیمی (غیرفردی) که جا دارد — ترجیحاً تیمی که مهارت کاربر را ندارد، پرترین تیم اول
+ * تا تیم‌های نیمه‌کاره کامل شوند؛ در نبودِ چنین تیمی، تیم تازه ساخته می‌شود.
  */
 export async function joinMatchmaking(userId: string): Promise<TeamResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -183,15 +234,14 @@ export async function joinMatchmaking(userId: string): Promise<TeamResult> {
   if (user.teamId) return { error: ERR.alreadyInTeam };
 
   const teams = await prisma.team.findMany({
+    where: { solo: false },
     include: { members: { select: { role: true } } },
     orderBy: { createdAt: "asc" },
   });
-  const candidates = teams
+  const open = teams
     .filter((t) => t.members.length > 0 && t.members.length < TEAM_FULL)
-    .filter((t) => !t.members.some((m) => m.role === user.role))
     .sort((a, b) => b.members.length - a.members.length);
-
-  const target = candidates[0];
+  const target = open.find((t) => !t.members.some((m) => m.role === user.role)) ?? open[0];
   if (target) {
     // ظرفیت دوباره داخل تراکنش بررسی می‌شود تا دو درخواست هم‌زمان تیم را از سه نفر بیشتر نکنند
     try {
@@ -236,6 +286,8 @@ export async function inviteToTeam(userId: string, email: string): Promise<TeamR
 
   const memberCount = await prisma.user.count({ where: { teamId: user.teamId } });
   if (memberCount >= TEAM_FULL) return { error: ERR.teamFull };
+  const ownTeam = await prisma.team.findUnique({ where: { id: user.teamId }, select: { solo: true } });
+  if (ownTeam?.solo) return { error: "تو فردی شرکت کرده‌ای؛ برای دعوت هم‌تیمی اول تیمت را از «اتاق تیم» باز کن." };
 
   const invitee = await prisma.user.findUnique({ where: { email: target } });
   if (invitee?.teamId) return { error: ERR.inviteeHasTeam };
@@ -276,6 +328,7 @@ export async function acceptInvite(userId: string, inviteId: string): Promise<Te
   if (!invite || invite.status !== "PENDING" || invite.email !== user.email.trim().toLowerCase()) {
     return { error: ERR.inviteInvalid };
   }
+  if (invite.team.solo) return { error: ERR.soloClosed };
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -312,6 +365,7 @@ export async function joinBySlug(userId: string, slug: string): Promise<TeamResu
   if (typeof slug !== "string" || !slug) return { error: ERR.teamNotFound };
   const team = await prisma.team.findUnique({ where: { slug } });
   if (!team) return { error: ERR.teamNotFound };
+  if (team.solo) return { error: ERR.soloClosed };
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -342,6 +396,7 @@ export type TeamPreview = {
   logoSeed: string;
   memberCount: number;
   full: boolean;
+  solo: boolean;
   coverage: RoleCoverage[];
 };
 
@@ -354,6 +409,7 @@ export async function getTeamPreviewBySlug(slug: string): Promise<TeamPreview | 
       name: true,
       slug: true,
       logoSeed: true,
+      solo: true,
       members: { select: { role: true } },
     },
   });
@@ -364,7 +420,8 @@ export async function getTeamPreviewBySlug(slug: string): Promise<TeamPreview | 
     slug: team.slug,
     logoSeed: team.logoSeed,
     memberCount: team.members.length,
-    full: team.members.length >= TEAM_FULL,
+    full: team.members.length >= TEAM_FULL || team.solo,
+    solo: team.solo,
     coverage: roleCoverage(team.members),
   };
 }
@@ -414,8 +471,6 @@ export async function leaveTeam(userId: string): Promise<TeamResult> {
     await tx.teamLeaderVote.deleteMany({ where: { teamId } });
     await tx.team.delete({ where: { id: teamId } });
   });
-  // اگر سرپرست رفت، رأی‌گیری از نو باز می‌شود؛ رأی عضو رفته هم پاک می‌شود
-  await syncLeader(teamId);
 
   return { ok: true };
 }
@@ -435,13 +490,13 @@ export async function adminMoveUserToTeam(userId: string, targetTeamId: string):
       const count = await tx.user.count({ where: { teamId: targetTeamId } });
       if (count >= TEAM_FULL) throw new Error("FULL");
       await tx.user.update({ where: { id: userId }, data: { teamId: targetTeamId } });
+      // تیم مقصد دیگر یک‌نفره نیست
+      await tx.team.update({ where: { id: targetTeamId }, data: { solo: false } });
     });
   } catch (e) {
     if (e instanceof Error && e.message === "FULL") return { error: ERR.targetFull };
     return { error: ERR.raced };
   }
-  if (user.teamId) await syncLeader(user.teamId);
-  await syncLeader(targetTeamId);
   return { ok: true };
 }
 
@@ -468,6 +523,7 @@ export async function adminMergeTeams(teamAId: string, teamBId: string): Promise
   try {
     await prisma.$transaction(async (tx) => {
       await tx.user.updateMany({ where: { teamId: teamBId }, data: { teamId: teamAId } });
+      await tx.team.update({ where: { id: teamAId }, data: { solo: false } });
       await tx.teamInvite.deleteMany({ where: { teamId: teamBId } });
       await tx.adSlotBid.deleteMany({ where: { teamId: teamBId } });
       await tx.collusionFlag.deleteMany({ where: { OR: [{ teamId: teamBId }, { otherTeamId: teamBId }] } });
@@ -478,7 +534,6 @@ export async function adminMergeTeams(teamAId: string, teamBId: string): Promise
   } catch {
     return { error: ERR.raced };
   }
-  await syncLeader(teamAId);
   return { ok: true };
 }
 
@@ -519,14 +574,14 @@ export type AutoComposeSummary = {
 };
 
 /**
- * هم‌تیم‌سازی خودکار برای کاربران بی‌تیم: هر کاربر ترجیحاً به نیمه‌کاره‌ترین
- * تیمی که نقشش را ندارد ملحق می‌شود؛ در نبودِ چنین تیمی، به هر تیم نیمه‌کاره‌ای
+ * هم‌تیم‌سازی خودکار برای کاربران بی‌تیم (تیم‌های فردی کنار گذاشته می‌شوند): هر کاربر ترجیحاً به نیمه‌کاره‌ترین
+ * تیمی که مهارتش را ندارد ملحق می‌شود؛ در نبودِ چنین تیمی، به هر تیم نیمه‌کاره‌ای
  * با جای خالی (حتی با تکرار نقش)، و در نهایت تیم تازه‌ای برایش ساخته می‌شود.
  */
 export async function autoComposeTeams(): Promise<AutoComposeSummary> {
   const teamless = await prisma.user.findMany({ where: { teamId: null }, orderBy: { createdAt: "asc" } });
 
-  const teamsRaw = await prisma.team.findMany({ include: { members: { select: { role: true } } } });
+  const teamsRaw = await prisma.team.findMany({ where: { solo: false }, include: { members: { select: { role: true } } } });
   type TeamState = { id: string; name: string; roles: Set<string>; count: number };
   const teams: TeamState[] = teamsRaw
     .filter((t) => t.members.length < TEAM_FULL)

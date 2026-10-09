@@ -1,6 +1,14 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/lib/db";
+import { DEFAULTS } from "../src/lib/constants";
+
+/** سکهٔ رایگان اولیه: همان تنظیم starting_coins که ثبت‌نام می‌خواند (پیش‌فرض DEFAULTS.startingCoins) */
+async function startingCoins() {
+  const row = await prisma.setting.findUnique({ where: { key: "starting_coins" } });
+  const n = parseInt(row?.value ?? "", 10);
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULTS.startingCoins;
+}
 
 async function main() {
   const email = (process.env.ADMIN_EMAIL || "admin@tapsell.ir").trim().toLowerCase();
@@ -16,7 +24,18 @@ async function main() {
   } else {
     const hash = await bcrypt.hash(envPassword || "admin1234", 10);
     await prisma.user.create({
-      data: { email, passwordHash: hash, nickname: "برگزارکننده", role: "DEALMAKER", power: "SHIELD", isAdmin: true, avatarSeed: "admin" },
+      data: {
+        email,
+        passwordHash: hash,
+        nickname: "برگزارکننده",
+        role: "DEALMAKER",
+        power: "", // ستون قدیمی؛ قدرت‌ها از بازی حذف شده‌اند
+        isAdmin: true,
+        avatarSeed: "admin",
+        // یک کیف سکهٔ واحد (کیف بذر قدیمی همیشه ۰)
+        seedWallet: 0,
+        buyWallet: await startingCoins(),
+      },
     });
     console.log("seeded admin:", email);
   }

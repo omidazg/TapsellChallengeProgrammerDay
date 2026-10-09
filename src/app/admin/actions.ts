@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { PHASES, type Phase, getPhase } from "@/lib/phase";
 import { transitionTo } from "@/lib/phase-transition";
-import { settleGame, getSettledAt } from "@/lib/settlement";
+import { settleGame, resettleGame, getSettledAt } from "@/lib/settlement";
 import { setSetting, getSettingsMap, SETTING_LABELS } from "@/lib/admin";
 import { parseGameSettings, saveSettings } from "@/lib/settings-schema";
 import { lockedSettingChanges, withoutLockedKeys } from "@/lib/settings-lock";
@@ -37,8 +37,8 @@ export async function setPhaseAction(prevState: AdminActionState, formData: Form
   }
 
   const [before, settledAt] = await Promise.all([getPhase(), getSettledAt()]);
-  // پس از تسویهٔ نهایی سودها پرداخت و امتیازها قفل شده‌اند؛ بازکردن دوبارهٔ بازار/حراج
-  // باعث خرج سودهای واریزشده و ناهمخوانی نتایج ثبت‌شده با دفتر کل می‌شود.
+  // پس از تسویهٔ نهایی امتیازها در TeamScore قفل شده‌اند؛ بازکردن دوبارهٔ بازار/حراج
+  // خرید و حمایت تازه‌ای می‌سازد که در نتایج ثبت‌شده نمی‌آید و جدول با دفتر کل ناهمخوان می‌شود.
   if (settledAt && parsed.data.phase !== "CLOSED") {
     return { error: "بازی تسویهٔ نهایی شده است؛ بازگشت به فازهای قبلی ممکن نیست." };
   }
@@ -62,34 +62,53 @@ export async function setPhaseAction(prevState: AdminActionState, formData: Form
 }
 
 export type SettleActionState = AdminActionState & {
-  dividendsPaid?: number;
   teams?: number;
   alreadySettled?: boolean;
+  /** زمان تسویه (ISO) */
+  settledAt?: string;
 };
 
-/** اجرای دستی تسویهٔ نهایی توسط برگزارکننده (ایدمپوتنت). */
+/** اجرای دستی تسویهٔ نهایی توسط برگزارکننده (ایدمپوتنت): امتیازهای سه‌معیاره در TeamScore ثبت و قفل می‌شوند. */
 export async function settleNowAction(): Promise<SettleActionState> {
   const admin = await requireAdmin();
   try {
     const result = await settleGame();
     await audit(admin.id, "settlement.run", "", {
       alreadySettled: result.alreadySettled,
-      dividendsPaid: result.dividendsPaid,
       teams: result.teams,
+      settledAt: result.settledAt.toISOString(),
     });
     revalidatePath("/admin/settlement");
     revalidatePath("/results");
-    revalidatePath("/wallet");
     revalidatePath("/leaderboard");
+    revalidatePath("/hall");
     return {
       ok: true,
       alreadySettled: result.alreadySettled,
-      dividendsPaid: result.dividendsPaid,
       teams: result.teams,
+      settledAt: result.settledAt.toISOString(),
     };
   } catch (e) {
     console.error("settleNowAction failed", e);
     return { error: "اجرای تسویه با خطا روبه‌رو شد" };
+  }
+}
+
+/** بازتسویه پس از تسویه: نمره‌های دیرهنگام داوران و کسرهای تقلب تازه در نتیجهٔ ثبت‌شده اعمال می‌شوند. */
+export async function resettleAction(): Promise<SettleActionState> {
+  const admin = await requireAdmin();
+  if (!(await getSettledAt())) return { error: "هنوز تسویه‌ای انجام نشده است" };
+  try {
+    const result = await resettleGame();
+    await audit(admin.id, "settlement.rerun", "", { teams: result.teams, settledAt: result.settledAt.toISOString() });
+    revalidatePath("/admin/settlement");
+    revalidatePath("/results");
+    revalidatePath("/leaderboard");
+    revalidatePath("/hall");
+    return { ok: true, alreadySettled: false, teams: result.teams, settledAt: result.settledAt.toISOString() };
+  } catch (e) {
+    console.error("resettleAction failed", e);
+    return { error: "بازتسویه با خطا روبه‌رو شد" };
   }
 }
 

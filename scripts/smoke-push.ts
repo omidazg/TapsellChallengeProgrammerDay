@@ -54,7 +54,7 @@ async function main() {
         passwordHash: "x",
         nickname: "تستر",
         role: "BUILDER",
-        power: "HYPE",
+        power: "",
       },
     });
 

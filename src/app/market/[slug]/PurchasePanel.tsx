@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { fa, coins } from "@/lib/persian";
 import { Alert, Coin } from "@/components/ui";
-import { DEFAULTS } from "@/lib/constants";
-import { bargainDiscountFor } from "@/lib/economy/engine";
 import { purchaseAction, heartAction } from "./actions";
 
 // کانفتی جشن فقط پس از خرید/قلب موفق لازم است؛ با ssr:false و mount شرطی زیر،
@@ -19,9 +18,7 @@ export function PurchasePanel({
   price,
   phaseIsMarket,
   isOwnTeam,
-  hasBargain,
   alreadySpent,
-  maxPerTarget,
   walletBalance,
   hasPurchasedAny,
   alreadyHearted,
@@ -33,12 +30,9 @@ export function PurchasePanel({
   price: number;
   phaseIsMarket: boolean;
   isOwnTeam: boolean;
-  /** آیا کاربر قدرت «چانه‌زنی» دارد؛ برای کل فاز بازار فعال است، نه یک‌بار مصرف */
-  hasBargain: boolean;
+  /** مجموع سکه‌ای که کاربر تاکنون روی این محصول خرج کرده */
   alreadySpent: number;
-  /** سقف مؤثر خرید از *این* محصول (effectivePurchaseCap: حداقل قیمت محصول، حتی اگر از سقف عمومی بیشتر باشد) */
-  maxPerTarget: number;
-  /** موجودی قابل‌خرج کیف خرید (کیف خرید منهای رزرو حراج زنده)؛ اعتبارسنجی نهایی سمت سرور است */
+  /** سکه‌های قابل‌خرج (موجودی منهای سکه‌های رزروشده برای پیشتازی در حراج زنده)؛ اعتبارسنجی نهایی سمت سرور است */
   walletBalance: number;
   hasPurchasedAny: boolean;
   alreadyHearted: boolean;
@@ -57,14 +51,9 @@ export function PurchasePanel({
   const [sold, setSold] = useState(soldCount);
   const [celebrate, setCelebrate] = useState<string | null>(null);
 
-  // سقف بر مبنای قیمت کامل شمرده می‌شود، حتی برای دارندهٔ چانه‌زنی (فروشنده قیمت کامل می‌گیرد).
-  const remaining = Math.max(0, maxPerTarget - spent);
-  const discount = hasBargain ? bargainDiscountFor(price, DEFAULTS.bargainDiscount) : 0;
-  const amount = price - discount;
-  const capReached = price > remaining;
-  const walletShort = amount > wallet;
-  const walletAfter = wallet - amount;
-  const disabled = pending || isOwnTeam || !phaseIsMarket || capReached || walletShort;
+  const walletShort = price > wallet;
+  const walletAfter = wallet - price;
+  const disabled = pending || isOwnTeam || !phaseIsMarket || walletShort;
 
   function buy() {
     setError(null);
@@ -74,14 +63,14 @@ export function PurchasePanel({
         setError(res.error);
         return;
       }
-      // سقف و فروش همیشه با قیمت کامل افزایش می‌یابند؛ فقط کیف خریدار با تخفیف کم می‌شود.
-      setSpent((s) => s + price);
-      setWallet((w) => Math.max(0, w - (res.amount ?? amount)));
-      setSold((s) => s + price);
+      const paid = res.amount ?? price;
+      setSpent((s) => s + paid);
+      setWallet((w) => Math.max(0, w - paid));
+      setSold((s) => s + paid);
       setPurchased(true);
       setJustBought(true);
       setTimeout(() => setJustBought(false), 1200);
-      setCelebrate(discount > 0 ? `خرید با چانه‌زنی انجام شد 🎉 (${coins(res.amount ?? amount)} پرداخت شد)` : "خرید انجام شد 🎉");
+      setCelebrate("خرید انجام شد 🎉");
       router.refresh();
     });
   }
@@ -107,7 +96,7 @@ export function PurchasePanel({
       {error && <Alert kind="error">{error}</Alert>}
 
       <div className="flex items-center justify-between">
-        <Coin n={price} label="قیمت هر خرید" />
+        <Coin n={price} label="قیمت" />
         <div className="flex items-center gap-3 text-xs text-brand-slate">
           <span>🛒 {fa(sold)} فروش</span>
           <span>❤️ {fa(hearts)}</span>
@@ -119,23 +108,18 @@ export function PurchasePanel({
 
       {phaseIsMarket && !isOwnTeam && (
         <>
-          <p className="text-xs text-brand-slate">
-            تا سقف {coins(remaining)} دیگر (قیمت کامل) می‌توانی از این محصول بخری.
+          <p className="text-xs text-brand-slate leading-6">
+            هر خرید به قیمت کامل است و یعنی حمایت از این تیم در امتیاز «حمایت مردمی».
+            {spent > 0 && <> تا حالا {coins(spent)} از این محصول خریده‌ای.</>}
           </p>
-
-          {hasBargain && (
-            <p className="text-sm font-bold text-brand-cyan-dark">
-              🏷️ با چانه‌زنی: {coins(amount)} سکه به‌جای {coins(price)}
-            </p>
-          )}
 
           <dl className="rounded-2xl bg-brand-ice px-4 py-3 text-sm space-y-1.5">
             <div className="flex items-center justify-between gap-2">
-              <dt className="text-brand-slate">موجودی کیف خرید</dt>
+              <dt className="text-brand-slate">سکه‌های قابل‌خرج تو</dt>
               <dd className="font-black text-brand-navy fa-num">{coins(wallet)}</dd>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <dt className="text-brand-slate">موجودی پس از خرید</dt>
+              <dt className="text-brand-slate">پس از خرید</dt>
               <dd className={`font-black fa-num ${walletShort ? "text-brand-red" : "text-brand-navy"}`}>
                 {walletShort ? "کافی نیست" : coins(walletAfter)}
               </dd>
@@ -146,19 +130,20 @@ export function PurchasePanel({
             type="button"
             onClick={buy}
             disabled={disabled}
-            aria-describedby={capReached || walletShort ? "purchase-blocked-reason" : undefined}
+            aria-describedby={walletShort ? "purchase-blocked-reason" : undefined}
             className={`btn-primary w-full ${justBought ? "anim-pop" : ""}`}
           >
-            {pending ? "در حال خرید…" : `خرید — ${coins(amount)}`}
+            {pending ? "در حال خرید…" : `خرید — ${coins(price)}`}
           </button>
 
-          {capReached ? (
-            <p id="purchase-blocked-reason" className="text-xs text-brand-red">به سقف مجاز خریدت از این محصول رسیده‌ای.</p>
-          ) : walletShort ? (
-            <p id="purchase-blocked-reason" className="text-xs text-brand-red">
-              موجودی کیف خریدت کافی نیست؛ برای این خرید {coins(amount - wallet)} دیگر لازم داری.
+          {walletShort && (
+            <p id="purchase-blocked-reason" className="text-xs text-brand-red leading-6">
+              سکهٔ کافی نداری؛ برای این خرید {coins(price - wallet)} دیگر لازم داری.{" "}
+              <Link href="/coins" className="font-bold underline">
+                خرید سکه ←
+              </Link>
             </p>
-          ) : null}
+          )}
         </>
       )}
 

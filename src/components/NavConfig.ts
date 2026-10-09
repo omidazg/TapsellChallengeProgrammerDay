@@ -4,17 +4,23 @@ import { PHASE_LABEL, phaseIndex, type Phase } from "@/lib/phases";
 export type NavItem = { href: string; label: string; short?: string; icon: string; opens?: Phase; live?: Phase };
 
 // فاز بازشدن هر صفحه با شرط Locked خودِ همان صفحه هم‌خوان است (idea/build از IDEATION،
-// invest از SEED_ROUND، market و adslots از BUILD، auction از AUCTION).
+// invest از SEED_ROUND، market و adslots از BUILD). حراج زنده فاز جدا ندارد و داخل «روز بازار» برگزار می‌شود.
 export const NAV: NavItem[] = [
   { href: "/team", label: "اتاق تیم", short: "تیم", icon: "👥", live: "REGISTRATION" },
   { href: "/idea", label: "اتاق ایده", short: "ایده", icon: "💡", opens: "IDEATION", live: "IDEATION" },
-  { href: "/invest", label: "سرمایه‌گذاری", short: "سرمایه", icon: "🌱", opens: "SEED_ROUND", live: "SEED_ROUND" },
+  { href: "/invest", label: "حمایت از ایده‌ها", short: "حمایت", icon: "🌱", opens: "SEED_ROUND", live: "SEED_ROUND" },
   { href: "/build", label: "مرکز ساخت", short: "ساخت", icon: "🛠️", opens: "IDEATION", live: "BUILD" },
   { href: "/market", label: "بازار", icon: "🛒", opens: "BUILD", live: "MARKET" },
-  { href: "/auction", label: "حراج زنده", short: "حراج", icon: "🔨", opens: "AUCTION", live: "AUCTION" },
+  { href: "/auction", label: "حراج زنده", short: "حراج", icon: "🔨", opens: "MARKET", live: "MARKET" },
   { href: "/adslots", label: "جایگاه تبلیغاتی", short: "تبلیغ", icon: "📣", opens: "BUILD" },
   { href: "/leaderboard", label: "جدول", icon: "🏆" },
   { href: "/guide", label: "راهنما", icon: "📖" },
+];
+
+/** کیف سکه و خرید سکه — در منوی موبایل (روی دسکتاپ از نشان موجودی در هدر در دسترس‌اند) */
+export const WALLET_ITEMS: NavItem[] = [
+  { href: "/wallet", label: "کیف سکه", icon: "💰" },
+  { href: "/coins", label: "خرید سکه", icon: "🪙" },
 ];
 
 const RESULTS: NavItem = { href: "/results", label: "نتایج", icon: "🏁", live: "CLOSED" };

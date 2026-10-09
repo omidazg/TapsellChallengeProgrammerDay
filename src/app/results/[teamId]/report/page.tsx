@@ -3,13 +3,15 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getPhase } from "@/lib/phase";
-import { SCORE_WEIGHTS } from "@/lib/constants";
-import { SCORE_CATEGORY_LABELS } from "@/lib/score-labels";
-import { computeScoresCached } from "@/lib/scoring";
+import { computeScoresCached, computeAwards, getAwardPicks } from "@/lib/scoring";
 import { getSettledAt, loadSettledOutput } from "@/lib/settlement";
-import { loadTimeline } from "@/lib/timeline";
-import { TrendChart } from "@/components/TrendChart";
-import { fa, coins, jdatetime } from "@/lib/persian";
+import { prizeAmountMillion } from "@/lib/prizes";
+import { getPrizePoolCached } from "@/lib/prize-pool";
+import { productAiTag } from "@/lib/ai-tag";
+import { AiTag } from "@/components/AiTag";
+import { Container, Locked } from "@/components/ui";
+import { fa, jdatetime } from "@/lib/persian";
+import { ScoreBreakdown, millionFa } from "../../ScoreBreakdown";
 import { PrintButton } from "./PrintButton";
 
 export async function generateMetadata({ params }: { params: Promise<{ teamId: string }> }) {
@@ -19,8 +21,8 @@ export async function generateMetadata({ params }: { params: Promise<{ teamId: s
 }
 
 /**
- * گزارش چاپی هر تیم (A4). دسترسی مثل صفحهٔ نتایج: اعضای تیم و ادمین‌ها همیشه، بقیه فقط
- * وقتی نتایج عمومی است (فاز «پایان بازی»)؛ در غیر این صورت notFound برمی‌گردد.
+ * گزارش چاپی هر تیم (A4). امتیازها تا پایان بازی پنهان‌اند: پیش از فاز «پایان بازی» فقط ادمین گزارش را
+ * می‌بیند، اعضای تیم پیام قفل می‌بینند و بقیه notFound می‌گیرند.
  */
 export default async function TeamReportPage({ params }: { params: Promise<{ teamId: string }> }) {
   const user = await requireUser();
@@ -29,35 +31,40 @@ export default async function TeamReportPage({ params }: { params: Promise<{ tea
   const isPublic = phase === "CLOSED";
   const isMember = user.teamId === teamId;
   if (!isMember && !user.isAdmin && !isPublic) notFound();
+  if (!isPublic && !user.isAdmin) {
+    return (
+      <Container className="py-10">
+        <Locked title="گزارش پایانی هنوز آماده نیست" desc="امتیازها و ریزامتیاز تیم در فاز «پایان بازی» اعلام می‌شوند." />
+      </Container>
+    );
+  }
 
   const team = await prisma.team.findUnique({
     where: { id: teamId },
     include: {
       members: { select: { id: true, nickname: true } },
-      idea: { select: { title: true, oneLiner: true, problem: true, audience: true, buildPlan: true, revenueShare: true } },
+      idea: { select: { title: true, oneLiner: true, problem: true, audience: true, buildPlan: true } },
+      product: { select: { name: true, tagline: true, aiQuality: true, aiNotes: true, liveStatus: true, liveUrl: true } },
     },
   });
   if (!team) notFound();
 
   const settledAt = await getSettledAt();
   const settled = !!settledAt;
-  const [output, timeline, teamNames] = await Promise.all([
+  const [output, picks, pool, teamNames] = await Promise.all([
     settled ? loadSettledOutput() : computeScoresCached(),
-    loadTimeline(),
+    getAwardPicks(),
+    getPrizePoolCached(),
     prisma.team.findMany({ select: { id: true, name: true } }).then((rows) => new Map(rows.map((r) => [r.id, r.name]))),
   ]);
 
   const result = output.teams.find((t) => t.teamId === teamId);
   if (!result) notFound();
 
-  const investorRows = output.dividends.filter((d) => d.teamId === teamId);
-  const investorUsers = await prisma.user.findMany({
-    where: { id: { in: investorRows.map((r) => r.userId) } },
-    select: { id: true, nickname: true },
-  });
-  const investorNick = new Map(investorUsers.map((u) => [u.id, u.nickname]));
-
-  const teamSeries = timeline.series.find((s) => s.teamId === teamId);
+  const award = computeAwards(output, { teamNames, picks }).find((a) => a.teamId === teamId);
+  const aiTag = team.product ? productAiTag(team.product) : null;
+  // لینک محصول لایو را برگزارکننده وارد می‌کند؛ فقط http(s) به‌صورت لینک نمایش داده می‌شود
+  const liveUrl = team.product?.liveStatus === "LIVE" && /^https?:\/\//i.test(team.product.liveUrl) ? team.product.liveUrl : null;
 
   return (
     <>
@@ -86,14 +93,21 @@ export default async function TeamReportPage({ params }: { params: Promise<{ tea
           <div className="text-xs font-bold text-brand-cyan-dark">گزارش پایانی تیم</div>
           <h1 className="text-2xl sm:text-3xl font-black text-brand-navy">{team.name}</h1>
           <p className="text-sm text-brand-slate">
-            رتبهٔ {fa(result.rank ?? 0)} از {fa(output.teams.length)} تیم
-            {settledAt && <> · تسویه در {jdatetime(settledAt)}</>}
-            {!settled && <> · پیش‌نمایش (هنوز تسویهٔ نهایی انجام نشده)</>}
+            رتبهٔ {fa(result.rank ?? 0)} از {fa(output.teams.length)} تیم · امتیاز کل {fa(Math.round(result.total))}
+            {settledAt && <> · ثبت نهایی در {jdatetime(settledAt)}</>}
+            {!settled && <> · پیش‌نمایش (ثبت نهایی هنوز انجام نشده)</>}
           </p>
+          {award && (
+            <p className="pt-1">
+              <span className="chip-gold fa-num">
+                <span aria-hidden>{award.emoji}</span> {award.label} — {millionFa(prizeAmountMillion(pool, award.sharePct))} میلیون تومان
+              </span>
+            </p>
+          )}
         </header>
 
         <section>
-          <h2 className="text-lg font-black text-brand-navy mb-2">اعضای تیم</h2>
+          <h2 className="text-lg font-black text-brand-navy mb-2">{team.members.length <= 1 ? "شرکت فردی" : "اعضای تیم"}</h2>
           <ul className="flex flex-wrap gap-2 text-sm">
             {team.members.map((m) => (
               <li key={m.id} className="chip-navy">
@@ -103,8 +117,34 @@ export default async function TeamReportPage({ params }: { params: Promise<{ tea
           </ul>
         </section>
 
+        <section>
+          <h2 className="text-lg font-black text-brand-navy mb-2">ریزامتیاز</h2>
+          <div className="card p-0 overflow-x-auto">
+            <ScoreBreakdown result={result} cheatNote={team.cheatNote} caption={`ریزامتیاز تیم ${team.name} به تفکیک معیار`} />
+          </div>
+        </section>
+
+        {team.product && (
+          <section className="space-y-2 print:break-inside-avoid">
+            <h2 className="text-lg font-black text-brand-navy">محصول</h2>
+            <div className="card p-4 space-y-2 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold text-brand-navy">{team.product.name}</span>
+                {team.product.liveStatus === "LIVE" && <span className="chip-ok">🚀 لایو</span>}
+              </div>
+              {team.product.tagline && <div className="text-brand-slate">{team.product.tagline}</div>}
+              <AiTag tag={aiTag} />
+              {liveUrl && (
+                <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="inline-block text-brand-cyan-dark hover:underline break-all">
+                  {liveUrl}
+                </a>
+              )}
+            </div>
+          </section>
+        )}
+
         {team.idea && (
-          <section className="space-y-2">
+          <section className="space-y-2 print:break-inside-avoid">
             <h2 className="text-lg font-black text-brand-navy">ایده</h2>
             <div className="card p-4 space-y-2 text-sm">
               <div className="font-bold text-brand-navy">{team.idea.title}</div>
@@ -121,126 +161,10 @@ export default async function TeamReportPage({ params }: { params: Promise<{ tea
                 <span className="font-bold">برنامهٔ ساخت: </span>
                 {team.idea.buildPlan}
               </div>
-              <div className="fa-num">
-                <span className="font-bold">سهم سرمایه‌گذار: </span>
-                {fa(team.idea.revenueShare)}٪
-              </div>
             </div>
-          </section>
-        )}
-
-        <section>
-          <h2 className="text-lg font-black text-brand-navy mb-2">ریزامتیاز</h2>
-          <table className="w-full text-sm card p-0 overflow-hidden">
-            <caption className="sr-only">ریزامتیاز تیم به تفکیک معیار</caption>
-            <thead>
-              <tr className="text-right text-brand-slate border-b border-brand-mist bg-brand-ice">
-                <th scope="col" className="px-3 py-2 font-bold">معیار</th>
-                <th scope="col" className="px-3 py-2 font-bold">امتیاز وزنی</th>
-                <th scope="col" className="px-3 py-2 font-bold">حداکثر</th>
-                <th scope="col" className="px-3 py-2 font-bold">مقدار خام</th>
-              </tr>
-            </thead>
-            <tbody>
-              <ScoreRow label={`${SCORE_CATEGORY_LABELS.sales.emoji} ${SCORE_CATEGORY_LABELS.sales.label}`} value={result.pts.sales} max={SCORE_WEIGHTS.sales} raw={coins(result.netSales)} />
-              <ScoreRow label={`${SCORE_CATEGORY_LABELS.quality.emoji} ${SCORE_CATEGORY_LABELS.quality.label}`} value={result.pts.quality} max={SCORE_WEIGHTS.quality} raw={fa(Math.round(result.quality))} />
-              <ScoreRow label={`${SCORE_CATEGORY_LABELS.capital.emoji} ${SCORE_CATEGORY_LABELS.capital.label}`} value={result.pts.capital} max={SCORE_WEIGHTS.capital} raw={coins(result.externalCapital)} />
-              <ScoreRow label={`${SCORE_CATEGORY_LABELS.roi.emoji} ${SCORE_CATEGORY_LABELS.roi.label}`} value={result.pts.roi} max={SCORE_WEIGHTS.roi} raw={`${fa(Math.round(result.investorRoi * 100))}٪`} />
-              <ScoreRow label={`${SCORE_CATEGORY_LABELS.teaser.emoji} ${SCORE_CATEGORY_LABELS.teaser.label}`} value={result.pts.teaser} max={SCORE_WEIGHTS.teaser} raw={fa(Math.round(result.teaser))} />
-              <ScoreRow
-                label={`${SCORE_CATEGORY_LABELS.community.emoji} ${SCORE_CATEGORY_LABELS.community.label}`}
-                value={result.pts.community}
-                max={SCORE_WEIGHTS.community}
-                raw={`${fa(result.uniqueBuyers)} خریدار، ${fa(result.hearts)} قلب`}
-              />
-              <ScoreRow
-                label={`${SCORE_CATEGORY_LABELS.portfolio.emoji} ${SCORE_CATEGORY_LABELS.portfolio.label}`}
-                value={result.pts.portfolio}
-                max={SCORE_WEIGHTS.portfolio}
-                raw={coins(Math.round(result.portfolio))}
-              />
-              <ScoreRow
-                label={`${SCORE_CATEGORY_LABELS.taste.emoji} ${SCORE_CATEGORY_LABELS.taste.label}`}
-                value={result.pts.taste}
-                max={SCORE_WEIGHTS.taste}
-                raw={fa(Math.round(result.taste))}
-              />
-              <tr>
-                <td className="px-3 py-2 font-bold text-brand-red">جریمهٔ خرج‌نشده</td>
-                <td className="px-3 py-2 font-bold text-brand-red fa-num" colSpan={3}>
-                  −{fa(Math.round(result.unspentPenalty))}
-                </td>
-              </tr>
-              <tr className="bg-brand-ice">
-                <td className="px-3 py-2 font-black text-brand-navy">امتیاز کل</td>
-                <td className="px-3 py-2 font-black text-brand-navy fa-num" colSpan={3}>
-                  {fa(Math.round(result.total))}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </section>
-
-        <section className="grid sm:grid-cols-3 gap-3 stagger">
-          <div className="card p-4">
-            <div className="text-xs font-bold text-brand-slate">فروش ناخالص / خالص</div>
-            <div className="mt-1 font-black text-brand-navy fa-num">{coins(result.grossSales)} / {coins(result.netSales)}</div>
-          </div>
-          <div className="card p-4">
-            <div className="text-xs font-bold text-brand-slate">سرمایهٔ خارجی / خودی</div>
-            <div className="mt-1 font-black text-brand-navy fa-num">{coins(result.externalCapital)} / {coins(result.selfCapital)}</div>
-          </div>
-          <div className="card p-4">
-            <div className="text-xs font-bold text-brand-slate">سود پرداختی به سرمایه‌گذاران</div>
-            <div className="mt-1 font-black text-brand-navy fa-num">{coins(result.dividendsPaid)}</div>
-          </div>
-        </section>
-
-        <section>
-          <h2 className="text-lg font-black text-brand-navy mb-2">سرمایه‌گذاران</h2>
-          {investorRows.length === 0 ? (
-            <p className="text-sm text-brand-slate">این تیم سرمایه‌گذار خارجی نداشت.</p>
-          ) : (
-            <table className="w-full text-sm card p-0 overflow-hidden">
-              <caption className="sr-only">سرمایه‌گذاران تیم</caption>
-              <thead>
-                <tr className="text-right text-brand-slate border-b border-brand-mist bg-brand-ice">
-                  <th scope="col" className="px-3 py-2 font-bold">سرمایه‌گذار</th>
-                  <th scope="col" className="px-3 py-2 font-bold">مبلغ سرمایه‌گذاری</th>
-                  <th scope="col" className="px-3 py-2 font-bold">سود</th>
-                </tr>
-              </thead>
-              <tbody>
-                {investorRows.map((r) => (
-                  <tr key={r.userId} className="border-b border-brand-mist last:border-0">
-                    <td className="px-3 py-2">{investorNick.get(r.userId) ?? r.userId}</td>
-                    <td className="px-3 py-2 fa-num">{fa(r.invested)}</td>
-                    <td className="px-3 py-2 fa-num text-emerald-700 font-bold">{fa(r.dividend)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-
-        {teamSeries && (
-          <section className="print:break-inside-avoid">
-            <h2 className="text-lg font-black text-brand-navy mb-2">روند فروش و سرمایه</h2>
-            <TrendChart bucketEndsAt={timeline.bucketEndsAt} teams={[{ teamId, name: teamNames.get(teamId) ?? team.name, sales: teamSeries.sales, capital: teamSeries.capital }]} />
           </section>
         )}
       </div>
     </>
-  );
-}
-
-function ScoreRow({ label, value, max, raw }: { label: string; value: number; max: number; raw: string }) {
-  return (
-    <tr className="border-b border-brand-mist last:border-0">
-      <td className="px-3 py-2">{label}</td>
-      <td className="px-3 py-2 font-bold fa-num">{fa(Math.round(value))}</td>
-      <td className="px-3 py-2 text-brand-slate fa-num">{fa(max)}</td>
-      <td className="px-3 py-2 text-brand-slate fa-num">{raw}</td>
-    </tr>
   );
 }

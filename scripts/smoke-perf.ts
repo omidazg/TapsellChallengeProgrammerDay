@@ -94,7 +94,7 @@ async function main() {
       afterInvalidate.teams.some((t) => t.teamId === newTeam.id)
     );
 
-    // ---------- ۴. getMarketProducts: sold/limitReached با کوئری خام یکی باشد ----------
+    // ---------- ۴. getMarketProducts: sold/bought با کوئری خام یکی باشد ----------
     const team = await prisma.team.create({ data: { name: "تیم دود-پرف", slug: `smoke-perf-team-${process.pid}` } });
     const product = await prisma.product.create({
       data: { teamId: team.id, name: "محصول دود-پرف", price: 20, submittedAt: new Date() },
@@ -105,7 +105,7 @@ async function main() {
         passwordHash: "x",
         nickname: "خریدار یک",
         role: "DEALMAKER",
-        power: "HYPE",
+        power: "",
       },
     });
     const buyer2 = await prisma.user.create({
@@ -114,7 +114,16 @@ async function main() {
         passwordHash: "x",
         nickname: "خریدار دو",
         role: "DEALMAKER",
-        power: "HYPE",
+        power: "",
+      },
+    });
+    const notBuyer = await prisma.user.create({
+      data: {
+        email: `perf-notbuyer-${process.pid}@example.test`,
+        passwordHash: "x",
+        nickname: "بیننده",
+        role: "BUILDER",
+        power: "",
       },
     });
     await prisma.purchase.createMany({
@@ -125,8 +134,7 @@ async function main() {
       ],
     });
 
-    const maxPerTarget = 30;
-    const cards = await getMarketProducts("all", { userId: buyer1.id, maxPerTarget });
+    const cards = await getMarketProducts("all", { userId: buyer1.id });
     const card = cards.find((c) => c.id === product.id);
 
     const rawSoldAgg = await prisma.purchase.aggregate({ where: { productId: product.id }, _sum: { amount: true } });
@@ -136,11 +144,13 @@ async function main() {
       _sum: { amount: true },
     });
     const expectedViewerSpent = rawViewerAgg._sum.amount ?? 0;
-    const expectedLimitReached = expectedViewerSpent >= maxPerTarget;
+    const expectedBought = expectedViewerSpent > 0;
 
     check("getMarketProducts محصول را برمی‌گرداند", !!card);
     eq("getMarketProducts: sold با کوئری خام یکی است", card?.sold, expectedSold);
-    eq("getMarketProducts: limitReached با محاسبهٔ خام یکی است", card?.limitReached, expectedLimitReached);
+    eq("getMarketProducts: bought با محاسبهٔ خام یکی است", card?.bought, expectedBought);
+    const cardsOther = await getMarketProducts("all", { userId: notBuyer.id });
+    eq("getMarketProducts: برای بیننده‌ای که نخریده bought=false است", cardsOther.find((c) => c.id === product.id)?.bought, false);
 
     // ---------- ۵. پاک‌سازی اعلان‌های قدیمی ----------
     const notifUser = await prisma.user.create({
@@ -149,7 +159,7 @@ async function main() {
         passwordHash: "x",
         nickname: "کاربر اعلان",
         role: "DEALMAKER",
-        power: "HYPE",
+        power: "",
       },
     });
     const now = Date.now();

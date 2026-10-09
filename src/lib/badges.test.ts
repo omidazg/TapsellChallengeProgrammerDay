@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// فقط توابع خالص تست می‌شوند؛ اتصال Prisma ساخته نمی‌شود.
+vi.mock("./db", () => ({ prisma: {} }));
+
 import {
+  BADGES,
   auctionWinnerIds,
   earlyBirdUserIds,
   earliestUserId,
@@ -7,6 +12,20 @@ import {
   topByCount,
   topSalesTeamIds,
 } from "./badges";
+
+describe("BADGES", () => {
+  it("شناسه‌ها یکتا هستند", () => {
+    const ids = BADGES.map((b) => b.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("متن نشان‌ها از واژگان بازی ساده‌شده استفاده می‌کند («حمایت» نه «سرمایه‌گذاری»، بدون قدرت‌ها)", () => {
+    for (const b of BADGES) {
+      const text = `${b.title} ${b.description}`;
+      expect(text).not.toMatch(/سرمایه|قدرت|سپر|فرشته|سرپرست/);
+    }
+  });
+});
 
 describe("topByCount", () => {
   it("returns the user(s) with the most rows", () => {
@@ -54,7 +73,7 @@ describe("mostDistinctTeamsInvestor", () => {
   it("counts distinct teams per user, not total investments", () => {
     const rows = [
       { userId: "a", teamId: "t1" },
-      { userId: "a", teamId: "t1" }, // دو سرمایه‌گذاری روی یک تیم = یک تیم
+      { userId: "a", teamId: "t1" }, // دو حمایت از یک تیم = یک تیم
       { userId: "a", teamId: "t2" },
       { userId: "b", teamId: "t1" },
       { userId: "b", teamId: "t2" },

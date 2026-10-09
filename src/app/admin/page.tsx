@@ -12,8 +12,11 @@ import {
   SCHEDULER_SETTING_LABELS,
   SCHEDULER_SETTING_KINDS,
 } from "@/lib/admin";
-import { PageHeader, Container, Stat } from "@/components/ui";
+import { PageHeader, Container, Stat, Alert } from "@/components/ui";
 import { fa, coins } from "@/lib/persian";
+import { getPrizePool } from "@/lib/prize-pool";
+import { formatMillion } from "@/lib/prizes";
+import { getPaymentDriver } from "@/lib/coins";
 import { PhaseForm } from "./PhaseForm";
 import { SettingsForm, type SettingField } from "./SettingsForm";
 import { updateSchedulerSettingsAction } from "./scheduler-actions";
@@ -28,13 +31,15 @@ const SUBPAGES = [...ADMIN_SECTIONS.filter((s) => s.href !== "/admin"), ...ADMIN
 
 export default async function AdminPage() {
   await requireAdmin();
-  const [{ phase, endsAt }, counts, settings, schedulerSettings, pendingRequests] = await Promise.all([
+  const [{ phase, endsAt }, counts, settings, schedulerSettings, pendingRequests, pool] = await Promise.all([
     getPhase(),
     getAdminCounts(),
     getSettingsMap(),
     getSchedulerSettingsMap(),
     prisma.accessRequest.count({ where: { status: "PENDING" } }),
+    getPrizePool(),
   ]);
+  const paymentDriver = getPaymentDriver().name;
 
   const phaseOptions = PHASES.map((p) => ({ value: p, label: PHASE_LABEL[p] }));
   // مدت پیکربندی‌شدهٔ هر فاز (همان که زمان‌بند خودکار با parseInt می‌خواند) برای دکمهٔ «رفتن به فاز بعد».
@@ -65,13 +70,26 @@ export default async function AdminPage() {
     <>
       <PageHeader eyebrow="پنل برگزارکننده" title="داشبورد برگزارکننده" desc="کنترل فاز بازی، تنظیمات و نظارت بر میدان." />
       <Container className="space-y-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 stagger">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 stagger">
           <Stat label="کاربران" value={fa(counts.users)} tone="navy" />
           <Stat label="تیم‌ها" value={fa(counts.teams)} tone="navy" />
           <Stat label="ایده‌های ثبت‌شده" value={fa(counts.ideasSubmitted)} tone="cyan" />
           <Stat label="محصولات ثبت‌شده" value={fa(counts.productsSubmitted)} tone="cyan" />
           <Stat label="حجم خرید بازار" value={coins(counts.purchasesVolume)} hint={`${fa(counts.purchasesCount)} تراکنش`} tone="red" />
+          <Stat
+            label="صندوق جایزه"
+            value={fa(formatMillion(pool.totalMillion))}
+            hint={`میلیون تومان · ${fa(formatMillion(pool.extraMillion))} میلیون از خرید سکه`}
+            tone="gold"
+          />
         </div>
+
+        {paymentDriver === "fake" && (
+          <Alert kind="error">
+            ⚠ درگاه پرداخت آزمایشی (fake) فعال است و پولی واقعاً دریافت نمی‌شود. پیش از روز بازی درایور پرداخت را
+            تنظیم کن (جزئیات در <Link href="/admin/coins" className="underline font-bold">سکه و پرداخت</Link>).
+          </Alert>
+        )}
 
         {/* کنترل فاز پرکاربردترین ابزار روز بازی است؛ بالاتر از کارت‌های بخش‌ها */}
         <PhaseForm

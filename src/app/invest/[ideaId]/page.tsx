@@ -1,11 +1,13 @@
 import { notFound } from "next/navigation";
 import dynamic from "next/dynamic";
 import { requireUser } from "@/lib/auth";
-import { getPhase, getSettingInt, phaseIndex } from "@/lib/phase";
+import { getPhase, getSettingInt, phaseIndex, PHASE_LABEL } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
 import { getIdeaDetail } from "@/lib/idea";
+import { spendableBuyCoins } from "@/lib/market";
 import { PageHeader, Container, Locked, Alert } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
+import { AiTag } from "@/components/AiTag";
 import { fa, coins } from "@/lib/persian";
 import { AnalystCard } from "@/app/idea/AnalystCard";
 import { Cover } from "@/app/idea/Cover";
@@ -13,14 +15,14 @@ import { InvestPanel } from "./InvestPanel";
 import { InvestorList } from "./InvestorList";
 
 // چت بررسی دقیق سنگین‌تر از بقیهٔ صفحه است (فرم + لیست پیام‌ها)؛ با next/dynamic
-// از باندل اصلی صفحه جدا می‌شود تا بار اولیهٔ صفحهٔ سرمایه‌گذاری سبک‌تر بماند.
+// از باندل اصلی صفحه جدا می‌شود تا بار اولیهٔ صفحهٔ حمایت سبک‌تر بماند.
 const DueDiligenceChat = dynamic(() => import("./DueDiligenceChat").then((m) => m.DueDiligenceChat));
 
 export async function generateMetadata({ params }: { params: Promise<{ ideaId: string }> }) {
   const { ideaId } = await params;
   const idea = await getIdeaDetail(ideaId, null);
   // عنوان ایدهٔ ثبت‌نشده (پیش‌نویس) نباید از طریق <title> نشت کند.
-  return { title: idea?.title && idea.submittedAt ? `${idea.title} · سرمایه‌گذاری` : "سرمایه‌گذاری" };
+  return { title: idea?.title && idea.submittedAt ? `${idea.title} · حمایت` : "حمایت از ایده" };
 }
 
 export default async function IdeaDetailPage({ params }: { params: Promise<{ ideaId: string }> }) {
@@ -31,9 +33,9 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
   if (phaseIndex(phase) < phaseIndex("SEED_ROUND")) {
     return (
       <>
-        <PageHeader eyebrow="طبقهٔ سرمایه‌گذاری" title="سرمایه‌گذاری" />
+        <PageHeader eyebrow="حمایت از ایده‌ها" title="حمایت" />
         <Container>
-          <Locked title="هنوز زود است" desc="طبقهٔ سرمایه‌گذاری از فاز «دور سرمایه‌گذاری» باز می‌شود." />
+          <Locked title="هنوز زود است" desc={`حمایت از ایده‌ها از فاز «${PHASE_LABEL.SEED_ROUND}» باز می‌شود.`} />
         </Container>
       </>
     );
@@ -44,21 +46,18 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
 
   const aiOff = !process.env.ANTHROPIC_API_KEY;
   const interactive = phase === "SEED_ROUND";
-  const maxPerTarget = await getSettingInt("max_per_target", DEFAULTS.maxPerTarget);
-  // «هدف جذب سرمایه» دیگر سقف سخت نیست؛ محدودیت واقعی فقط سقف هر نفر روی هر ایده و موجودی کیف بذر است.
-  const maxAllowed = Math.max(0, Math.min(maxPerTarget - idea.viewerInvested, user.seedWallet));
+  const [spendable, supportCap] = await Promise.all([
+    spendableBuyCoins(user.id, user.buyWallet),
+    getSettingInt("support_cap", DEFAULTS.supportCap),
+  ]);
+  const supporterCount = new Set(idea.investments.map((i) => i.userId)).size;
 
-  // در دور بذر مبالغ پنهان‌اند، مگر برای «خبرچین» فعال‌شده یا اعضای خود تیم.
-  const revealed = !interactive || idea.isOwnTeam || (user.power === "INSIDER" && user.powerUsed);
-  const canReveal = interactive && user.power === "INSIDER" && !user.powerUsed;
-
-  const rawPct = idea.fundingCap > 0 ? Math.round((idea.raised / idea.fundingCap) * 100) : 0;
-  const pct = Math.min(100, rawPct);
-  const overGoal = rawPct > 100;
+  // در «دور حمایت» مبلغ هر حامی پنهان است (جز برای اعضای خود تیم)؛ پس از آن همه می‌بینند.
+  const revealed = !interactive || idea.isOwnTeam;
 
   return (
     <>
-      <PageHeader eyebrow="طبقهٔ سرمایه‌گذاری" title={idea.title} desc={idea.oneLiner} />
+      <PageHeader eyebrow="حمایت از ایده‌ها" title={idea.title} desc={idea.oneLiner} />
       <Container className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           {idea.coverUrl && (
@@ -73,6 +72,7 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
               <span className="font-bold text-brand-navy break-words">{idea.teamName}</span>
               {idea.isOwnTeam && <span className="chip-red">تیم خودت</span>}
             </div>
+            <AiTag tag={idea.aiTag} />
             <div>
               <div className="text-xs font-bold text-brand-slate mb-1">مسئله</div>
               <p className="text-brand-navy leading-7 break-words">{idea.problem}</p>
@@ -86,23 +86,9 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
               <p className="text-brand-navy leading-7 break-words">{idea.buildPlan}</p>
             </div>
             <div className="flex flex-wrap gap-3 pt-2">
-              <span className="chip-gold">سود سرمایه‌گذار {fa(idea.revenueShare)}٪</span>
-              <span className="chip-navy">هدف جذب سرمایه: {coins(idea.fundingCap)}</span>
-              {overGoal && <span className="chip-red">بیش از هدف 🔥</span>}
+              <span className="chip-navy">{fa(supporterCount)} حامی</span>
+              <span className="chip-gold">{coins(idea.raised)} حمایت</span>
             </div>
-            <div>
-              <div className="h-2.5 rounded-pill bg-brand-sky overflow-hidden">
-                <div className="h-full rounded-pill bg-brand-red" style={{ width: `${pct}%` }} />
-              </div>
-              <div className="mt-1 flex justify-between text-xs text-brand-slate fa-num">
-                <span>{coins(idea.raised)} جذب‌شده</span>
-                <span>از هدف {coins(idea.fundingCap)}</span>
-              </div>
-            </div>
-            <p className="text-xs text-brand-slate">
-              هرچه سرمایهٔ بیشتری روی این ایده جمع شود، سهم هر سرمایه‌گذار از استخر سود (فروش × {fa(idea.revenueShare)}٪)
-              کوچک‌تر می‌شود، چون این استخر متناسب با مبلغ هرکس بین همهٔ سرمایه‌گذاران تقسیم می‌شود.
-            </p>
           </div>
 
           <AnalystCard
@@ -118,19 +104,28 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
 
         <div className="space-y-6">
           <div className="card p-6 space-y-4 anim-rise">
-            <h3 className="font-black text-brand-navy">سرمایه‌گذاری</h3>
+            <h3 className="font-black text-brand-navy">حمایت از این ایده</h3>
+            <p className="text-xs text-brand-slate leading-6">
+              تعداد حامی‌ها مهم‌تر از مبلغ است: ۱۰ نفر که هر کدام ۱۰ سکه بدهند، ۱۰ برابرِ یک نفر با ۱۰۰ سکه می‌ارزند.
+            </p>
+            {idea.viewerInvested > 0 && (
+              <Alert kind="ok">تا الان {coins(idea.viewerInvested)} از این ایده حمایت کرده‌ای.</Alert>
+            )}
             {idea.isOwnTeam ? (
-              <Alert kind="info">
-                نمی‌توانی روی ایدهٔ تیم خودت سرمایه‌گذاری کنی. برای جذب سرمایه، منتظر سرمایه‌گذاران تیم‌های دیگر باش.
-              </Alert>
+              <Alert kind="info">نمی‌توانی از ایدهٔ تیم خودت حمایت کنی؛ ایده‌ات را به بقیه معرفی کن تا حامی جمع کنی.</Alert>
             ) : interactive ? (
-              <InvestPanel ideaId={idea.id} seedWallet={user.seedWallet} maxAllowed={maxAllowed} maxPerTarget={maxPerTarget} />
+              <InvestPanel
+                ideaId={idea.id}
+                spendable={spendable}
+                alreadyGiven={idea.viewerInvested}
+                supportCap={supportCap}
+              />
             ) : (
-              <Alert kind="info">دور سرمایه‌گذاری تمام شده است.</Alert>
+              <Alert kind="info">«{PHASE_LABEL.SEED_ROUND}» تمام شده است.</Alert>
             )}
           </div>
 
-          <InvestorList ideaId={idea.id} investments={idea.investments} revealed={revealed} canReveal={canReveal} />
+          <InvestorList investments={idea.investments} revealed={revealed} />
         </div>
       </Container>
     </>

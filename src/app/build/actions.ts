@@ -4,7 +4,8 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { teamManageError } from "@/lib/leader";
+import { teamManageError } from "@/lib/team-access";
+import { requestGoLive, cancelGoLive } from "@/lib/studio";
 import { getPhase, phaseIndex } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
 import { serializeImages, missingForSubmit, MAX_IMAGES, effectiveMaxPrice, imageUrlError } from "@/lib/product";
@@ -88,8 +89,8 @@ async function assertEditable() {
 export async function saveProductAction(prevState: ProductActionState, formData: FormData): Promise<ProductActionState> {
   const user = await requireUser();
   if (!user.teamId) return { error: "ابتدا باید عضو یک تیم باشی" };
-  const leaderError = await teamManageError(user);
-  if (leaderError) return { error: leaderError };
+  const accessError = await teamManageError(user);
+  if (accessError) return { error: accessError };
 
   const values = Object.fromEntries(
     ["name", "tagline", "description", "demoUrl", "specialName", "specialDesc"].map((k) => [k, String(formData.get(k) ?? "")])
@@ -130,12 +131,10 @@ export async function saveProductAction(prevState: ProductActionState, formData:
   const data = parsed.data;
   const imagesJson = serializeImages(data.images);
 
-  // قیمت هرگز نباید از سقف خرید هر نفر (max_per_target) بیشتر باشد، وگرنه محصول
-  // برای هیچ خریداری قابل خرید نمی‌ماند؛ zod فقط سقف مطلق DEFAULTS.maxPrice را چک می‌کند،
-  // اینجا سقفِ پویای تنظیم برگزارکننده هم بررسی می‌شود.
+  // zod فقط سقف ثابت DEFAULTS.maxPrice را چک می‌کند؛ سقف مؤثر (همان که فرم و چک‌لیست نشان می‌دهند) اینجا بررسی می‌شود.
   const maxPrice = await effectiveMaxPrice();
   if (data.price > maxPrice) {
-    return { error: `قیمت حداکثر ${fa(maxPrice)} سکه است (برابر سقف خرید هر نفر از یک محصول)`, values };
+    return { error: `قیمت حداکثر ${fa(maxPrice)} سکه است`, values };
   }
 
   if (intent === "submit") {
@@ -205,8 +204,8 @@ export async function saveProductAction(prevState: ProductActionState, formData:
 export async function unsubmitProductAction(): Promise<ProductActionState> {
   const user = await requireUser();
   if (!user.teamId) return { error: "ابتدا باید عضو یک تیم باشی" };
-  const leaderError = await teamManageError(user);
-  if (leaderError) return { error: leaderError };
+  const accessError = await teamManageError(user);
+  if (accessError) return { error: accessError };
 
   const editError = await assertEditable();
   if (editError) return { error: editError };
@@ -215,6 +214,35 @@ export async function unsubmitProductAction(): Promise<ProductActionState> {
   if (!product) return { error: "هنوز محصولی ثبت نکرده‌ای" };
 
   await prisma.product.update({ where: { id: product.id }, data: { submittedAt: null } });
+  revalidatePath("/build");
+  return { ok: true };
+}
+
+export type StudioActionState = { error?: string; ok?: boolean };
+
+/** درخواست انتشار محصول روی «بازار استودیو» (یا ارسال دوباره پس از «نیاز به اصلاح») — هر عضو تیم */
+export async function requestGoLiveAction(_prev: StudioActionState, formData: FormData): Promise<StudioActionState> {
+  const user = await requireUser();
+  const accessError = await teamManageError(user);
+  if (accessError) return { error: accessError };
+
+  const result = await requestGoLive(user, {
+    sourceUrl: String(formData.get("sourceUrl") ?? ""),
+    note: String(formData.get("note") ?? ""),
+  });
+  if (result.error) return { error: result.error };
+  revalidatePath("/build");
+  return { ok: true };
+}
+
+/** لغو درخواست انتشار (تا پیش از شروع انتشار) */
+export async function cancelGoLiveAction(): Promise<StudioActionState> {
+  const user = await requireUser();
+  const accessError = await teamManageError(user);
+  if (accessError) return { error: accessError };
+
+  const result = await cancelGoLive(user);
+  if (result.error) return { error: result.error };
   revalidatePath("/build");
   return { ok: true };
 }

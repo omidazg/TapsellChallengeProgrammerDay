@@ -1,16 +1,15 @@
 /**
- * دود-تست آیتم‌های ۴۸ (روند فروش/سرمایه) و ۴۹ (خروجی اکسل کامل).
+ * دود-تست آیتم‌های ۴۸ (روند فروش/حمایت) و ۴۹ (خروجی اکسل کامل).
  * اجرا: npx tsx scripts/smoke-reports.ts
  *
- * روی یک پایگاه‌دادهٔ SQLite موقت (`smoke-reports.db`، کنار همین اسکریپت‌ها) کار می‌کند —
- * همان الگوی scripts/smoke-settlement.ts؛ فایل پیش و پس از اجرا پاک می‌شود.
+ * روی یک پایگاه‌دادهٔ SQLite موقت (createTempDb در scripts/lib/temp-db.ts) کار می‌کند؛
+ * پایگاه‌دادهٔ اصلی لمس نمی‌شود.
  *
- * سناریو: ۲ تیم، چند سرمایه‌گذاری و خرید در زمان‌های پخش‌شده (برای آزمودن سطل‌های زمانی)،
+ * سناریو: ۲ تیم، چند حمایت و خرید در زمان‌های پخش‌شده (برای آزمودن سطل‌های زمانی)،
  * سپس settleGame، و در پایان خروجی xlsx کامل با exceljs خوانده و بررسی می‌شود.
  */
 
-import { execFileSync } from "node:child_process";
-import { existsSync, rmSync } from "node:fs";
+import { createTempDb, isTempDatabaseUrl } from "./lib/temp-db";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -30,10 +29,8 @@ try {
   // نصب نیست؛ کاری لازم نیست
 }
 
-const ROOT = path.resolve(__dirname, "..");
-const DB_FILE = path.join(ROOT, "smoke-reports.db");
-const DB_URL = `file:${DB_FILE.replace(/\\/g, "/")}`;
-process.env.DATABASE_URL = DB_URL;
+// DATABASE_URL باید پیش از import شدن src/lib/db تنظیم شود.
+const ownTempDb = isTempDatabaseUrl(process.env.DATABASE_URL) ? null : createTempDb("reports");
 
 const checks: { name: string; ok: boolean; detail: string }[] = [];
 function check(name: string, ok: boolean, detail = "") {
@@ -41,26 +38,7 @@ function check(name: string, ok: boolean, detail = "") {
   console.log(`${ok ? "PASS" : "FAIL"} — ${name}${detail ? ` (${detail})` : ""}`);
 }
 
-function cleanTempFiles() {
-  for (const suffix of ["", "-journal", "-wal", "-shm"]) {
-    const f = `${DB_FILE}${suffix}`;
-    if (existsSync(f)) rmSync(f, { force: true });
-  }
-}
-
-function pushSchema() {
-  cleanTempFiles();
-  execFileSync("npx", ["prisma", "db", "push", "--url", DB_URL], {
-    cwd: ROOT,
-    env: { ...process.env, DATABASE_URL: DB_URL },
-    stdio: "inherit",
-    shell: process.platform === "win32",
-  });
-}
-
 async function main() {
-  pushSchema();
-
   const { prisma } = await import("../src/lib/db");
   const { investCore } = await import("../src/lib/invest");
   const { settleGame } = await import("../src/lib/settlement");
@@ -70,17 +48,14 @@ async function main() {
   const ExcelJS = (await import("exceljs")).default;
 
   try {
-    await prisma.setting.create({ data: { key: "penalty_per_coin", value: "1.5" } });
-    await prisma.setting.create({ data: { key: "max_per_target", value: "60" } });
-
     const teamIds: Record<string, string> = {};
     const ideaIds: Record<string, string> = {};
     const productIds: Record<string, string> = {};
     const userIds: Record<string, string> = {};
 
     const SPEC = [
-      { key: "alpha", name: "تیم آلفا گزارش", revenueShare: 50, jury: 85 },
-      { key: "beta", name: "تیم بتا گزارش", revenueShare: 40, jury: 65 },
+      { key: "alpha", name: "تیم آلفا گزارش", jury: 9 },
+      { key: "beta", name: "تیم بتا گزارش", jury: 6 },
     ];
     for (const t of SPEC) {
       const team = await prisma.team.create({ data: { name: t.name, slug: `smoke-report-${t.key}` } });
@@ -92,9 +67,9 @@ async function main() {
             passwordHash: "SHOULD-NOT-LEAK",
             nickname: `${t.name} ${i}`,
             role: "DEALMAKER",
-            power: "HYPE",
+            power: "",
             teamId: team.id,
-            seedWallet: 200,
+            seedWallet: 0,
             buyWallet: 200,
           },
         });
@@ -108,14 +83,14 @@ async function main() {
           problem: "مسئله",
           audience: "مخاطب",
           buildPlan: "برنامه",
-          fundingCap: 300,
-          revenueShare: t.revenueShare,
+          fundingCap: 0,
+          revenueShare: 0,
           submittedAt: new Date(),
         },
       });
       ideaIds[t.key] = idea.id;
       const product = await prisma.product.create({
-        data: { teamId: team.id, name: `محصول ${t.name}`, price: 20, submittedAt: new Date(), juryQuality: t.jury, juryTeaser: t.jury - 5 },
+        data: { teamId: team.id, name: `محصول ${t.name}`, price: 20, submittedAt: new Date(), juryWorks: t.jury, juryValue: t.jury, juryPitch: t.jury - 1 },
       });
       productIds[t.key] = product.id;
     }
@@ -203,7 +178,7 @@ async function main() {
     // نوع Buffer سفارشی exceljs با Buffer<ArrayBufferLike> جدید @types/node یکی نیست؛ فقط در مرز cast می‌شود.
     await wb.xlsx.load(buffer as unknown as ArrayBuffer);
 
-    const expectedSheets = ["Teams and scores", "Users", "Ideas", "Investments", "Purchases", "Bids", "Ledger"];
+    const expectedSheets = ["Teams and scores", "Users", "Ideas", "Investments", "Purchases", "Bids", "Ledger", "Coin orders"];
     const actualSheets = wb.worksheets.map((ws) => ws.name);
     check(
       "همهٔ شیت‌های انتظاری وجود دارند",
@@ -251,7 +226,7 @@ async function main() {
   } finally {
     const { prisma: p } = await import("../src/lib/db");
     await p.$disconnect();
-    cleanTempFiles();
+    ownTempDb?.cleanup();
   }
 
   const failed = checks.filter((c) => !c.ok);

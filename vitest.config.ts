@@ -9,7 +9,8 @@ export default defineConfig({
     // (process.env.DATABASE_URL) با فایل‌های دیگر تداخل نمی‌کند.
     pool: "forks",
     testTimeout: 20_000,
-    hookTimeout: 30_000,
+    // ساخت پایگاه‌دادهٔ موقت (migrate) در چند فایل هم‌زمان روی ماشین شلوغ/CI کند است
+    hookTimeout: 120_000,
   },
   resolve: { alias: { "@": path.resolve(__dirname, "src") } },
 });

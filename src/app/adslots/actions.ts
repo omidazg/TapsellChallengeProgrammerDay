@@ -3,50 +3,31 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
-import { teamManageError } from "@/lib/leader";
-import { upsertBid, claimHypeSlot } from "@/lib/adslots";
-import { getPhase, phaseAtLeast } from "@/lib/phase";
+import { teamManageError } from "@/lib/team-access";
+import { buyAdSlot } from "@/lib/adslots";
+import { rateLimit, rateLimitMessage } from "@/lib/rate-limit";
 
-/** مثل صفحه: از «ساخت محصول» باز است و پس از پایان بازی فقط خواندنی. */
-async function adSlotsPhaseError(): Promise<string | null> {
-  const { phase } = await getPhase();
-  if (!phaseAtLeast(phase, "BUILD")) return "حراج جایگاه تبلیغاتی هنوز باز نشده است";
-  if (phase === "CLOSED") return "بازی تمام شده است";
-  return null;
-}
-
-const bidSchema = z.object({
-  slotId: z.string().min(1),
-  amount: z.number().int().positive(),
-});
-
-export async function bidOnSlotAction(slotId: string, amount: number) {
+/**
+ * خرید یک ساعت جایگاه تبلیغاتی به قیمت ثابت (اول‌آمده، اول‌خرید) — هر عضو تیم با سکه‌های خودش.
+ * شرط‌های فاز، سهمیهٔ تیم، محصول ثبت‌شده و موجودی همه در buyAdSlot (src/lib/adslots.ts) بررسی می‌شوند.
+ */
+export async function buyAdSlotAction(slotId: string): Promise<{ ok?: true; price?: number; error?: string }> {
   const user = await requireUser();
-  if (!user.teamId) return { error: "عضو هیچ تیمی نیستی" };
-  const leaderError = await teamManageError(user);
-  if (leaderError) return { error: leaderError };
-  const parsed = bidSchema.safeParse({ slotId, amount });
-  if (!parsed.success) return { error: "مبلغ پیشنهاد نامعتبر است" };
-  const phaseError = await adSlotsPhaseError();
-  if (phaseError) return { error: phaseError };
-  try {
-    await upsertBid(parsed.data.slotId, user.teamId, parsed.data.amount);
-    revalidatePath("/adslots");
-    return { ok: true as const };
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : "خطای نامشخص" };
-  }
-}
+  const limit = rateLimit("adslot:buy", user.id, { limit: 20, windowMs: 60 * 1000 });
+  if (!limit.ok) return { error: rateLimitMessage(limit.retryAfterSec) };
+  const accessError = await teamManageError(user);
+  if (accessError) return { error: accessError };
+  const parsed = z.string().min(1).safeParse(slotId);
+  if (!parsed.success) return { error: "جایگاه نامعتبر است" };
 
-export async function claimHypeAction() {
-  const user = await requireUser();
-  const phaseError = await adSlotsPhaseError();
-  if (phaseError) return { error: phaseError };
   try {
-    await claimHypeSlot(user.id);
+    const res = await buyAdSlot(user.id, parsed.data);
+    if (!res.ok) return { error: res.error };
     revalidatePath("/adslots");
-    return { ok: true as const };
+    revalidatePath("/market");
+    return { ok: true, price: res.price };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "خطای نامشخص" };
+    console.error("adslot purchase failed", e);
+    return { error: "خرید جایگاه ناموفق بود؛ دوباره تلاش کن" };
   }
 }

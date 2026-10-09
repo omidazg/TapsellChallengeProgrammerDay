@@ -30,7 +30,7 @@ export type HallPayload = {
   phaseLabel: string;
   endsAt: string | null;
   serverNow: string;
-  /** معیار نمایشی جدول (فروش خالص پیش از پایان بازی، امتیاز کل پس از آن) — همان قاعدهٔ صفحهٔ جدول */
+  /** معیار نمایشی جدول (تعداد حامی پیش از پایان بازی، امتیاز کل پس از آن) — همان قاعدهٔ صفحهٔ جدول */
   metricLabel: string;
   topTeams: HallTeam[];
   auction: HallAuction;
@@ -44,7 +44,7 @@ const TOP_TEAMS_COUNT = 5;
 
 async function buildTopTeams(closed: boolean): Promise<{ teams: HallTeam[]; metricLabel: string }> {
   // «closed» مثل صفحهٔ جدول از فاز می‌آید (نه از تسویه)؛ وگرنه بین پایان بازی و تسویه، جدول امتیاز کل
-  // و سالن هنوز فروش خالص نشان می‌داد. دادهٔ تسویه‌شده، اگر باشد، ملاک است.
+  // و سالن هنوز معیار عمومی را نشان می‌داد. دادهٔ تسویه‌شده، اگر باشد، ملاک است.
   const settledAt = await getSettledAt();
   const [output, teams] = await Promise.all([
     settledAt ? loadSettledOutput() : computeScoresCached(),
@@ -52,13 +52,13 @@ async function buildTopTeams(closed: boolean): Promise<{ teams: HallTeam[]; metr
   ]);
   const teamMap = new Map(teams.map((t) => [t.id, t]));
 
-  // همان قاعدهٔ صفحهٔ جدول امتیازات: پیش از پایان بازی فقط فروش خالص (عمومی)، پس از آن امتیاز کل.
-  const metricOf = (t: TeamResult) => (closed ? t.total : t.netSales);
-  const metricLabel = closed ? "امتیاز کل" : "فروش خالص";
+  // همان قاعدهٔ صفحهٔ جدول امتیازات: پیش از پایان بازی فقط تعداد حامی (عمومی)، پس از آن امتیاز کل.
+  const metricOf = (t: TeamResult) => (closed ? t.total : t.supporters);
+  const metricLabel = closed ? "امتیاز کل" : "تعداد حامی";
 
   const ranked = closed
     ? [...output.teams].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
-    : [...output.teams].sort((a, b) => b.netSales - a.netSales || b.hearts - a.hearts);
+    : [...output.teams].sort((a, b) => b.supporters - a.supporters || b.coinsReceived - a.coinsReceived);
 
   const topTeams: HallTeam[] = ranked.slice(0, TOP_TEAMS_COUNT).map((t) => {
     const team = teamMap.get(t.teamId);

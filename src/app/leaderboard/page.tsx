@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getPhase } from "@/lib/phase";
 import { getCurrentUser } from "@/lib/auth";
-import { computeScoresCached, topInvestors } from "@/lib/scoring";
+import { computeScoresCached } from "@/lib/scoring";
 import { getSettledAt, loadSettledOutput } from "@/lib/settlement";
 import type { TeamResult } from "@/lib/economy/types";
 import { SCORE_WEIGHTS } from "@/lib/constants";
@@ -13,41 +13,40 @@ import Link from "next/link";
 
 export const metadata = { title: "جدول امتیازات" };
 
+type TeamInfo = { name: string; slug: string; logoSeed: string };
+
 export default async function LeaderboardPage() {
-  // پس از تسویهٔ نهایی، امتیازهای ثبت‌شده ملاک است تا جدول با نتایج پرداخت‌شده یکی باشد.
+  // پس از ثبت نهایی، امتیازهای ثبت‌شده ملاک است تا جدول با نتایج یکی باشد.
   const settledAt = await getSettledAt();
-  const [{ phase }, output, teams, users, viewer] = await Promise.all([
+  const [{ phase }, output, teams, viewer] = await Promise.all([
     getPhase(),
     settledAt ? loadSettledOutput() : computeScoresCached(),
     prisma.team.findMany({ select: { id: true, name: true, slug: true, logoSeed: true } }),
-    prisma.user.findMany({ select: { id: true, nickname: true, avatarSeed: true } }),
     getCurrentUser(),
   ]);
 
-  const teamMap = new Map(teams.map((t) => [t.id, t]));
-  const userMap = new Map(users.map((u) => [u.id, u]));
+  const teamMap = new Map<string, TeamInfo>(teams.map((t) => [t.id, t]));
   const closed = phase === "CLOSED";
 
-  // معیار نمایشی: پیش از پایان بازی فروش خالص (عمومی)، پس از آن امتیاز کل نهایی.
-  const metricOf = (t: TeamResult) => (closed ? t.total : t.netSales);
-  const metricLabel = closed ? "امتیاز کل" : "فروش خالص";
+  // معیار نمایشی: پیش از پایان بازی فقط تعداد حامی (عمومی)، پس از آن امتیاز کل نهایی — همان قاعدهٔ سالن (src/lib/hall.ts).
+  const metricOf = (t: TeamResult) => (closed ? t.total : t.supporters);
+  const metricLabel = closed ? "امتیاز کل" : "تعداد حامی";
+  const deltaUnit = closed ? "امتیاز" : "حامی";
 
-  // پیش از پایان بازی حتی ترتیب رتبه هم نباید لو برود؛ فهرست بر اساس فروش خالص مرتب می‌شود.
+  // پیش از پایان بازی ترتیب رتبه نباید لو برود؛ فهرست بر اساس تعداد حامی (و بعد سکهٔ دریافتی) مرتب می‌شود.
   const ranked = closed
     ? [...output.teams].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
-    : [...output.teams].sort((a, b) => b.netSales - a.netSales || b.hearts - a.hearts);
+    : [...output.teams].sort((a, b) => b.supporters - a.supporters || b.coinsReceived - a.coinsReceived);
   const podium = ranked.slice(0, 3);
-  // تا وقتی هیچ تیمی امتیاز/فروشی ندارد، مدال و «نزدیک‌ترین رقیب» معنایی ندارد.
+  // تا وقتی هیچ تیمی امتیاز/حامی ندارد، مدال و «نزدیک‌ترین رقیب» معنایی ندارد.
   const noScores = ranked.length > 0 && ranked.every((t) => metricOf(t) === 0);
-  const investors = closed ? topInvestors(output).filter((i) => i.invested > 0).slice(0, 10) : [];
 
   const ownTeamId = viewer?.teamId ?? null;
   const ownIndex = ownTeamId ? ranked.findIndex((t) => t.teamId === ownTeamId) : -1;
-  let nearestRival: { team?: { name: string; slug: string; logoSeed: string }; delta: number; ahead: boolean } | null = null;
+  let nearestRival: { team?: TeamInfo; delta: number; ahead: boolean } | null = null;
   if (ownIndex >= 0 && !noScores) {
-    const own = ranked[ownIndex];
-    const ownMetric = metricOf(own);
-    let best: { t: (typeof ranked)[number]; delta: number } | null = null;
+    const ownMetric = metricOf(ranked[ownIndex]);
+    let best: { t: TeamResult; delta: number } | null = null;
     for (const t of ranked) {
       if (t.teamId === ownTeamId) continue;
       const delta = Math.abs(metricOf(t) - ownMetric);
@@ -62,16 +61,27 @@ export default async function LeaderboardPage() {
     <>
       <PageHeader eyebrow="جدول" title="جدول امتیازات میدان" desc={closed ? "نتیجهٔ نهایی مسابقه." : "وضعیت زندهٔ تیم‌ها تا پیش از پایان بازی."} />
       <Container className="space-y-10">
-        {!closed && (
+        {closed ? (
           <Alert kind="info">
-            امتیاز کلی و رتبهٔ نهایی تا پایان بازی (فاز «پایان بازی») پنهان است؛ فقط فروش، سرمایه و قلب‌های فعلی نمایش داده می‌شود.
+            🏆 جوایز و گزارش کامل هر تیم در{" "}
+            <Link href="/results" className="font-bold underline underline-offset-2">
+              صفحهٔ نتایج
+            </Link>
+            .
+          </Alert>
+        ) : (
+          <Alert kind="info">
+            امتیاز کل و رتبهٔ نهایی تا «پایان بازی» پنهان است؛ تا آن موقع فقط تعداد حامی هر تیم نمایش داده می‌شود (هر کسی که با حمایت از
+            ایده، خرید محصول یا برد حراج به پروژه سکه داده).
           </Alert>
         )}
 
         {noScores && (
           <div className="card p-6 text-center anim-rise">
             <div className="font-black text-brand-navy">هنوز رقابت شروع نشده</div>
-            <p className="mt-1 text-sm text-brand-slate">هنوز هیچ تیمی {metricLabel} ثبت نکرده است؛ با اولین امتیازها سکوی برترها اینجا ظاهر می‌شود.</p>
+            <p className="mt-1 text-sm text-brand-slate">
+              {closed ? "هنوز امتیازی ثبت نشده است." : "هنوز هیچ تیمی حامی ندارد؛ با اولین حمایت‌ها سکوی برترها اینجا ظاهر می‌شود."}
+            </p>
           </div>
         )}
 
@@ -107,7 +117,7 @@ export default async function LeaderboardPage() {
                 <Avatar seed={nearestRival.team?.logoSeed || "?"} size={24} />
                 <span className="font-bold text-brand-navy">{nearestRival.team?.name ?? "—"}</span>
                 <span className={`font-black fa-num ${nearestRival.ahead ? "text-brand-red" : "text-emerald-700"}`}>
-                  {nearestRival.ahead ? `${fa(Math.round(nearestRival.delta))} جلوتر` : `${fa(Math.round(nearestRival.delta))} عقب‌تر`}
+                  {fa(Math.round(nearestRival.delta))} {deltaUnit} {nearestRival.ahead ? "جلوتر" : "عقب‌تر"}
                 </span>
               </div>
             )}
@@ -126,50 +136,57 @@ export default async function LeaderboardPage() {
                 return (
                   <div key={t.teamId} className={`card p-4 space-y-2 anim-rise ${isOwn ? "ring-2 ring-brand-red" : ""}`}>
                     <div className="flex items-center justify-between gap-2">
-                      <Link href={team ? `/market/${team.slug}` : "#"} className="flex items-center gap-2 font-bold text-brand-navy hover:text-brand-cyan-dark min-w-0">
-                        <Avatar seed={team?.logoSeed || t.teamId} size={28} />
-                        <span className="truncate">{team?.name ?? "—"}</span>
-                      </Link>
+                      <TeamLink team={team} teamId={t.teamId} />
                       <div className="flex items-center gap-1.5 shrink-0">
-                        {isOwn && <span className="chip-red fa-num">تیم تو</span>}
+                        {isOwn && <span className="chip-red">تیم تو</span>}
                         {closed && <span className="chip-navy fa-num">رتبه {fa(t.rank ?? 0)}</span>}
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-brand-slate">
-                      <div>فروش خالص: <span className="fa-num font-bold text-brand-navy">{fa(t.netSales)}</span></div>
-                      <div>سرمایهٔ خارجی: <span className="fa-num font-bold text-brand-navy">{fa(t.externalCapital)}</span></div>
-                      <div>قلب‌ها: <span className="fa-num font-bold text-brand-navy">{fa(t.hearts)}</span></div>
-                      {closed && (
-                        <>
-                          <div>بازده سرمایه‌گذار: <span className="fa-num font-bold text-brand-navy">{fa(Math.round(t.investorRoi * 100))}٪</span></div>
-                          <div>کیفیت: <span className="fa-num font-bold text-brand-navy">{fa(Math.round(t.quality))}</span></div>
-                          <div>جریمه: <span className="fa-num font-bold text-brand-red">{fa(Math.round(t.unspentPenalty))}</span></div>
-                          <div>امتیاز کل: <span className="fa-num font-black text-brand-navy">{fa(Math.round(t.total))}</span></div>
-                        </>
-                      )}
-                    </div>
+                    {closed ? (
+                      <div className="grid grid-cols-2 gap-2 text-xs text-brand-slate">
+                        {SCORE_CATEGORY_ORDER.map((k) => (
+                          <div key={k}>
+                            {SCORE_CATEGORY_LABELS[k].label}:{" "}
+                            <span className="fa-num font-bold text-brand-navy">{fa(Math.round(t.pts[k]))}</span>
+                          </div>
+                        ))}
+                        <div>
+                          کسر تقلب: <span className={`fa-num font-bold ${t.cheatPenalty > 0 ? "text-brand-red" : "text-brand-navy"}`}>{t.cheatPenalty > 0 ? `−${fa(t.cheatPenalty)}` : "—"}</span>
+                        </div>
+                        <div className="col-span-2">
+                          امتیاز کل: <span className="fa-num font-black text-brand-navy">{fa(Math.round(t.total))}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-brand-slate">
+                        تعداد حامی: <span className="fa-num font-black text-brand-navy">{fa(t.supporters)}</span>
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
 
             <div className="hidden md:block card overflow-x-auto anim-rise">
-              <table className="w-full text-sm min-w-[640px]">
+              <table className={`w-full text-sm ${closed ? "min-w-[720px]" : ""}`}>
                 <caption className="sr-only">جدول امتیازات تیم‌ها</caption>
                 <thead>
                   <tr className="text-right text-brand-slate border-b border-brand-mist">
                     {closed && <th scope="col" className="px-4 py-3 font-bold">رتبه</th>}
                     <th scope="col" className="px-4 py-3 font-bold">تیم</th>
-                    <th scope="col" className="px-4 py-3 font-bold">فروش خالص</th>
-                    <th scope="col" className="px-4 py-3 font-bold">سرمایهٔ خارجی</th>
-                    <th scope="col" className="px-4 py-3 font-bold">قلب‌ها</th>
-                    {closed && (
+                    {closed ? (
                       <>
-                        <th scope="col" className="px-4 py-3 font-bold">بازده سرمایه‌گذار</th>
-                        <th scope="col" className="px-4 py-3 font-bold">کیفیت</th>
-                        <th scope="col" className="px-4 py-3 font-bold">جریمه</th>
+                        {SCORE_CATEGORY_ORDER.map((k) => (
+                          <th key={k} scope="col" className="px-4 py-3 font-bold whitespace-nowrap">
+                            <span aria-hidden>{SCORE_CATEGORY_LABELS[k].emoji}</span> {SCORE_CATEGORY_LABELS[k].label}{" "}
+                            <span className="font-normal fa-num">({fa(SCORE_WEIGHTS[k])})</span>
+                          </th>
+                        ))}
+                        <th scope="col" className="px-4 py-3 font-bold">کسر تقلب</th>
                         <th scope="col" className="px-4 py-3 font-bold">امتیاز کل</th>
                       </>
+                    ) : (
+                      <th scope="col" className="px-4 py-3 font-bold">تعداد حامی</th>
                     )}
                   </tr>
                 </thead>
@@ -181,22 +198,26 @@ export default async function LeaderboardPage() {
                       <tr key={t.teamId} className={`border-b border-brand-mist last:border-0 ${isOwn ? "bg-brand-ice" : ""}`}>
                         {closed && <td className="px-4 py-3 font-black fa-num text-brand-navy">{fa(t.rank ?? 0)}</td>}
                         <td className="px-4 py-3">
-                          <Link href={team ? `/market/${team.slug}` : "#"} className="flex items-center gap-2 font-bold text-brand-navy hover:text-brand-cyan-dark">
-                            <Avatar seed={team?.logoSeed || t.teamId} size={28} />
-                            {team?.name ?? "—"}
+                          <div className="flex items-center gap-2">
+                            <TeamLink team={team} teamId={t.teamId} />
                             {isOwn && <span className="chip-red !text-[11px]">تیم تو</span>}
-                          </Link>
+                          </div>
                         </td>
-                        <td className="px-4 py-3 fa-num">{fa(t.netSales)}</td>
-                        <td className="px-4 py-3 fa-num">{fa(t.externalCapital)}</td>
-                        <td className="px-4 py-3 fa-num">{fa(t.hearts)}</td>
-                        {closed && (
+                        {closed ? (
                           <>
-                            <td className="px-4 py-3 fa-num">{fa(Math.round(t.investorRoi * 100))}٪</td>
-                            <td className="px-4 py-3 fa-num">{fa(Math.round(t.quality))}</td>
-                            <td className="px-4 py-3 fa-num text-brand-red">{fa(Math.round(t.unspentPenalty))}</td>
+                            {SCORE_CATEGORY_ORDER.map((k) => (
+                              <td key={k} className="px-4 py-3 fa-num">
+                                {fa(Math.round(t.pts[k]))}
+                                {k === "people" && <span className="block text-xs text-brand-slate">{fa(t.supporters)} حامی</span>}
+                              </td>
+                            ))}
+                            <td className={`px-4 py-3 fa-num ${t.cheatPenalty > 0 ? "text-brand-red font-bold" : "text-brand-slate"}`}>
+                              {t.cheatPenalty > 0 ? `−${fa(t.cheatPenalty)}` : "—"}
+                            </td>
                             <td className="px-4 py-3 font-black fa-num text-brand-navy">{fa(Math.round(t.total))}</td>
                           </>
+                        ) : (
+                          <td className="px-4 py-3 fa-num font-bold text-brand-navy">{fa(t.supporters)}</td>
                         )}
                       </tr>
                     );
@@ -206,90 +227,17 @@ export default async function LeaderboardPage() {
             </div>
           </>
         )}
-
-        {closed && (
-          <section>
-            <h2 className="text-lg font-black text-brand-navy mb-3">ریزامتیاز تیم‌ها</h2>
-            <div className="space-y-2.5 stagger">
-              {ranked.map((t) => {
-                const team = teamMap.get(t.teamId);
-                return (
-                  <details key={t.teamId} className="card p-4 group">
-                    <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
-                      <span className="flex items-center gap-2 min-w-0 font-bold text-brand-navy">
-                        <Avatar seed={team?.logoSeed || t.teamId} size={26} />
-                        <span className="truncate">{team?.name ?? "—"}</span>
-                      </span>
-                      <span className="flex items-center gap-3 shrink-0">
-                        <span className="fa-num font-black text-brand-navy">{fa(Math.round(t.total))}</span>
-                        <span className="text-brand-cyan-dark group-open:rotate-45 transition-transform">＋</span>
-                      </span>
-                    </summary>
-                    <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {SCORE_CATEGORY_ORDER.map((k) => (
-                        <div key={k} className="rounded-xl bg-brand-ice px-3 py-2 text-xs">
-                          <div className="text-brand-slate">
-                            {SCORE_CATEGORY_LABELS[k].emoji} {SCORE_CATEGORY_LABELS[k].label}
-                          </div>
-                          <div className="fa-num font-black text-brand-navy">
-                            {fa(Math.round(t.pts[k]))} <span className="font-normal text-brand-slate">/ {fa(SCORE_WEIGHTS[k])}</span>
-                          </div>
-                        </div>
-                      ))}
-                      <div className="rounded-xl bg-red-50 px-3 py-2 text-xs">
-                        <div className="text-brand-red">جریمهٔ خرج‌نشده</div>
-                        <div className="fa-num font-black text-brand-red">−{fa(Math.round(t.unspentPenalty))}</div>
-                      </div>
-                    </div>
-                  </details>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {closed && (
-          <section>
-            <h2 className="text-lg font-black text-brand-navy mb-3">سرمایه‌گذاران برتر</h2>
-            {investors.length === 0 ? (
-              <Empty title="سرمایه‌گذاری خارجی ثبت نشد" />
-            ) : (
-              <div className="card overflow-x-auto anim-rise">
-                <table className="w-full text-sm min-w-[480px]">
-                <caption className="sr-only">سرمایه‌گذاران برتر</caption>
-                  <thead>
-                    <tr className="text-right text-brand-slate border-b border-brand-mist">
-                      <th scope="col" className="px-4 py-3 font-bold">سرمایه‌گذار</th>
-                      <th scope="col" className="px-4 py-3 font-bold">مجموع سرمایه‌گذاری</th>
-                      <th scope="col" className="px-4 py-3 font-bold">مجموع سود</th>
-                      <th scope="col" className="px-4 py-3 font-bold">بازده سرمایه‌گذار</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {investors.map((inv) => {
-                      const u = userMap.get(inv.userId);
-                      return (
-                        <tr key={inv.userId} className="border-b border-brand-mist last:border-0">
-                          <td className="px-4 py-3 font-bold text-brand-navy">
-                            <span className="flex items-center gap-2">
-                              <Avatar seed={u?.avatarSeed || inv.userId} size={26} />
-                              {u?.nickname ?? "—"}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 fa-num">{fa(inv.invested)}</td>
-                          <td className="px-4 py-3 fa-num">{fa(inv.dividend)}</td>
-                          <td className="px-4 py-3 font-black fa-num text-emerald-700">{fa(Math.round(inv.roi * 100))}٪</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        )}
       </Container>
     </>
+  );
+}
+
+function TeamLink({ team, teamId }: { team?: TeamInfo; teamId: string }) {
+  return (
+    <Link href={team ? `/market/${team.slug}` : "#"} className="flex items-center gap-2 font-bold text-brand-navy hover:text-brand-cyan-dark min-w-0">
+      <Avatar seed={team?.logoSeed || teamId} size={28} />
+      <span className="truncate">{team?.name ?? "—"}</span>
+    </Link>
   );
 }
 
@@ -301,7 +249,7 @@ function PodiumCard({
   tall,
 }: {
   rank: number;
-  team?: { name: string; slug: string; logoSeed: string };
+  team?: TeamInfo;
   value: number;
   metricLabel: string;
   tall?: boolean;

@@ -3,6 +3,8 @@ import { fa } from "@/lib/persian";
 import type { ChecklistItem } from "@/lib/product";
 import { checklistProgress } from "@/lib/product";
 import { Alert } from "@/components/ui";
+import { AiTag } from "@/components/AiTag";
+import { productAiTag } from "@/lib/ai-tag";
 import { UnsubmitButton } from "./UnsubmitButton";
 import { ChecklistLink } from "./ChecklistLink";
 
@@ -52,6 +54,7 @@ export function ChecklistCard({
   aiNotes: string | null;
 }) {
   const progress = checklistProgress(checklist);
+  const aiTag = productAiTag({ aiQuality, aiNotes });
   return (
     <div className="card p-5 space-y-4 anim-rise lg:sticky lg:top-20">
       <div className="flex items-center gap-4">
@@ -82,11 +85,15 @@ export function ChecklistCard({
         <Alert kind="ok">محصول ثبت نهایی شده است.{editable ? " تا پایان فاز ساخت می‌توانی برای ویرایش دوباره آن را باز کنی." : ""}</Alert>
       )}
 
-      {(aiQuality !== null || aiNotes) && (
-        <div className="rounded-2xl bg-brand-ice p-4 space-y-1">
-          <div className="text-xs font-bold text-brand-cyan-dark">پیش‌نمرهٔ هوش مصنوعی</div>
+      {(aiTag || aiNotes) && (
+        <div className="rounded-2xl bg-brand-ice p-4 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-bold text-brand-cyan-dark">داوری هوش مصنوعی</div>
+            <AiTag tag={aiTag} compact />
+          </div>
           {aiQuality !== null && <div className="text-2xl font-black text-brand-navy fa-num">{fa(aiQuality)} / ۱۰۰</div>}
           {aiNotes && <p className="text-xs text-brand-slate leading-6 whitespace-pre-line break-words">{aiNotes}</p>}
+          <p className="text-[11px] text-brand-slate">این نمره جدا از داوری انسانی است.</p>
         </div>
       )}
 

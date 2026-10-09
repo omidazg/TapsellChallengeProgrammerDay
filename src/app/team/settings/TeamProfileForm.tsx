@@ -5,7 +5,7 @@ import { Alert } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { updateTeamSettingsAction } from "./actions";
 
-/** نام و نشان تیم — فقط برای سرپرست */
+/** نام و نشان تیم — هر عضو تیم می‌تواند تغییر دهد */
 export function TeamProfileForm({ name: initialName, logoSeed }: { name: string; logoSeed: string }) {
   const [name, setName] = useState(initialName);
   const [error, setError] = useState<string | null>(null);

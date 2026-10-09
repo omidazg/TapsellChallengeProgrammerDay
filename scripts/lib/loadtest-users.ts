@@ -66,10 +66,16 @@ async function createUsers(count: number, out: string) {
   requireEnv("DATABASE_URL");
   const sessionSecret = requireEnv("SESSION_SECRET");
   const { prisma } = await import("../../src/lib/db");
+  const { DEFAULTS } = await import("../../src/lib/constants");
   const secretKey = new TextEncoder().encode(sessionSecret);
 
   // هزینهٔ bcrypt پایین (۴) عمداً است: رمزها هرگز استفاده نمی‌شوند، فقط سرعت ساخت مهم است.
   const passwordHash = await bcrypt.hash(`loadtest-${Date.now()}`, 4);
+
+  // یک کیف سکهٔ واحد با سکهٔ اولیهٔ starting_coins، مثل ثبت‌نام (src/app/register/actions.ts)
+  const startingRow = await prisma.setting.findUnique({ where: { key: "starting_coins" } });
+  const parsedStarting = parseInt(startingRow?.value ?? "", 10);
+  const startingCoins = Number.isFinite(parsedStarting) && parsedStarting >= 0 ? parsedStarting : DEFAULTS.startingCoins;
 
   const cookies: { n: number; email: string; userId: string; cookie: string }[] = [];
   try {
@@ -83,8 +89,10 @@ async function createUsers(count: number, out: string) {
           passwordHash,
           nickname: `بار-تست ${n}`,
           role: "DEALMAKER",
-          power: "HYPE",
+          power: "", // ستون قدیمی؛ قدرت‌ها از بازی حذف شده‌اند
           avatarSeed: `loadtest-${n}`,
+          seedWallet: 0,
+          buyWallet: startingCoins,
         },
         select: { id: true },
       });
@@ -131,7 +139,10 @@ async function cleanup() {
     await prisma.investment.deleteMany({ where });
     await prisma.dueDiligenceMessage.deleteMany({ where });
     await prisma.ledgerEntry.deleteMany({ where });
+    await prisma.coinOrder.deleteMany({ where });
     await prisma.teamInvite.deleteMany({ where: { inviterId: { in: ids } } });
+    // رأی‌های قدیمی سرپرست (بدون FK؛ فقط برای تمیزی)
+    await prisma.teamLeaderVote.deleteMany({ where: { voterId: { in: ids } } });
 
     const { count } = await prisma.user.deleteMany({ where: { id: { in: ids } } });
     console.log(`${count} کاربر تست‌بار حذف شد.`);

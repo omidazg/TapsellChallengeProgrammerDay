@@ -8,7 +8,9 @@ export * from "./phases";
 export async function getPhase(): Promise<{ phase: Phase; endsAt: Date | null }> {
   const rows = await prisma.setting.findMany({ where: { key: { in: ["phase", "phase_ends_at"] } } });
   const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  const phase = (PHASES as readonly string[]).includes(map.phase) ? (map.phase as Phase) : "REGISTRATION";
+  // «AUCTION» فاز قدیمی است (حراج حالا داخل روز بازار است) و معادل MARKET خوانده می‌شود.
+  const stored = map.phase === "AUCTION" ? "MARKET" : map.phase;
+  const phase = (PHASES as readonly string[]).includes(stored) ? (stored as Phase) : "REGISTRATION";
   const endsAt = map.phase_ends_at ? new Date(map.phase_ends_at) : null;
   return { phase, endsAt };
 }
@@ -33,7 +35,7 @@ export async function getSettingInt(key: string, fallback: number) {
   const n = parseInt(v, 10);
   return Number.isFinite(n) ? n : fallback;
 }
-/** برای مقادیر اعشاری مثل penalty_per_coin */
+/** برای مقادیر اعشاری */
 export async function getSettingFloat(key: string, fallback: number) {
   const v = await getSetting(key, String(fallback));
   const n = parseFloat(v);

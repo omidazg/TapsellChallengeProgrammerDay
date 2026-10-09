@@ -31,7 +31,7 @@ const PAD_BOTTOM = 36;
 
 type Metric = "sales" | "capital";
 
-/** نمودار خطی SVG روند فروش/سرمایه — بدون وابستگی به کتابخانهٔ نمودار.
+/** نمودار خطی SVG روند فروش/حمایت — بدون وابستگی به کتابخانهٔ نمودار.
  * توجه: با اینکه صفحه RTL است، محور زمان همیشه از چپ به راست پیش می‌رود (قرارداد متعارف نمودارهای زمانی)؛
  * فقط متن‌ها (برچسب‌ها، عنوان) فارسی و راست‌به‌چپ می‌مانند.
  */
@@ -59,7 +59,7 @@ export function TrendChart({ bucketEndsAt, teams }: TrendChartProps) {
   // فقط چند برچسب زمانی (نه همهٔ سطل‌ها) تا محور شلوغ نشود
   const xTickIdx = n <= 1 ? [] : [0, Math.floor((n - 1) / 2), n - 1];
 
-  const metricLabel = metric === "sales" ? "فروش" : "سرمایهٔ جذب‌شده";
+  const metricLabel = metric === "sales" ? "فروش" : "حمایت جذب‌شده";
 
   if (n === 0 || series.length === 0) {
     return (
@@ -88,7 +88,7 @@ export function TrendChart({ bucketEndsAt, teams }: TrendChartProps) {
             onClick={() => setMetric("capital")}
             className={`px-3 py-1.5 rounded-full transition ${metric === "capital" ? "bg-brand-navy text-white" : "text-brand-slate"}`}
           >
-            سرمایه
+            حمایت
           </button>
         </div>
       </div>

@@ -21,33 +21,48 @@ export async function getAdminCounts() {
 }
 
 export const SETTING_KEYS = [
-  "seed_wallet",
-  "buy_wallet",
-  "max_per_target",
-  "penalty_per_coin",
+  "starting_coins",
+  "support_cap",
+  "solo_boost_pct",
+  "duo_boost_pct",
+  "max_bought_coins_per_user",
   "bid_increment",
   "auction_duration_sec",
+  "adslot_price_banner",
+  "adslot_price_featured",
+  "adslot_price_push",
+  "adslot_max_per_team",
   "market_starts_at",
 ] as const;
 export type SettingKey = (typeof SETTING_KEYS)[number];
 
 export const SETTING_LABELS: Record<SettingKey, string> = {
-  seed_wallet: "کیف بذر اولیه",
-  buy_wallet: "کیف خرید اولیه",
-  max_per_target: "سقف سرمایه‌گذاری/خرید روی یک هدف",
-  penalty_per_coin: "جریمهٔ هر سکهٔ خرج‌نشده",
+  starting_coins: "سکهٔ رایگان اولیهٔ هر نفر",
+  support_cap: "سقف اثر هر نفر روی حمایت مردمی یک پروژه (سکه)",
+  solo_boost_pct: "جبران داوری تیم یک‌نفره (درصد)",
+  duo_boost_pct: "جبران داوری تیم دونفره (درصد)",
+  max_bought_coins_per_user: "سقف خرید سکه برای هر نفر",
   bid_increment: "حداقل افزایش پیشنهاد حراج",
   auction_duration_sec: "مدت هر حراج (ثانیه)",
+  adslot_price_banner: "قیمت یک ساعت بنر بالای بازار (سکه)",
+  adslot_price_featured: "قیمت یک ساعت کارت محصول ویژه (سکه)",
+  adslot_price_push: "قیمت اعلان به همه (سکه)",
+  adslot_max_per_team: "سقف جایگاه تبلیغاتی هر تیم",
   market_starts_at: "زمان شروع روز بازار",
 };
 
 const SETTING_DEFAULTS: Record<SettingKey, string> = {
-  seed_wallet: String(DEFAULTS.seedWallet),
-  buy_wallet: String(DEFAULTS.buyWallet),
-  max_per_target: String(DEFAULTS.maxPerTarget),
-  penalty_per_coin: String(DEFAULTS.penaltyPerCoin),
+  starting_coins: String(DEFAULTS.startingCoins),
+  support_cap: String(DEFAULTS.supportCap),
+  solo_boost_pct: String(DEFAULTS.soloBoostPct),
+  duo_boost_pct: String(DEFAULTS.duoBoostPct),
+  max_bought_coins_per_user: String(DEFAULTS.maxBoughtCoinsPerUser),
   bid_increment: String(DEFAULTS.bidIncrement),
   auction_duration_sec: String(DEFAULTS.auctionDurationSec),
+  adslot_price_banner: String(DEFAULTS.adslotPriceBanner),
+  adslot_price_featured: String(DEFAULTS.adslotPriceFeatured),
+  adslot_price_push: String(DEFAULTS.adslotPricePush),
+  adslot_max_per_team: String(DEFAULTS.adslotMaxPerTeam),
   market_starts_at: "",
 };
 
@@ -78,19 +93,17 @@ export const SCHEDULER_SETTING_KEYS = [
   "phase_hours_SEED_ROUND",
   "phase_hours_BUILD",
   "phase_hours_MARKET",
-  "phase_hours_AUCTION",
 ] as const;
 export type SchedulerSettingKey = (typeof SCHEDULER_SETTING_KEYS)[number];
 
 export const SCHEDULER_SETTING_LABELS: Record<SchedulerSettingKey, string> = {
   auto_advance: "پیشروی خودکار فاز",
-  auto_auction: "شروع خودکار حراج بعدی",
+  auto_auction: "شروع خودکار حراج بعدیِ صف (در روز بازار)",
   auction_gap_sec: "فاصلهٔ شروع حراج بعدی (ثانیه)",
   phase_hours_IDEATION: "مدت فاز اتاق ایده (ساعت)",
-  phase_hours_SEED_ROUND: "مدت فاز دور سرمایه‌گذاری (ساعت)",
+  phase_hours_SEED_ROUND: "مدت فاز دور حمایت (ساعت)",
   phase_hours_BUILD: "مدت فاز ساخت (ساعت)",
   phase_hours_MARKET: "مدت فاز روز بازار (ساعت)",
-  phase_hours_AUCTION: "مدت فاز حراج زنده (ساعت)",
 };
 
 export const SCHEDULER_SETTING_KINDS: Record<SchedulerSettingKey, "boolean" | "number"> = {
@@ -101,18 +114,16 @@ export const SCHEDULER_SETTING_KINDS: Record<SchedulerSettingKey, "boolean" | "n
   phase_hours_SEED_ROUND: "number",
   phase_hours_BUILD: "number",
   phase_hours_MARKET: "number",
-  phase_hours_AUCTION: "number",
 };
 
 const SCHEDULER_SETTING_DEFAULTS: Record<SchedulerSettingKey, string> = {
   auto_advance: "0",
-  auto_auction: "0",
+  auto_auction: "1",
   auction_gap_sec: "60",
   phase_hours_IDEATION: "24",
   phase_hours_SEED_ROUND: "24",
   phase_hours_BUILD: "48",
-  phase_hours_MARKET: "6",
-  phase_hours_AUCTION: "2",
+  phase_hours_MARKET: "8",
 };
 
 /** مقادیر جاری تنظیمات زمان‌بند، با مقدار پیش‌فرض در نبود ردیف */
@@ -132,7 +143,7 @@ export interface CollusionCandidate {
 }
 
 /**
- * تشخیص خرید/سرمایه‌گذاری متقابل مشکوک بین تیم‌ها و ثبت/به‌روزرسانی پرچم برای هر جفت مشکوک.
+ * تشخیص خرید/حمایت متقابل مشکوک بین تیم‌ها و ثبت/به‌روزرسانی پرچم برای هر جفت مشکوک.
  *
  * هم خریدهای بازار و هم سرمایه‌گذاری‌های بیرونی (غیر خودتأمین — از وقتی خودتأمینی
  * ممنوع شده، عملاً همهٔ سرمایه‌گذاری‌ها بیرونی‌اند) را به‌عنوان «جریان خرج از تیم A
@@ -195,7 +206,7 @@ export async function detectAndFlagCollusion() {
           otherTeamId: c.otherTeamId,
           amountAB: c.amountAB,
           amountBA: c.amountBA,
-          note: "خرید/سرمایه‌گذاری متقابل مشکوک بین دو تیم",
+          note: "خرید/حمایت متقابل مشکوک بین دو تیم",
         },
       });
     }

@@ -11,9 +11,10 @@ import {
   declineInvite,
   leaveTeam,
   joinBySlug,
+  goSolo,
+  openSoloTeam,
   type TeamResult,
 } from "@/lib/team";
-import { castLeaderVote, withdrawLeaderVote, type VoteResult } from "@/lib/leader";
 
 /** پس از هر تغییر عضویت، صفحه‌هایی که ترکیب تیم را نشان می‌دهند تازه می‌شوند */
 function revalidate(res: TeamResult) {
@@ -70,17 +71,14 @@ export async function joinBySlugAction(slug: string): Promise<TeamResult | never
   return res;
 }
 
-/** رأی به سرپرست تیم (یا تغییر رأی تا پیش از انتخاب) */
-export async function castLeaderVoteAction(candidateId: string): Promise<VoteResult> {
+/** شرکت فردی: تیم یک‌نفرهٔ بسته (یا بستن تیمِ یک‌نفرهٔ فعلی) */
+export async function goSoloAction(): Promise<TeamResult> {
   const user = await requireUser();
-  const res = await castLeaderVote(user.id, String(candidateId ?? ""));
-  if (res.ok) revalidatePath("/team");
-  return res;
+  return revalidate(await goSolo(user.id));
 }
 
-export async function withdrawLeaderVoteAction(): Promise<VoteResult> {
+/** باز کردن تیم فردی برای پذیرفتن هم‌تیمی */
+export async function openSoloTeamAction(): Promise<TeamResult> {
   const user = await requireUser();
-  const res = await withdrawLeaderVote(user.id);
-  if (res.ok) revalidatePath("/team");
-  return res;
+  return revalidate(await openSoloTeam(user.id));
 }

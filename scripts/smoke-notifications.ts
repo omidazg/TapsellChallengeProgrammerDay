@@ -50,7 +50,7 @@ async function main() {
         passwordHash: await hashPassword("secret123"),
         nickname: `آزمون ${n}`,
         role: "BUILDER",
-        power: "HYPE",
+        power: "",
       },
     });
   }

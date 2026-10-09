@@ -30,7 +30,6 @@ export async function toggleAdminAction(prevState: UsersActionState, formData: F
 
 const adjustSchema = z.object({
   userId: z.string().min(1),
-  wallet: z.enum(["SEED", "BUY"]),
   amount: z.coerce
     .number({ error: "مقدار سکه باید عدد صحیح باشد" })
     .int("مقدار سکه باید عدد صحیح باشد")
@@ -39,34 +38,32 @@ const adjustSchema = z.object({
     .refine((n) => n !== 0, "مقدار نباید صفر باشد"),
 });
 
-/** افزودن/کسر سکه با ثبت در دفتر کل با دلیل ADMIN */
+/** افزودن/کسر سکه از کیف سکهٔ کاربر (buyWallet) با ثبت در دفتر کل: کیف BUY، دلیل ADMIN */
 export async function adjustWalletAction(prevState: UsersActionState, formData: FormData): Promise<UsersActionState> {
   const me = await requireAdmin();
   const parsed = adjustSchema.safeParse({
     userId: formData.get("userId"),
-    wallet: formData.get("wallet"),
     amount: formData.get("amount"),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "ورودی نامعتبر است" };
 
-  const { userId, wallet, amount } = parsed.data;
-  const field = wallet === "SEED" ? "seedWallet" : "buyWallet";
+  const { userId, amount } = parsed.data;
 
   // کسر شرطی: موجودی کیف هرگز منفی نمی‌شود (شرط gte در همان به‌روزرسانی، بدون مسابقه).
   const result = await prisma.$transaction(async (tx) => {
     const updated = await tx.user.updateMany({
-      where: { id: userId, ...(amount < 0 ? { [field]: { gte: -amount } } : {}) },
-      data: { [field]: { increment: amount } },
+      where: { id: userId, ...(amount < 0 ? { buyWallet: { gte: -amount } } : {}) },
+      data: { buyWallet: { increment: amount } },
     });
     if (updated.count === 0) return false;
-    await tx.ledgerEntry.create({ data: { userId, wallet, delta: amount, reason: "ADMIN" } });
+    await tx.ledgerEntry.create({ data: { userId, wallet: "BUY", delta: amount, reason: "ADMIN" } });
     return true;
   });
   if (!result) {
     const exists = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
-    return { error: exists ? "موجودی کیف برای این کسر کافی نیست" : "کاربر پیدا نشد" };
+    return { error: exists ? "سکهٔ کیف برای این کسر کافی نیست" : "کاربر پیدا نشد" };
   }
-  await audit(me.id, "user.adjust_wallet", userId, { wallet, amount });
+  await audit(me.id, "user.adjust_wallet", userId, { wallet: "BUY", amount });
 
   revalidatePath("/admin/users");
   revalidatePath("/wallet");

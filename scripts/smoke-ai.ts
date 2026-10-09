@@ -116,7 +116,7 @@ async function main() {
     const team = await prisma.team.create({ data: { name: `${tag}_team`, slug: `${tag}-team` } });
     createdTeamIds.push(team.id);
     const user = await prisma.user.create({
-      data: { email: `${tag}@example.test`, passwordHash: "x", nickname: "کاربر آزمایشی", role: "DEALMAKER", power: "HYPE", teamId: team.id },
+      data: { email: `${tag}@example.test`, passwordHash: "x", nickname: "کاربر آزمایشی", role: "DEALMAKER", power: "", teamId: team.id },
     });
     createdUserIds.push(user.id);
     const idea = await prisma.idea.create({
@@ -127,8 +127,8 @@ async function main() {
         problem: "مسئلهٔ اولیه",
         audience: "مخاطب",
         buildPlan: "برنامهٔ ساخت",
-        fundingCap: 100,
-        revenueShare: 30,
+        fundingCap: 0,
+        revenueShare: 0,
         submittedAt: new Date(),
       },
     });

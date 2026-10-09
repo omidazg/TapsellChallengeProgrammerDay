@@ -28,7 +28,7 @@ export function DueDiligenceChat({
   ideaId: string;
   chats: ChatRow[];
   aiOff?: boolean;
-  /** پس از پایان دور سرمایه‌گذاری پرسش جدید ممکن نیست؛ تاریخچه فقط خواندنی است */
+  /** پس از پایان دور حمایت پرسش جدید ممکن نیست؛ تاریخچه فقط خواندنی است */
   closed?: boolean;
 }) {
   const disabled = aiOff || closed;
@@ -46,7 +46,7 @@ export function DueDiligenceChat({
       {aiOff && <div className="mb-4"><AiUnavailable /></div>}
       {state.aiUnavailable && <div className="mb-4"><AiUnavailable reason={state.aiReason ?? "off"} /></div>}
       {state.error && <Alert kind="error">{state.error}</Alert>}
-      {closed && !aiOff && <p className="mb-4 text-xs text-brand-slate">دور سرمایه‌گذاری تمام شده؛ فقط پرسش‌وپاسخ‌های قبلی قابل مشاهده است.</p>}
+      {closed && !aiOff && <p className="mb-4 text-xs text-brand-slate">دور حمایت تمام شده؛ فقط پرسش‌وپاسخ‌های قبلی قابل مشاهده است.</p>}
 
       {chats.length === 0 ? (
         <p className="mb-4 text-sm text-brand-slate">هنوز سؤالی پرسیده نشده است.</p>

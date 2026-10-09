@@ -11,13 +11,17 @@ export type GameValues = typeof DEFAULTS;
 
 /** نگاشت کلید جدول Setting ← فیلد DEFAULTS، با نوع تجزیه (هم‌راستا با getSettingInt/getSettingFloat موتور بازی) */
 export const GAME_VALUE_SETTINGS = {
-  seed_wallet: { field: "seedWallet", kind: "int" },
-  buy_wallet: { field: "buyWallet", kind: "int" },
-  max_per_target: { field: "maxPerTarget", kind: "int" },
-  // جریمه اعشاری است؛ موتور امتیاز آن را با parseFloat می‌خواند
-  penalty_per_coin: { field: "penaltyPerCoin", kind: "float" },
+  starting_coins: { field: "startingCoins", kind: "int" },
+  support_cap: { field: "supportCap", kind: "int" },
+  solo_boost_pct: { field: "soloBoostPct", kind: "int" },
+  duo_boost_pct: { field: "duoBoostPct", kind: "int" },
+  max_bought_coins_per_user: { field: "maxBoughtCoinsPerUser", kind: "int" },
   bid_increment: { field: "bidIncrement", kind: "int" },
   auction_duration_sec: { field: "auctionDurationSec", kind: "int" },
+  adslot_price_banner: { field: "adslotPriceBanner", kind: "int" },
+  adslot_price_featured: { field: "adslotPriceFeatured", kind: "int" },
+  adslot_price_push: { field: "adslotPricePush", kind: "int" },
+  adslot_max_per_team: { field: "adslotMaxPerTeam", kind: "int" },
 } as const satisfies Record<string, { field: keyof GameValues; kind: "int" | "float" }>;
 
 export type GameValueSettingKey = keyof typeof GAME_VALUE_SETTINGS;

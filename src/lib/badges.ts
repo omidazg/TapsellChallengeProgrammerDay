@@ -21,8 +21,8 @@ export type BadgeDef = {
 };
 
 export const BADGES: BadgeDef[] = [
-  { id: "first_investor", title: "اولین سرمایه‌گذار", emoji: "🥇", description: "اولین سرمایه‌گذاریِ کل بازی را ثبت کرد." },
-  { id: "team_angel", title: "فرشتهٔ تیم‌ها", emoji: "😇", description: "روی بیشترین تعداد تیم متفاوت سرمایه‌گذاری کرد." },
+  { id: "first_investor", title: "اولین حامی", emoji: "🥇", description: "اولین حمایتِ کل بازی را ثبت کرد." },
+  { id: "team_angel", title: "حامی همه", emoji: "😇", description: "از بیشترین تعداد تیم متفاوت حمایت کرد." },
   { id: "pro_buyer", title: "خریدار حرفه‌ای", emoji: "🛍️", description: "بیشترین تعداد خرید را از بازار انجام داد." },
   { id: "auction_winner", title: "برندهٔ حراج", emoji: "🔨", description: "دست‌کم یک حراج زنده را برد." },
   { id: "early_bird", title: "سحرخیز", emoji: "🌅", description: "جزو ده نفر اولی بود که ثبت‌نام کردند." },
@@ -70,7 +70,7 @@ export function earliestUserId(rows: TimedRow[]): string | null {
 
 export type TeamInvestRow = { userId: string; teamId: string };
 
-/** کاربر/کاربرانی که روی بیشترین تعداد تیمِ متفاوت سرمایه‌گذاری کرده‌اند */
+/** کاربر/کاربرانی که از بیشترین تعداد تیمِ متفاوت حمایت کرده‌اند */
 export function mostDistinctTeamsInvestor(rows: TeamInvestRow[]): { userId: string; count: number }[] {
   const map = new Map<string, Set<string>>();
   for (const r of rows) {

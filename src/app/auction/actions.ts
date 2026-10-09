@@ -3,14 +3,14 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
-import { placeBid, activateSecondWind, getBidBudget } from "@/lib/auction";
+import { placeBid, getBidBudget } from "@/lib/auction";
 import { rateLimit, rateLimitMessage } from "@/lib/rate-limit";
 import { getPhase } from "@/lib/phase";
 
-/** پیشنهاد و قدرت‌های حراج فقط در فاز «حراج زنده» مجازند (همان جایی که صفحه صحنهٔ حراج را نشان می‌دهد). */
+/** حراج زنده بخشی از «روز بازار» است؛ پیشنهاد فقط در همین فاز مجاز است. */
 async function auctionPhaseError(): Promise<string | null> {
   const { phase } = await getPhase();
-  return phase === "AUCTION" ? null : "حراج زنده الان باز نیست";
+  return phase === "MARKET" ? null : "حراج زنده فقط در «روز بازار» باز است";
 }
 
 const bidSchema = z.object({
@@ -27,6 +27,7 @@ export async function placeBidAction(auctionId: string, amount: number) {
   const phaseError = await auctionPhaseError();
   if (phaseError) return { error: phaseError };
   // بودجهٔ تازهٔ کاربر (موجودی/رزرو/قابل‌خرج) همراه نتیجه برمی‌گردد تا ردیف کیف بدون درخواست جدا تازه شود.
+  // (پیشنهاد روی محصول تیم خود را placeBid رد می‌کند.)
   try {
     await placeBid(parsed.data.auctionId, user.id, parsed.data.amount);
     revalidatePath("/auction");
@@ -45,17 +46,4 @@ export async function bidBudgetAction(auctionId: string | null) {
   const parsed = z.string().min(1).nullable().safeParse(auctionId);
   if (!parsed.success) return null;
   return getBidBudget(user.id, parsed.data);
-}
-
-export async function secondWindAction(auctionId: string) {
-  const user = await requireUser();
-  const phaseError = await auctionPhaseError();
-  if (phaseError) return { error: phaseError };
-  try {
-    await activateSecondWind(auctionId, user.id);
-    revalidatePath("/auction");
-    return { ok: true as const };
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : "خطای نامشخص" };
-  }
 }

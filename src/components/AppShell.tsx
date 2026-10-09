@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { PHASE_LABEL, type Phase } from "@/lib/phases";
 import { fa, duration } from "@/lib/persian";
-import { isActive, navFor, navState, type NavItem } from "./NavConfig";
+import { isActive, navFor, navState, WALLET_ITEMS, type NavItem } from "./NavConfig";
 import { NavBottomBar, NavPhaseMark } from "./NavBottomBar";
 import { Avatar } from "./Avatar";
 import { NotificationBell } from "./NotificationBell";
@@ -16,13 +16,11 @@ import { PushPrompt } from "./PushPrompt";
 import { PillarStrip } from "./PillarLogos";
 import { GROUP_NAME } from "@/lib/pillars";
 
-type ShellUser = { id: string; nickname: string; isAdmin: boolean; seedWallet: number; buyWallet: number; teamName: string | null; avatarSeed: string };
+/** buyWallet همان «کیف سکه» است (تنها کیف بازی) */
+type ShellUser = { id: string; nickname: string; isAdmin: boolean; buyWallet: number; teamName: string | null; avatarSeed: string };
 
 // فهرست مقصدها، فاز بازشدن و فاز «زنده»ٔ هر آیتم در NavConfig.ts است (مشترک با نوار پایین موبایل).
-const EXTRA_MOBILE: NavItem[] = [
-  { href: "/wallet", label: "کیف پول", icon: "💰" },
-  { href: "/profile", label: "پروفایل", icon: "🙂" },
-];
+const EXTRA_MOBILE: NavItem[] = [...WALLET_ITEMS, { href: "/profile", label: "پروفایل", icon: "🙂" }];
 const ADMIN_ITEM: NavItem = { href: "/admin", label: "برگزارکننده", icon: "🎛️" };
 
 export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUser | null; phase: Phase; phaseEndsAt: string | null; children: React.ReactNode }) {
@@ -105,11 +103,15 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
             </span>
             {user ? (
               <>
-                <Link href="/wallet" className="hidden md:flex items-center gap-2 rounded-pill bg-brand-ice px-3 py-1.5 text-xs font-bold text-brand-navy hover:bg-brand-mist whitespace-nowrap" title="کیف پول">
-                  <span title="کیف بذر">🌱 {fa(user.seedWallet)}</span>
-                  <span className="text-brand-slate">|</span>
-                  <span title="کیف خرید">🛒 {fa(user.buyWallet)}</span>
-                </Link>
+                <span className="hidden md:flex items-center rounded-pill bg-brand-ice text-xs font-bold text-brand-navy whitespace-nowrap">
+                  <Link href="/wallet" className="rounded-pill px-3 py-1.5 hover:bg-brand-mist" title="کیف سکه">
+                    <span aria-hidden>🪙</span> <span className="fa-num">{fa(user.buyWallet)}</span>
+                    <span className="sr-only"> سکه در کیف</span>
+                  </Link>
+                  <Link href="/coins" className="rounded-pill px-2.5 py-1.5 text-brand-cyan-dark hover:bg-brand-mist" title="خرید سکه">
+                    + خرید سکه
+                  </Link>
+                </span>
                 <NotificationBell phase={phase} />
                 <ThemeToggle className="hidden lg:inline-flex" />
                 <Link href="/profile" className="flex items-center shrink-0" aria-label="پروفایل" title={user.nickname}>
@@ -207,8 +209,10 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
                 })}
               </div>
               <div className="md:hidden mt-3 flex items-center justify-between rounded-2xl border border-brand-mist px-4 py-2.5 text-xs font-bold text-brand-navy">
-                <span>🌱 کیف بذر: {fa(user.seedWallet)}</span>
-                <span>🛒 کیف خرید: {fa(user.buyWallet)}</span>
+                <span>🪙 کیف سکه: <span className="fa-num">{fa(user.buyWallet)}</span></span>
+                <Link href="/coins" onClick={() => setOpen(false)} className="text-brand-cyan-dark hover:underline">
+                  + خرید سکه
+                </Link>
               </div>
               {/* فقط وقتی منو باز است mount می‌شود: وگرنه نسخهٔ دوم زنگ هم هر ۲۰ ثانیه poll می‌کرد */}
               {open && (

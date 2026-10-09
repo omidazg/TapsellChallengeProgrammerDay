@@ -93,7 +93,7 @@ export function PhaseForm({
         const label = phases[selectedIdx]?.label ?? selected;
         let msg: string | null = null;
         if (selected === "CLOSED" && phase !== "CLOSED") {
-          msg = `فاز به «${label}» برود؟ تسویهٔ نهایی بلافاصله اجرا می‌شود (پرداخت سودها و قفل امتیازها) و برگشت‌ناپذیر است.`;
+          msg = `فاز به «${label}» برود؟ حراج زنده بسته، تسویهٔ نهایی بلافاصله اجرا (ثبت و قفل امتیازها) و این کار برگشت‌ناپذیر است.`;
         } else if (currentIdx >= 0 && selectedIdx >= 0 && selectedIdx < currentIdx) {
           msg = `فاز به عقب («${label}») برگردد؟ این کار برای همهٔ بازیکنان اعلان می‌شود.${endsAtNote}`;
         } else if (selected !== phase) {

@@ -1,19 +1,16 @@
 import { randomInt } from "node:crypto";
 import { prisma } from "./db";
-import { getPhase, getSettingInt } from "./phase";
+import { getPhase, getSetting, getSettingInt } from "./phase";
 import { DEFAULTS } from "./constants";
 import { fa } from "./persian";
 import { notifyUser } from "./notifications";
-import { cached } from "./ttl-cache";
+import { cached, invalidate } from "./ttl-cache";
 import { publishAuctionChange, AUCTION_CACHE_PREFIX } from "./auction-events";
 // اقتصاد خالص: nextMinBid و shouldExtendAuction از موتور اقتصاد می‌آیند.
 import { nextMinBid, shouldExtendAuction } from "./economy/engine";
 import { pickFirstPriceWinner } from "./economy/bids";
 import { reservedBuyCoins } from "./reservations";
 export { reservedBuyCoins } from "./reservations";
-
-/** تمدید قدرت «نفس دوم» بر حسب ثانیه. */
-const SECOND_WIND_EXTEND_SEC = 120;
 
 /** ضریب ایمنی: فقط تا این نسبت از زمان باقی‌ماندهٔ فاز صرف حراج‌ها می‌شود (بقیه برای تسویه/تأخیرها). */
 const AUCTION_PHASE_FIT_RATIO = 0.85;
@@ -47,8 +44,50 @@ export function clampAuctionDuration(
   return Math.min(configuredDuration, Math.max(MIN_AUCTION_DURATION_SEC, fitted));
 }
 
-/** یک حراج به ازای هر محصول ثبت‌شده می‌سازد (idempotent)؛ ترتیب صف هر بار به‌طور تصادفی چیده می‌شود
- *  تا تیم‌هایی که زود ثبت کرده‌اند همیشه آخر صف (و با کیف خرج‌شدهٔ همه) نمانند. */
+export type EnqueueResult = { ok: true; auctionId: string; position: number } | { ok: false; error: string };
+
+/**
+ * تیم (هر عضوی) نسخهٔ ویژهٔ محصولش را در روز بازار به صف حراج زنده می‌فرستد.
+ * هر محصول فقط یک‌بار حراج می‌شود؛ ترتیب صف همان ترتیب ثبت است. در دقایق پایانی روز بازار
+ * (auction_enqueue_cutoff_min) دیگر محصول تازه‌ای وارد صف نمی‌شود تا صف پیش از پایان تمام شود.
+ */
+export async function enqueueAuction(userId: string): Promise<EnqueueResult> {
+  const { phase, endsAt } = await getPhase();
+  if (phase !== "MARKET") return { ok: false, error: "فرستادن به حراج فقط در «روز بازار» ممکن است" };
+  if (endsAt) {
+    const cutoffMin = await getSettingInt("auction_enqueue_cutoff_min", DEFAULTS.auctionEnqueueCutoffMin);
+    if (endsAt.getTime() - Date.now() < cutoffMin * 60_000) {
+      return { ok: false, error: `در ${fa(cutoffMin)} دقیقهٔ پایانی روز بازار صف حراج بسته است` };
+    }
+  }
+
+  const result = await prisma.$transaction(async (tx): Promise<EnqueueResult> => {
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { teamId: true } });
+    if (!user?.teamId) return { ok: false, error: "برای فرستادن محصول به حراج باید عضو یک تیم (یا شرکت‌کنندهٔ فردی) باشی" };
+    const product = await tx.product.findUnique({
+      where: { teamId: user.teamId },
+      select: { id: true, submittedAt: true, auction: { select: { id: true } } },
+    });
+    if (!product?.submittedAt) return { ok: false, error: "اول محصولت را ثبت نهایی کن" };
+    if (product.auction) return { ok: false, error: "محصولت قبلاً به صف حراج رفته است" };
+
+    const last = await tx.auction.findFirst({ orderBy: { order: "desc" }, select: { order: true } });
+    const order = last ? last.order + 1 : 0;
+    const fresh = await tx.product.findUniqueOrThrow({ where: { id: product.id }, select: { specialStart: true } });
+    const auction = await tx.auction.create({
+      data: { productId: product.id, order, startPrice: Math.max(1, fresh.specialStart) },
+    });
+    const position = await tx.auction.count({ where: { status: { in: ["SCHEDULED", "LIVE"] }, order: { lte: order } } });
+    return { ok: true, auctionId: auction.id, position };
+  });
+  if (result.ok) publishAuctionChange();
+  return result;
+}
+
+/**
+ * ابزار برگزارکننده: همهٔ محصولات ثبت‌شده‌ای که هنوز به صف نرفته‌اند را (با ترتیب تصادفی) ته صف می‌گذارد.
+ * idempotent است. در جریان عادی تیم‌ها خودشان با enqueueAuction محصول را به صف می‌فرستند.
+ */
 export async function ensureAuctions() {
   const products = await prisma.product.findMany({
     where: { submittedAt: { not: null }, auction: null },
@@ -61,21 +100,30 @@ export async function ensureAuctions() {
   await prisma.$transaction(
     products.map((p, i) =>
       prisma.auction.create({
-        data: { productId: p.id, order: base + i, startPrice: p.specialStart },
+        data: { productId: p.id, order: base + i, startPrice: Math.max(1, p.specialStart) },
       })
     )
   );
   publishAuctionChange();
 }
 
+/** پایان بازی: حراج زنده تسویه و حراج‌های اجرانشدهٔ صف حذف می‌شوند (بدون پیشنهاد هستند). */
+export async function closeAuctionsForGameEnd() {
+  const live = await prisma.auction.findMany({ where: { status: "LIVE" }, select: { id: true } });
+  // در پایان بازی حراج بعدی نباید خودکار شروع شود، حتی اگر فاز هنوز CLOSED ثبت نشده باشد.
+  for (const a of live) await settleCore(a.id, { startNext: false });
+  const removed = await prisma.auction.deleteMany({ where: { status: "SCHEDULED", bids: { none: {} } } });
+  if (removed.count > 0) publishAuctionChange();
+}
+
 /**
- * مدت حراج بعدی را با توجه به زمان باقی‌ماندهٔ فاز AUCTION تعیین می‌کند (در صورت نبود endsAt،
+ * مدت حراج بعدی را با توجه به زمان باقی‌ماندهٔ روز بازار (MARKET) تعیین می‌کند (در صورت نبود endsAt،
  * همان مدت پیکربندی‌شده). عمداً *بیرون* از $transaction فراخوانی می‌شود (مثل خواندن تنظیمات در
  * بقیهٔ این فایل)، چون کوئری با نمونهٔ اصلی prisma داخل یک تراکنش باز ممکن است قفل شود.
  */
 async function resolveAuctionDuration(configuredDuration: number): Promise<number> {
   const { phase, endsAt } = await getPhase();
-  if (phase !== "AUCTION" || !endsAt) return configuredDuration;
+  if (phase !== "MARKET" || !endsAt) return configuredDuration;
   const secondsLeftInPhase = Math.max(0, Math.floor((endsAt.getTime() - Date.now()) / 1000));
   // شامل همین حراجی که قرار است زنده شود، به‌علاوهٔ بقیهٔ صف (SCHEDULED فعلی).
   const remainingCount = await prisma.auction.count({ where: { status: "SCHEDULED" } });
@@ -117,7 +165,7 @@ export async function startNextAuction(durationSec?: number) {
  * هستهٔ تسویه. idempotent است: با `updateMany` روی وضعیت LIVE قفل می‌گیرد،
  * پس دو فراخوانی هم‌زمان فقط یک‌بار برنده را بدهکار می‌کنند.
  */
-async function settleCore(id: string) {
+async function settleCore(id: string, opts: { startNext?: boolean } = {}) {
   const settled = await prisma.$transaction(async (tx) => {
     // قفل منطقی: تنها فراخوانی‌ای که count=1 بگیرد حق تسویه دارد.
     const claimed = await tx.auction.updateMany({
@@ -163,6 +211,8 @@ async function settleCore(id: string) {
     await tx.ledgerEntry.create({
       data: { userId: winner.id, wallet: "BUY", delta: -finalPrice, reason: "AUCTION_WIN", refId: auction.id },
     });
+    // برد حراج یک خرید است و در «حمایت مردمی» حساب می‌شود.
+    invalidate("scores:");
     await tx.auction.update({
       where: { id },
       data: { winnerId: winner.id, finalPrice },
@@ -172,8 +222,10 @@ async function settleCore(id: string) {
 
   if (settled) {
     publishAuctionChange();
+    if (opts.startNext === false) return settled;
     const { phase } = await getPhase().catch(() => ({ phase: null as string | null }));
-    if (phase === "AUCTION") {
+    const autoAuction = await getSetting("auto_auction", "1").catch(() => "0");
+    if (phase === "MARKET" && autoAuction === "1") {
       await startNextAuction();
     }
   }
@@ -228,12 +280,12 @@ export async function placeBid(auctionId: string, userId: string, amount: number
     const min = nextMinBid(highest?.amount ?? null, auction.startPrice, increment);
     if (amount < min) throw new Error(`پیشنهاد باید حداقل ${fa(min)} سکه باشد`);
 
-    // پیشنهاد باید از همان ابتدا معتبر باشد: سقفش موجودی «قابل‌خرج» است، یعنی کیف خرید منهای
+    // پیشنهاد باید از همان ابتدا معتبر باشد: سقفش موجودی «قابل‌خرج» است، یعنی کیف سکه منهای
     // سکه‌هایی که جای دیگر رزرو شده (پیشتازی در حراج زندهٔ دیگر). پیشتازی در همین حراج کنار
     // گذاشته می‌شود، چون بالا بردن پیشنهاد خود رزرو قبلی خودت را جایگزین می‌کند.
     // سکه‌ها تا پایان حراج برای بالاترین پیشنهاددهنده رزرو می‌مانند (بازار آن‌ها را خرج‌پذیر نمی‌بیند).
     const spendable = user.buyWallet - (await reservedBuyCoins(tx, userId, auctionId));
-    if (spendable < amount) throw new Error("موجودی قابل‌خرج کیف خرید کافی نیست");
+    if (spendable < amount) throw new Error("سکهٔ قابل‌خرج کافی نداری");
 
     await tx.bid.create({ data: { auctionId, userId, amount } });
 
@@ -261,7 +313,7 @@ export async function placeBid(auctionId: string, userId: string, amount: number
 
 /**
  * بودجهٔ پیشنهاد یک کاربر برای یک حراج — دادهٔ خصوصی کاربر؛ هرگز در وضعیت عمومی/کش مشترک حراج قرار نمی‌گیرد.
- * spendable همان سقفی است که placeBid بررسی می‌کند: کیف خرید منهای رزروِ حراج‌های زندهٔ *دیگر*
+ * spendable همان سقفی است که placeBid بررسی می‌کند: کیف سکه منهای رزروِ حراج‌های زندهٔ *دیگر*
  * (پیشتازی در همین حراج کنار گذاشته می‌شود، چون بالا بردن پیشنهاد خود جایگزینش می‌کند).
  */
 export type BidBudget = { auctionId: string | null; buyWallet: number; reservedElsewhere: number; spendable: number };
@@ -273,30 +325,6 @@ export async function getBidBudget(userId: string, auctionId: string | null): Pr
     const reservedElsewhere = await reservedBuyCoins(tx, userId, auctionId ?? undefined);
     return { auctionId, buyWallet: user.buyWallet, reservedElsewhere, spendable: Math.max(0, user.buyWallet - reservedElsewhere) };
   });
-}
-
-/** قدرت «نفس دوم»: دو دقیقه تمدید یک حراج زنده، یک‌بار در کل بازی برای هر کاربر. */
-export async function activateSecondWind(auctionId: string, userId: string) {
-  const result = await prisma.$transaction(async (tx) => {
-    const auction = await tx.auction.findUnique({ where: { id: auctionId } });
-    if (!auction || auction.status !== "LIVE" || !auction.endsAt) throw new Error("این حراج زنده نیست");
-    if (Date.now() >= auction.endsAt.getTime()) throw new Error("حراج تمام شده است");
-
-    const user = await tx.user.findUnique({ where: { id: userId } });
-    if (!user) throw new Error("کاربر پیدا نشد");
-    if (user.power !== "SECOND_WIND") throw new Error("این قدرت را نداری");
-    if (user.powerUsed) throw new Error("قدرتت قبلاً استفاده شده است");
-
-    // نگهبان مسابقه: قدرت فقط یک‌بار مصرف می‌شود.
-    const used = await tx.user.updateMany({ where: { id: userId, powerUsed: false }, data: { powerUsed: true } });
-    if (used.count === 0) throw new Error("قدرتت قبلاً استفاده شده است");
-
-    const endsAt = new Date(auction.endsAt.getTime() + SECOND_WIND_EXTEND_SEC * 1000);
-    await tx.auction.update({ where: { id: auctionId }, data: { endsAt, extensions: { increment: 1 } } });
-    return { ok: true as const, endsAt };
-  });
-  publishAuctionChange();
-  return result;
 }
 
 export type AuctionStateBid = { amount: number; nickname: string; avatarSeed: string; createdAt: string };
@@ -411,7 +439,13 @@ export async function listAuctions() {
     finalPrice: a.finalPrice,
     winnerNickname: (a.winnerId && winnerById.get(a.winnerId)?.nickname) ?? null,
     endsAt: a.endsAt?.toISOString() ?? null,
-    product: { id: a.product.id, name: a.product.name, specialName: a.product.specialName || a.product.name, teamName: a.product.team.name },
+    product: {
+      id: a.product.id,
+      name: a.product.name,
+      specialName: a.product.specialName || a.product.name,
+      teamName: a.product.team.name,
+      teamId: a.product.teamId,
+    },
   }));
 }
 

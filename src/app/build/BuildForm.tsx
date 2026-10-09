@@ -59,11 +59,11 @@ export function BuildForm({
   /** کلید پیش‌نویس محلی (بر پایهٔ تیم و شناسهٔ محصول) */
   draftKey: string;
   editable: boolean;
-  /** پیام نمایش‌داده‌شده وقتی فرم قابل ویرایش نیست (قفل فاز یا نبودن سرپرستی) */
+  /** پیام نمایش‌داده‌شده وقتی فرم قابل ویرایش نیست (قفل فاز) */
   lockNote?: string | null;
   submitted: boolean;
   initial: ProductInput | null;
-  /** سقف مؤثر قیمت (کمینهٔ DEFAULTS.maxPrice و سقف خرید هر نفر)؛ از سرور محاسبه و پاس داده می‌شود. */
+  /** سقف مؤثر قیمت (effectiveMaxPrice)؛ از سرور محاسبه و پاس داده می‌شود. */
   maxPrice?: number;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
@@ -201,7 +201,12 @@ export function BuildForm({
         </div>
 
         <div className="rounded-2xl border border-brand-mist p-4 space-y-4">
-          <div className="text-sm font-black text-brand-navy">نسخهٔ ویژه (برای حراج زنده)</div>
+          <div>
+            <div className="text-sm font-black text-brand-navy">نسخهٔ ویژه (برای حراج زنده)</div>
+            <p className="mt-1 text-xs text-brand-slate">
+              در «روز بازار» هر عضو تیم می‌تواند این نسخه را به صف حراج زنده بفرستد؛ حراج از «قیمت شروع» آغاز می‌شود.
+            </p>
+          </div>
           <div className="grid md:grid-cols-2 gap-5">
             <div>
               <label className="label" htmlFor="specialName">نام نسخهٔ ویژه</label>

@@ -1,11 +1,11 @@
 import { prisma } from "./db";
 import { coverUrl, parseImages } from "./product";
-import { getPhase, getSettingInt } from "./phase";
-import { DEFAULTS } from "./constants";
+import { getPhase } from "./phase";
 import { reservedBuyCoins } from "./reservations";
-// اعتبارسنجی خرید و توابع خالص محاسبه مستقیماً از موتور اقتصاد می‌آیند تا یک منبع حقیقت واحد بماند.
-import { validatePurchase, bargainDiscountFor, effectivePurchaseCap } from "./economy/engine";
-export { validatePurchase, bargainDiscountFor, effectivePurchaseCap } from "./economy/engine";
+import { invalidate } from "./ttl-cache";
+// اعتبارسنجی خرید مستقیماً از موتور اقتصاد می‌آید تا یک منبع حقیقت واحد بماند.
+import { validatePurchase } from "./economy/engine";
+export { validatePurchase } from "./economy/engine";
 
 export type MarketSort = "all" | "top" | "popular" | "cheap";
 
@@ -21,14 +21,16 @@ export type MarketCard = {
   price: number;
   sold: number;
   hearts: number;
-  /** آیا بازدیدکننده به سقف مجاز خرید از این محصول رسیده است (در نبود viewer همیشه false) */
-  limitReached: boolean;
+  /** وضعیت انتشار روی بازار استودیو (LIVE یعنی منتشر شده) */
+  live: boolean;
+  /** بازدیدکننده قبلاً از این محصول خریده است (در نبود viewer همیشه false) */
+  bought: boolean;
 };
 
-/** فهرست محصولات بازار برای گرید اصلی، با مرتب‌سازی؛ با دادن viewer، سقف خریدِ او هم مشخص می‌شود */
+/** فهرست محصولات بازار برای گرید اصلی، با مرتب‌سازی؛ با دادن viewer، خریدهای قبلیِ او هم مشخص می‌شود */
 export async function getMarketProducts(
   sort: MarketSort = "all",
-  viewer?: { userId: string; maxPerTarget: number }
+  viewer?: { userId: string }
 ): Promise<MarketCard[]> {
   // به‌جای include کردن همهٔ ردیف‌های Purchase (که با رشد بازار سنگین می‌شود)، فقط جمع هر
   // محصول و — در صورت وجود viewer — جمع خودِ او از یک کوئری تجمیعی خوانده می‌شود.
@@ -51,8 +53,6 @@ export async function getMarketProducts(
 
   const cards: MarketCard[] = products.map((p) => {
     const viewerSpent = viewer ? viewerSpentByProduct.get(p.id) ?? 0 : 0;
-    // سقف مؤثر، نه سقف خام: محصولی که قیمتش از سقف تنظیم‌شده بالاتر است هم باید حداقل یک‌بار قابل خرید بماند.
-    const cap = viewer ? effectivePurchaseCap(viewer.maxPerTarget, p.price) : 0;
     return {
       id: p.id,
       slug: p.team.slug,
@@ -65,7 +65,8 @@ export async function getMarketProducts(
       price: p.price,
       sold: soldByProduct.get(p.id) ?? 0,
       hearts: p._count.hearts,
-      limitReached: viewer ? viewerSpent >= cap : false,
+      live: p.liveStatus === "LIVE",
+      bought: viewerSpent > 0,
     };
   });
 
@@ -96,7 +97,7 @@ export async function salesSummary(productId: string): Promise<SalesSummary> {
   };
 }
 
-/** مجموع سکه‌ای که یک کاربر تاکنون روی یک محصول خرج کرده (بر مبنای قیمت کامل، همان مبنای سقف خرید) */
+/** مجموع سکه‌ای که یک کاربر تاکنون روی یک محصول خرج کرده */
 export async function userSpentOn(userId: string, productId: string): Promise<number> {
   const agg = await prisma.purchase.aggregate({
     where: { userId, productId },
@@ -106,8 +107,8 @@ export async function userSpentOn(userId: string, productId: string): Promise<nu
 }
 
 /**
- * موجودی قابل‌خرج کیف خرید برای نمایش در صفحهٔ محصول: کیف خرید منهای سکه‌های رزروشده برای
- * پیشتازی در حراج زنده (همان مبنای purchaseProduct). فقط برای UI است؛ اعتبارسنجی نهایی در تراکنش خرید.
+ * سکه‌های قابل‌خرج برای نمایش در UI: موجودی منهای سکه‌های رزروشده برای پیشتازی در حراج زنده
+ * (همان مبنای purchaseProduct). اعتبارسنجی نهایی در تراکنش خرید انجام می‌شود.
  */
 export async function spendableBuyCoins(userId: string, buyWallet: number): Promise<number> {
   const reserved = await reservedBuyCoins(prisma, userId);
@@ -118,18 +119,16 @@ export async function spendableBuyCoins(userId: string, buyWallet: number): Prom
 class UserFacingError extends Error {}
 
 export type PurchaseResult =
-  | { ok: true; purchaseId: string; /** قیمت کامل؛ همان چیزی که سقف خرید و فروش فروشنده را افزایش می‌دهد */ amount: number; discount: number; /** مبلغی که واقعاً از کیف خرید کم شد (قیمت − تخفیف چانه‌زنی) */ paid: number }
+  | { ok: true; purchaseId: string; amount: number }
   | { ok: false; error: string };
 
 /**
  * هستهٔ خرید یک محصول در بازار — بدون وابستگی به cookies/session (userId مستقیم گرفته می‌شود)،
- * تا هم از server action و هم از دود-تست قابل فراخوانی باشد (مثل الگوی src/lib/auction.ts).
+ * تا هم از server action و هم از دود-تست قابل فراخوانی باشد.
  *
- * قدرت «چانه‌زنی» برای *کل* فاز بازار فعال است (نه یک‌بار مصرف): هر خرید توسط دارندهٔ این قدرت
- * تخفیف d = bargainDiscountFor(price, DEFAULTS.bargainDiscount) می‌گیرد؛ فروشنده همچنان قیمت
- * کامل را می‌گیرد (Purchase.amount = price)، فقط کیف خریدار به‌اندازهٔ price − d کم می‌شود.
- * سقف خرید هر نفر از یک محصول با effectivePurchaseCap محاسبه می‌شود تا محصولات قدیمیِ گران‌تر
- * از سقف هم حداقل یک‌بار قابل خرید بمانند.
+ * هر خرید به قیمت کامل محصول است و سقفی روی تعداد خرید نیست؛ اثر هر نفر روی امتیاز «حمایت مردمی»
+ * در موتور امتیاز (support_cap و تأمین مالی درجه‌دو) محدود می‌شود. سکه‌های رزروشده برای پیشتازی
+ * در حراج زنده خرج‌پذیر نیستند (حراج و خرید هر دو در روز بازارند).
  */
 export async function purchaseProduct(userId: string, productId: string): Promise<PurchaseResult> {
   const { phase } = await getPhase();
@@ -138,52 +137,39 @@ export async function purchaseProduct(userId: string, productId: string): Promis
   const product = await prisma.product.findUnique({ where: { id: productId } });
   if (!product || !product.submittedAt) return { ok: false, error: "این محصول در دسترس نیست" };
 
-  const maxPerTarget = await getSettingInt("max_per_target", DEFAULTS.maxPerTarget);
-  const cap = effectivePurchaseCap(maxPerTarget, product.price);
-
   try {
     return await prisma.$transaction(async (tx) => {
       // فاز دوباره داخل همان تراکنش خوانده می‌شود (مثل investCore) تا خریدی که هم‌زمان با بسته‌شدن
       // بازار توسط ادمین می‌رسد، پس از پایان فاز ثبت نشود.
       const phaseRow = await tx.setting.findUnique({ where: { key: "phase" } });
-      if (phaseRow?.value !== "MARKET") throw new UserFacingError("خرید فقط در فاز «روز بازار» ممکن است");
+      // مقدار قدیمی "AUCTION" هم مثل getPhase روز بازار حساب می‌شود
+      if (phaseRow?.value !== "MARKET" && phaseRow?.value !== "AUCTION") throw new UserFacingError("خرید فقط در فاز «روز بازار» ممکن است");
 
       const freshUser = await tx.user.findUniqueOrThrow({ where: { id: userId } });
       const isOwnTeam = !!freshUser.teamId && freshUser.teamId === product.teamId;
-
-      const spentAgg = await tx.purchase.aggregate({ where: { userId, productId }, _sum: { amount: true } });
-      const alreadyOnTarget = spentAgg._sum.amount ?? 0;
-
-      const isBargain = freshUser.power === "BARGAIN";
-      const discount = isBargain ? bargainDiscountFor(product.price, DEFAULTS.bargainDiscount) : 0;
-      const paid = product.price - discount;
-      // سکه‌های رزروشده برای پیشتازی در حراج زنده خرج‌پذیر نیستند (فازها امروز هم‌پوشانی ندارند؛ دفاعی است).
       const spendable = freshUser.buyWallet - (await reservedBuyCoins(tx, userId));
 
-      // validatePurchase یک amount واحد را هم برای کفایت کیف و هم برای سقف بررسی می‌کند؛ اینجا
-      // با اضافه‌کردن d به walletLeft، چک کفایت کیف معادل «paid > موجودی قابل‌خرج واقعی» می‌شود،
-      // درحالی‌که amount=قیمت کامل باعث می‌شود چک سقف بر مبنای قیمت کامل انجام شود.
-      const validation = validatePurchase({
-        amount: product.price,
-        alreadyOnTarget,
-        walletLeft: spendable + discount,
-        maxPerTarget: cap,
-        isOwnTeam,
-      });
+      const validation = validatePurchase({ amount: product.price, walletLeft: spendable, isOwnTeam });
       if (!validation.ok) throw new UserFacingError(validation.error);
 
       const purchase = await tx.purchase.create({
-        data: { productId, userId, amount: product.price, discount },
+        data: { productId, userId, amount: product.price, discount: 0 },
       });
-      await tx.user.update({ where: { id: userId }, data: { buyWallet: { decrement: paid } } });
+      const charged = await tx.user.updateMany({
+        where: { id: userId, buyWallet: { gte: product.price } },
+        data: { buyWallet: { decrement: product.price } },
+      });
+      if (charged.count === 0) throw new UserFacingError("سکهٔ کافی نداری");
       await tx.ledgerEntry.create({
-        data: { userId, wallet: "BUY", delta: -paid, reason: "PURCHASE", refId: purchase.id },
+        data: { userId, teamId: product.teamId, wallet: "BUY", delta: -product.price, reason: "PURCHASE", refId: purchase.id },
       });
-      return { ok: true as const, purchaseId: purchase.id, amount: purchase.amount, discount, paid };
+      return { ok: true as const, purchaseId: purchase.id, amount: purchase.amount };
     });
   } catch (e) {
     if (e instanceof UserFacingError) return { ok: false, error: e.message };
     throw e;
+  } finally {
+    invalidate("scores:");
   }
 }
 
@@ -227,7 +213,7 @@ export type AdSlotWinner = {
   cover: string;
 };
 
-/** برندگان جایگاه تبلیغاتی ساعت جاری (فقط خواندن؛ حراج آن در حوزهٔ ایجنت دیگر است) */
+/** صاحبان جایگاه تبلیغاتی ساعت جاری (فقط خواندن) */
 export async function getCurrentAdSlotWinners(): Promise<AdSlotWinner[]> {
   const now = new Date();
   const hourStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0);

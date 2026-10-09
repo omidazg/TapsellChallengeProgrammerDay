@@ -83,7 +83,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
 
   return (
     <>
-      <PageHeader eyebrow="پنل برگزارکننده" title="کاربران" desc="دسترسی برگزارکنندگی و تنظیم دستی کیف پول." />
+      <PageHeader eyebrow="پنل برگزارکننده" title="کاربران" desc="دسترسی برگزارکنندگی، موبایل و تنظیم دستی کیف سکه." />
       <Container className="space-y-4">
         <div className="card p-4 space-y-3">
           <form className="flex flex-wrap items-center gap-2" role="search">
@@ -145,8 +145,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
                   isAdmin: u.isAdmin,
                   blocked: !!u.blockedAt,
                   teamName: u.team?.name ?? null,
-                  seedWallet: u.seedWallet,
-                  buyWallet: u.buyWallet,
+                  coins: u.buyWallet,
                 }}
               />
             ))}

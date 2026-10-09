@@ -39,7 +39,7 @@ export function SalesTicker({ buyWallet }: { buyWallet: number }) {
         </div>
         <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-brand-slate">
           <span>حجم بازار: {coins(data?.volume ?? 0)}</span>
-          <span>کیف خرید تو: {coins(buyWallet)}</span>
+          <span>کیف سکهٔ تو: {coins(buyWallet)}</span>
         </div>
       </div>
       <div className="relative h-11 overflow-hidden max-w-full">

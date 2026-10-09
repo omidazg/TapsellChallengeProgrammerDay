@@ -3,16 +3,19 @@
 import { useActionState, useState } from "react";
 import { Alert } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
-import { coins } from "@/lib/persian";
+import { fa } from "@/lib/persian";
+import { ROLES, type RoleKey } from "@/lib/constants";
 import {
   renameTeamAction,
   removeMemberAction,
   deleteTeamAction,
   moveMemberAction,
-  setLeaderAction,
-  resetLeaderAction,
+  setCheatPenaltyAction,
   type TeamsActionState,
 } from "./actions";
+
+/** ظرفیت هر تیم (همان TEAM_FULL در lib/team؛ آن ماژول سروری است) */
+const TEAM_CAPACITY = 3;
 
 type Member = { id: string; nickname: string; avatarSeed: string; role: string };
 type FormAction = (formData: FormData) => void;
@@ -108,12 +111,73 @@ export type TeamRowData = {
   name: string;
   slug: string;
   logoSeed: string;
-  treasury: number;
+  /** شرکت فردی: تیم یک‌نفره‌ای که عضو تازه نمی‌پذیرد */
+  solo: boolean;
   members: Member[];
-  leaderId: string | null;
+  cheatPenalty: number;
+  cheatNote: string;
   ideaSubmitted: boolean;
   productSubmitted: boolean;
 };
+
+/** فرم کسر امتیاز تقلب: عدد صحیح ≥ ۰ و دلیلی که به تیم نشان داده می‌شود */
+function CheatPenaltyForm({ team }: { team: TeamRowData }) {
+  const [state, action, pending] = useActionState<TeamsActionState, FormData>(setCheatPenaltyAction, {});
+  return (
+    <details className="rounded-2xl border border-brand-mist px-3 py-2" open={team.cheatPenalty > 0 || undefined}>
+      <summary className="cursor-pointer text-sm font-bold text-brand-navy min-h-8 flex items-center gap-2">
+        کسر امتیاز تقلب
+        {team.cheatPenalty > 0 ? (
+          <span className="chip-red fa-num">−{fa(team.cheatPenalty)} امتیاز</span>
+        ) : (
+          <span className="text-xs font-normal text-brand-slate">ندارد</span>
+        )}
+      </summary>
+      <form
+        action={action}
+        className="mt-2 space-y-2"
+        onSubmit={(e) => {
+          const n = Number(new FormData(e.currentTarget).get("cheatPenalty") || 0);
+          if (n !== team.cheatPenalty && !confirm(`کسر امتیاز «${team.name}» به ${fa(n)} امتیاز تغییر کند؟`)) e.preventDefault();
+        }}
+      >
+        <input type="hidden" name="teamId" value={team.id} />
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="w-28">
+            <label className="label" htmlFor={`cheat-${team.id}`}>امتیاز کسرشده</label>
+            <input
+              id={`cheat-${team.id}`}
+              name="cheatPenalty"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={1000}
+              step={1}
+              defaultValue={team.cheatPenalty}
+              className="input !py-2 !px-3 w-full fa-num"
+            />
+          </div>
+          <div className="flex-1 min-w-48">
+            <label className="label" htmlFor={`cheat-note-${team.id}`}>دلیل (برای تیم نمایش داده می‌شود)</label>
+            <input
+              id={`cheat-note-${team.id}`}
+              name="cheatNote"
+              maxLength={300}
+              defaultValue={team.cheatNote}
+              className="input !py-2 !px-3 w-full"
+            />
+          </div>
+          <button type="submit" disabled={pending} className="btn-ghost !py-2 !px-4 text-sm min-h-10">
+            {pending ? "…" : "ثبت"}
+          </button>
+        </div>
+        <p className="text-[11px] text-brand-slate">از امتیاز کل (از ۱۰۰۰) کم می‌شود. صفر یعنی بدون کسر.</p>
+        {state.error && <Alert kind="error">{state.error}</Alert>}
+        {state.ok && <span className="text-emerald-600 text-xs font-bold" role="status">ذخیره شد</span>}
+      </form>
+    </details>
+  );
+}
 
 export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id: string; name: string }[] }) {
   const [renaming, setRenaming] = useState(false);
@@ -125,10 +189,10 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
   const [removeState, removeAction] = useActionState<TeamsActionState, FormData>(removeMemberAction, {});
   const [deleteState, deleteAction] = useActionState<TeamsActionState, FormData>(deleteTeamAction, {});
   const [moveState, moveAction] = useActionState<TeamsActionState, FormData>(moveMemberAction, {});
-  const [leaderState, leaderAction] = useActionState<TeamsActionState, FormData>(setLeaderAction, {});
-  const [resetState, resetAction] = useActionState<TeamsActionState, FormData>(resetLeaderAction, {});
-  const leader = team.members.find((m) => m.id === team.leaderId) ?? null;
   const otherTeams = allTeams.filter((t) => t.id !== team.id);
+  const memberCount = team.members.length;
+  // پوشش مهارت‌ها فقط اطلاع است؛ شرط شرکت در بازی نیست.
+  const skills = new Set(team.members.map((m) => m.role));
 
   return (
     <div className="card p-4 sm:p-6 space-y-3 anim-rise">
@@ -146,11 +210,25 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
           ) : (
             <div className="min-w-0">
               <div className="font-black text-brand-navy break-words">{team.name}</div>
-              <div className="text-xs text-brand-slate">خزانه: {coins(team.treasury)}</div>
+              <div className="text-xs text-brand-slate fa-num">
+                {fa(memberCount)} از {fa(TEAM_CAPACITY)} نفر
+                {memberCount > 0 && (
+                  <span title="مهارت‌های تیم (فقط برای اطلاع)">
+                    {" · مهارت‌ها: "}
+                    {(Object.keys(ROLES) as RoleKey[]).map((r) => (
+                      <span key={r} className={skills.has(r) ? "" : "opacity-30"} aria-label={`${ROLES[r].label}${skills.has(r) ? "" : " (ندارد)"}`}>
+                        {ROLES[r].emoji}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </div>
             </div>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
+          {team.solo && <span className="chip chip-gold">👤 شرکت فردی</span>}
+          {team.cheatPenalty > 0 && <span className="chip chip-red fa-num">−{fa(team.cheatPenalty)} تقلب</span>}
           <span className={`chip ${team.ideaSubmitted ? "chip-ok" : "chip-navy"}`}>{team.ideaSubmitted ? "ایده ثبت شد" : "بدون ایده"}</span>
           <span className={`chip ${team.productSubmitted ? "chip-ok" : "chip-navy"}`}>{team.productSubmitted ? "محصول ثبت شد" : "بدون محصول"}</span>
           {!renaming && (
@@ -169,8 +247,12 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
             <li key={m.id} className="flex flex-wrap items-center gap-2 rounded-2xl bg-brand-ice px-3 py-2">
               <Avatar seed={m.avatarSeed || m.id} size={28} />
               <span className="text-sm font-bold text-brand-navy min-w-0 break-words">
-                {m.id === team.leaderId && <span title="سرپرست تیم">👑 </span>}
                 {m.nickname}
+                {m.role in ROLES && (
+                  <span className="ms-1.5 text-xs font-normal text-brand-slate">
+                    {ROLES[m.role as RoleKey].emoji} {ROLES[m.role as RoleKey].label}
+                  </span>
+                )}
               </span>
               {/* دسکتاپ: اقدامات کنار هم؛ موبایل: جمع‌شده در منوی «اقدامات» تا ردیف شلوغ نشود */}
               <div className="hidden sm:flex items-center gap-2 ms-auto">
@@ -188,35 +270,7 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
           ))}
         </ul>
       )}
-      {team.members.length >= 2 && (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-brand-slate">سرپرست: {leader ? <b className="text-brand-navy">{leader.nickname}</b> : "در حال رأی‌گیری"}</span>
-          <form action={leaderAction} className="flex items-center gap-2">
-            <input type="hidden" name="teamId" value={team.id} />
-            <label htmlFor={`leader-${team.id}`} className="sr-only">تعیین سرپرست {team.name}</label>
-            <select id={`leader-${team.id}`} name="userId" required defaultValue="" className={SELECT_CLS}>
-              <option value="" disabled>تعیین سرپرست…</option>
-              {team.members.map((m) => (
-                <option key={m.id} value={m.id}>{m.nickname}</option>
-              ))}
-            </select>
-            <button type="submit" className="btn-ghost !py-2 !px-4 text-sm min-h-10">اعمال</button>
-          </form>
-          {leader && (
-            <form
-              action={resetAction}
-              onSubmit={(e) => {
-                if (!confirm(`سرپرستی ${team.name} برداشته و رأی‌گیری از نو باز شود؟`)) e.preventDefault();
-              }}
-            >
-              <input type="hidden" name="teamId" value={team.id} />
-              <button type="submit" className="btn-ghost !py-2 !px-4 text-sm min-h-10 !text-brand-red">رأی‌گیری از نو</button>
-            </form>
-          )}
-        </div>
-      )}
-      {leaderState.error && <Alert kind="error">{leaderState.error}</Alert>}
-      {resetState.error && <Alert kind="error">{resetState.error}</Alert>}
+      <CheatPenaltyForm team={team} />
       {removeState.error && <Alert kind="error">{removeState.error}</Alert>}
       {moveState.error && <Alert kind="error">{moveState.error}</Alert>}
       {moveState.ok && <Alert kind="ok">کاربر منتقل شد.</Alert>}
@@ -233,7 +287,7 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
         </form>
       )}
       {deleteState.error && <Alert kind="error">{deleteState.error}</Alert>}
-      {(renameState.ok || removeState.ok || deleteState.ok || leaderState.ok || resetState.ok) && <Alert kind="ok">به‌روزرسانی شد.</Alert>}
+      {(renameState.ok || removeState.ok || deleteState.ok) && <Alert kind="ok">به‌روزرسانی شد.</Alert>}
       <div className="text-[10px] text-brand-slate fa-num">/{team.slug}</div>
     </div>
   );

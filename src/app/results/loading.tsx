@@ -1,6 +1,6 @@
 import { Container } from "@/components/ui";
 
-// نتایج: محاسبهٔ امتیازها (computeScoresCached) و تسویه می‌تواند سنگین باشد.
+// نتایج: محاسبهٔ امتیازها (computeScoresCached) و جوایز می‌تواند سنگین باشد.
 export default function Loading() {
   return (
     <Container className="pt-16">

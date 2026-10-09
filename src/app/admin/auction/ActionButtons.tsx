@@ -5,9 +5,9 @@ import { Alert } from "@/components/ui";
 import {
   ensureAuctionsAction,
   startNextAuctionAction,
-  closeDueSlotsAction,
   ensureAdSlotsAction,
   settleCurrentAuctionAction,
+  moveAuctionAction,
   type AuctionAdminState,
 } from "./actions";
 
@@ -45,7 +45,6 @@ function ActionButton({
 export function AuctionActionButtons() {
   return (
     <div className="flex flex-wrap gap-4">
-      <ActionButton label="ساخت صف حراج" action={ensureAuctionsAction} tone="ghost" />
       <ActionButton
         label="شروع حراج بعدی"
         action={startNextAuctionAction}
@@ -58,20 +57,39 @@ export function AuctionActionButtons() {
         tone="cyan"
         confirmText="حراج زندهٔ جاری همین حالا بسته و به بالاترین پیشنهاد فعلی واگذار شود؟ این کار برگشت‌ناپذیر است."
       />
+      <ActionButton
+        label="افزودن همهٔ محصولات باقی‌مانده به صف"
+        action={ensureAuctionsAction}
+        tone="ghost"
+        confirmText="همهٔ محصولات ثبت‌شده‌ای که تیمشان هنوز به حراج نفرستاده، با ترتیب تصادفی ته صف حراج بروند؟"
+      />
     </div>
+  );
+}
+
+/** دکمه‌های ↑/↓ جابه‌جایی یک حراجِ در صف */
+export function MoveAuctionButtons({ auctionId, label, canUp, canDown }: { auctionId: string; label: string; canUp: boolean; canDown: boolean }) {
+  const [state, formAction, pending] = useActionState<AuctionAdminState, FormData>(moveAuctionAction, {});
+  const btn =
+    "inline-flex items-center justify-center size-9 shrink-0 rounded-full border border-brand-mist bg-white font-bold text-brand-navy transition hover:bg-brand-ice disabled:opacity-30";
+  return (
+    <form action={formAction} className="inline-flex items-center gap-1">
+      <input type="hidden" name="auctionId" value={auctionId} />
+      <button type="submit" name="dir" value="up" disabled={pending || !canUp} className={btn} aria-label={`جلوتر بردن «${label}» در صف`} title="جلوتر در صف">
+        <span aria-hidden>↑</span>
+      </button>
+      <button type="submit" name="dir" value="down" disabled={pending || !canDown} className={btn} aria-label={`عقب‌تر بردن «${label}» در صف`} title="عقب‌تر در صف">
+        <span aria-hidden>↓</span>
+      </button>
+      {state.error && <span className="text-[11px] text-brand-red" role="alert">{state.error}</span>}
+    </form>
   );
 }
 
 export function AdSlotActionButtons() {
   return (
     <div className="flex flex-wrap gap-4">
-      <ActionButton label="ساخت جایگاه‌ها" action={ensureAdSlotsAction} tone="ghost" />
-      <ActionButton
-        label="بستن جایگاه‌های سررسیده"
-        action={closeDueSlotsAction}
-        tone="cyan"
-        confirmText="همهٔ جایگاه‌های تبلیغاتی سررسیده بسته و به برنده‌ها واگذار شوند؟"
-      />
+      <ActionButton label="ساخت جایگاه‌های روز بازار" action={ensureAdSlotsAction} tone="ghost" />
     </div>
   );
 }

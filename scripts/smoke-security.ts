@@ -1,12 +1,15 @@
 /**
  * دود-تست امنیت — محدودیت نرخ، باطل‌شدن نشست با sessionVersion، مسدودسازی و بازنشانی رمز.
  * اجرا: npx tsx scripts/smoke-security.ts
- * همهٔ ردیف‌های ساخته‌شده در پایان پاک می‌شوند.
+ * روی پایگاه‌دادهٔ موقت (createTempDb) اجرا می‌شود؛ پایگاه‌دادهٔ اصلی لمس نمی‌شود.
  */
 import "dotenv/config";
-import { prisma } from "../src/lib/db";
-import { hashPassword, verifyPassword, isSessionValid } from "../src/lib/auth";
-import { rateLimit, rateLimitMessage, resetRateLimits } from "../src/lib/rate-limit";
+import { createTempDb, isTempDatabaseUrl } from "./lib/temp-db";
+
+// DATABASE_URL باید پیش از import شدن src/lib/db تنظیم شود (به همین دلیل ماژول‌های lib پایین‌تر
+// به‌صورت پویا import می‌شوند)؛ اگر از قبل به یک پایگاه‌دادهٔ موقت اشاره نمی‌کرد، اینجا یکی می‌سازیم
+// تا هرگز به dev.db واقعی وصل نشویم.
+const ownTempDb = isTempDatabaseUrl(process.env.DATABASE_URL) ? null : createTempDb("security");
 
 const TAG = "smoke-sec-" + Date.now();
 const mail = (n: string) => `${TAG}-${n}@tapsell.ir`;
@@ -23,20 +26,24 @@ function check(name: string, cond: boolean, extra = "") {
   }
 }
 
-async function makeUser(n: string) {
-  return prisma.user.create({
-    data: {
-      email: mail(n),
-      passwordHash: await hashPassword("secret123"),
-      nickname: `آزمون ${n}`,
-      department: "بک‌اند",
-      role: "BUILDER",
-      power: "HYPE",
-    },
-  });
-}
-
 async function main() {
+  const { prisma } = await import("../src/lib/db");
+  const { hashPassword, verifyPassword, isSessionValid } = await import("../src/lib/auth");
+  const { rateLimit, rateLimitMessage, resetRateLimits } = await import("../src/lib/rate-limit");
+
+  async function makeUser(n: string) {
+    return prisma.user.create({
+      data: {
+        email: mail(n),
+        passwordHash: await hashPassword("secret123"),
+        nickname: `آزمون ${n}`,
+        department: "بک‌اند",
+        role: "BUILDER",
+        power: "",
+      },
+    });
+  }
+
   const userIds: string[] = [];
   try {
     console.log("\n# ۱ — معنای محدودیت نرخ");
@@ -104,8 +111,14 @@ async function main() {
     const left = await prisma.user.count({ where: { email: { startsWith: TAG } } });
     console.log(`  کاربر باقی‌مانده: ${left}`);
     console.log(`\nنتیجه: ${pass} موفق، ${fail} ناموفق`);
+    await prisma.$disconnect();
+    ownTempDb?.cleanup();
   }
   process.exit(fail === 0 ? 0 : 1);
 }
 
-main();
+main().catch((e) => {
+  console.error(e);
+  ownTempDb?.cleanup();
+  process.exit(1);
+});

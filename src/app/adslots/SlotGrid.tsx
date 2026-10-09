@@ -4,8 +4,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/Avatar";
 import { Alert } from "@/components/ui";
-import { fa, coins, jtime, toEnDigits } from "@/lib/persian";
-import { bidOnSlotAction } from "./actions";
+import { coins, jtime } from "@/lib/persian";
+import { buyAdSlotAction } from "./actions";
 import { AD_SLOT_KINDS } from "@/lib/constants";
 import type { SlotCell } from "@/lib/adslots";
 
@@ -14,35 +14,30 @@ const KINDS = Object.keys(AD_SLOT_KINDS) as Kind[];
 
 export function SlotGrid({
   cells,
-  myTeamId,
-  treasury,
-  canBid = true,
+  canBuy,
+  spendable,
 }: {
   cells: SlotCell[];
-  myTeamId: string | null;
-  treasury: number;
-  /** فقط سرپرست تیم پیشنهاد می‌دهد؛ بقیهٔ اعضا پیشنهاد تیم را فقط می‌بینند */
-  canBid?: boolean;
+  /** آیا کاربر اصلاً می‌تواند بخرد (تیم، محصول ثبت‌شده، سهمیهٔ تیم، فاز)؛ موجودی هر خانه جدا بررسی می‌شود */
+  canBuy: boolean;
+  /** سکه‌های قابل‌خرج کاربر؛ اعتبارسنجی نهایی سمت سرور است */
+  spendable: number;
 }) {
   const hours = Array.from(new Set(cells.map((c) => c.hourStart))).sort();
   const byKey = new Map(cells.map((c) => [`${c.kind}|${c.hourStart}`, c]));
   const router = useRouter();
 
-  const committedOpen = cells.filter((c) => c.status === "OPEN" && c.myBid !== null).reduce((s, c) => s + (c.myBid ?? 0), 0);
-
   const renderCell = (cell: SlotCell) => (
-    // کلید شامل وضعیت و پیشنهاد من است تا پس از refresh مقدار ورودی کهنه نماند.
-    <Cell key={`${cell.id}|${cell.status}|${cell.myBid ?? ""}`} cell={cell} myTeamId={myTeamId} canBid={canBid} onDone={() => router.refresh()} />
+    // کلید شامل وضعیت است تا پس از refresh حالت قبلی (خطا/در حال خرید) نماند.
+    <Cell key={`${cell.id}|${cell.state}`} cell={cell} canBuy={canBuy} spendable={spendable} onDone={() => router.refresh()} />
   );
+
+  if (cells.length === 0) {
+    return <p className="text-sm text-brand-slate">هنوز جایگاهی تعریف نشده است.</p>;
+  }
 
   return (
     <div>
-      {myTeamId && (
-        <div className="mb-3 text-xs text-brand-slate">
-          خزانهٔ تیم: <b className="fa-num text-brand-navy">{coins(treasury)}</b> · تعهد باز فعلی:{" "}
-          <b className="fa-num text-brand-navy">{coins(committedOpen)}</b>
-        </div>
-      )}
       {/* زیر sm: هر ساعت یک کارت عمودی با جایگاه‌هایش (جدول ۵۶۰پیکسلی روی گوشی اسکرول افقی می‌خورد). */}
       <div className="space-y-3 sm:hidden">
         {hours.map((h) => (
@@ -101,47 +96,51 @@ export function SlotGrid({
 
 function Cell({
   cell,
-  myTeamId,
-  canBid,
+  canBuy,
+  spendable,
   onDone,
 }: {
   cell: SlotCell;
-  myTeamId: string | null;
-  canBid: boolean;
+  canBuy: boolean;
+  spendable: number;
   onDone: () => void;
 }) {
-  // متن خام (رقم فارسی هم قبول است)؛ input عددی رقم فارسی را رد می‌کند.
-  const [raw, setRaw] = useState(String(cell.myBid ?? 1));
-  const digits = toEnDigits(raw.trim());
-  const value = /^\d+$/.test(digits) ? Number(digits) : 0;
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const label = `${AD_SLOT_KINDS[cell.kind as Kind].label} ساعت ${jtime(new Date(cell.hourStart))}`;
 
-  if (cell.status === "CLOSED") {
+  if (cell.state === "SOLD") {
     return (
-      <div className="card p-3 anim-pop">
-        {cell.winnerTeamId ? (
-          <div className="flex items-center gap-2">
-            <Avatar seed={cell.winnerTeamId} size={26} />
-            <div>
-              <div className="text-xs font-black text-brand-navy">{cell.winnerTeamName}</div>
-              <div className="text-[11px] fa-num text-brand-slate">{coins(cell.pricePaid ?? 0)}</div>
-            </div>
+      <div className={`card p-3 anim-pop ${cell.mine ? "ring-2 ring-brand-cyan" : ""}`}>
+        <div className="flex items-center gap-2">
+          <Avatar seed={cell.winnerTeamId ?? cell.id} size={26} />
+          <div className="min-w-0">
+            <div className="text-xs font-black text-brand-navy truncate">{cell.winnerTeamName ?? "—"}</div>
+            <div className="text-[11px] fa-num text-brand-slate">{coins(cell.pricePaid ?? cell.price)}</div>
           </div>
-        ) : (
-          <div className="text-xs text-brand-slate">بدون برنده</div>
-        )}
-        <div className="chip-navy mt-1 !py-0.5 !px-2 text-[10px]">بسته‌شده</div>
+        </div>
+        <div className={`${cell.mine ? "chip-ok" : "chip-navy"} mt-1 !py-0.5 !px-2 text-[10px]`}>{cell.mine ? "مال تیم تو" : "فروخته شد"}</div>
       </div>
     );
   }
 
-  async function submit() {
+  if (cell.state === "PAST") {
+    return (
+      <div className="card p-3 opacity-60">
+        <div className="text-xs text-brand-slate">زمانش گذشت</div>
+      </div>
+    );
+  }
+
+  const short = cell.price > spendable;
+
+  function buy() {
+    if (!confirm(`${label} را به قیمت ${coins(cell.price)} برای تیمت بخرم؟`)) return;
     setError(null);
     startTransition(async () => {
       try {
-        const res = await bidOnSlotAction(cell.id, value);
-        if (res?.error) setError(res.error);
+        const res = await buyAdSlotAction(cell.id);
+        if (res.error) setError(res.error);
         else onDone();
       } catch {
         setError("ارتباط با سرور برقرار نشد؛ دوباره تلاش کن.");
@@ -151,37 +150,26 @@ function Cell({
 
   return (
     <div className="card p-3 space-y-1.5">
-      <div className="chip-cyan !py-0.5 !px-2 text-[10px]">باز · {fa(cell.bidderCount)} پیشنهاددهنده</div>
-      {myTeamId && !canBid ? (
-        <div className="text-xs text-brand-slate">
-          پیشنهاد تیم: <b className="fa-num text-brand-navy">{cell.myBid !== null ? coins(cell.myBid) : "—"}</b>
-        </div>
-      ) : myTeamId ? (
-        <div className="flex items-center gap-1.5">
-          <input
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            dir="ltr"
-            aria-label={`مبلغ پیشنهاد برای ${AD_SLOT_KINDS[cell.kind as Kind].label} ساعت ${jtime(new Date(cell.hourStart))}`}
-            className="input fa-num !py-1.5 !px-2 !text-sm w-20"
-            value={raw}
-            aria-invalid={value <= 0 ? true : undefined}
-            onChange={(e) => setRaw(e.target.value)}
-          />
-          <button
-            disabled={pending || value <= 0}
-            onClick={submit}
-            aria-label={`${cell.myBid !== null ? "ویرایش پیشنهاد" : "پیشنهاد"} برای ${AD_SLOT_KINDS[cell.kind as Kind].label} ساعت ${jtime(new Date(cell.hourStart))}`}
-            className="btn-cyan !px-2.5 !py-1.5 !text-xs disabled:opacity-40"
-          >
-            {cell.myBid !== null ? "ویرایش" : "پیشنهاد"}
-          </button>
-        </div>
+      <div className="chip-cyan !py-0.5 !px-2 text-[10px]">آزاد</div>
+      {canBuy ? (
+        <button
+          type="button"
+          disabled={pending || short}
+          onClick={buy}
+          aria-label={`خرید ${label} به قیمت ${coins(cell.price)}${short ? "، سکهٔ کافی نداری" : ""}`}
+          className="btn-cyan !px-2.5 !py-1.5 !text-xs w-full disabled:opacity-40"
+        >
+          {pending ? "در حال خرید…" : `خرید · ${coins(cell.price)}`}
+        </button>
       ) : (
-        <div className="text-xs text-brand-slate">بدون تیم</div>
+        <div className="fa-num text-xs font-bold text-brand-navy">{coins(cell.price)}</div>
       )}
-      {error && <div className="anim-pop"><Alert kind="error">{error}</Alert></div>}
+      {canBuy && short && <div className="text-[11px] text-brand-red">سکهٔ کافی نداری</div>}
+      {error && (
+        <div className="anim-pop">
+          <Alert kind="error">{error}</Alert>
+        </div>
+      )}
     </div>
   );
 }

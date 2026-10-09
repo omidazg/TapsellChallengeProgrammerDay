@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { ideaAiTag, type AiTagInfo } from "./ai-tag";
 
 // فهرست میزبان‌های مجاز next/image و قاعدهٔ نشانی تصویر در product-utils (قابل‌استفاده در کلاینت) است.
 export { isNextImageHost } from "./product-utils";
@@ -13,7 +14,7 @@ export function isHttpUrl(url: string): boolean {
   }
 }
 
-/** جمع سرمایهٔ جذب‌شدهٔ یک ایده */
+/** جمع سکهٔ حمایتیِ جذب‌شدهٔ یک ایده */
 export async function raisedFor(ideaId: string): Promise<number> {
   const agg = await prisma.investment.aggregate({
     where: { ideaId },
@@ -30,10 +31,11 @@ export type IdeaCardData = {
   title: string;
   oneLiner: string;
   coverUrl: string;
-  fundingCap: number;
-  revenueShare: number;
+  /** جمع سکهٔ حمایتی */
   raised: number;
+  /** تعداد حامی یکتا */
   investorCount: number;
+  aiTag: AiTagInfo | null;
   analystClarity: number | null;
   analystFeasibility: number | null;
   analystNovelty: number | null;
@@ -46,7 +48,7 @@ function analystAvg(i: { analystClarity: number | null; analystFeasibility: numb
   return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
 }
 
-/** چیدمان‌های طبقهٔ سرمایه‌گذاری (از طریق searchParams) */
+/** چیدمان‌های صفحهٔ حمایت از ایده‌ها (از طریق searchParams) */
 export const FLOOR_FILTERS = ["all", "lowest", "topAnalyst"] as const;
 export type FloorFilter = (typeof FLOOR_FILTERS)[number];
 
@@ -54,7 +56,7 @@ export function parseFloorFilter(value: string | undefined): FloorFilter {
   return (FLOOR_FILTERS as readonly string[]).includes(value ?? "") ? (value as FloorFilter) : "all";
 }
 
-/** فهرست همهٔ ایده‌های ثبت‌نهایی‌شده برای طبقهٔ سرمایه‌گذاری */
+/** فهرست همهٔ ایده‌های ثبت‌نهایی‌شده برای صفحهٔ حمایت */
 export async function getIdeasForFloor(filter: FloorFilter = "all"): Promise<IdeaCardData[]> {
   const ideas = await prisma.idea.findMany({
     where: { submittedAt: { not: null } },
@@ -72,10 +74,9 @@ export async function getIdeasForFloor(filter: FloorFilter = "all"): Promise<Ide
       title: i.title,
       oneLiner: i.oneLiner,
       coverUrl: i.coverUrl,
-      fundingCap: i.fundingCap,
-      revenueShare: i.revenueShare,
       raised: i.investments.reduce((a, inv) => a + inv.amount, 0),
       investorCount: new Set(i.investments.map((inv) => inv.userId)).size,
+      aiTag: ideaAiTag(i),
       analystClarity: i.analystClarity,
       analystFeasibility: i.analystFeasibility,
       analystNovelty: i.analystNovelty,
@@ -101,12 +102,11 @@ export type IdeaDetail = {
   audience: string;
   buildPlan: string;
   coverUrl: string;
-  fundingCap: number;
-  revenueShare: number;
   analystClarity: number | null;
   analystFeasibility: number | null;
   analystNovelty: number | null;
   analystSummary: string | null;
+  aiTag: AiTagInfo | null;
   submittedAt: Date | null;
   raised: number;
   investments: { id: string; userId: string; nickname: string; avatarSeed: string; amount: number; createdAt: Date }[];
@@ -115,7 +115,7 @@ export type IdeaDetail = {
   chats: { id: string; userId: string; nickname: string; avatarSeed: string; question: string; answer: string; createdAt: Date }[];
 };
 
-/** جزئیات کامل یک ایده برای صفحهٔ سرمایه‌گذاری، از دید یک بازدیدکنندهٔ خاص */
+/** جزئیات کامل یک ایده برای صفحهٔ حمایت، از دید یک بازدیدکنندهٔ خاص */
 export async function getIdeaDetail(id: string, viewerId: string | null): Promise<IdeaDetail | null> {
   const idea = await prisma.idea.findUnique({
     where: { id },
@@ -144,12 +144,11 @@ export async function getIdeaDetail(id: string, viewerId: string | null): Promis
     audience: idea.audience,
     buildPlan: idea.buildPlan,
     coverUrl: idea.coverUrl,
-    fundingCap: idea.fundingCap,
-    revenueShare: idea.revenueShare,
     analystClarity: idea.analystClarity,
     analystFeasibility: idea.analystFeasibility,
     analystNovelty: idea.analystNovelty,
     analystSummary: idea.analystSummary,
+    aiTag: ideaAiTag(idea),
     submittedAt: idea.submittedAt,
     raised: idea.investments.reduce((a, inv) => a + inv.amount, 0),
     investments: idea.investments.map((inv) => ({
@@ -172,24 +171,4 @@ export async function getIdeaDetail(id: string, viewerId: string | null): Promis
       createdAt: c.createdAt,
     })),
   };
-}
-
-/** پایین‌ترین ایدهٔ سرمایه‌گذاری‌شده (به جز تیم خود کاربر) — برای اعتبارسنجی قدرت فرشته */
-export async function lowestRaisedIdeaId(excludeTeamId: string | null): Promise<string | null> {
-  const info = await lowestRaisedIdeaInfo(excludeTeamId);
-  return info?.id ?? null;
-}
-
-/** مثل {@link lowestRaisedIdeaId} اما عنوان و نام تیم را هم برمی‌گرداند — برای نمایش در دکمهٔ قدرت فرشته */
-export async function lowestRaisedIdeaInfo(
-  excludeTeamId: string | null
-): Promise<{ id: string; title: string; teamName: string; raised: number } | null> {
-  const ideas = await getIdeasForFloor();
-  const candidates = ideas.filter((i) => i.teamId !== excludeTeamId);
-  if (candidates.length === 0) return null;
-  let lowest = candidates[0];
-  for (const i of candidates) {
-    if (i.raised < lowest.raised) lowest = i;
-  }
-  return { id: lowest.id, title: lowest.title, teamName: lowest.teamName, raised: lowest.raised };
 }

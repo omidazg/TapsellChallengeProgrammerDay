@@ -8,7 +8,7 @@ import { Alert, Coin } from "@/components/ui";
 import { ConnectionBanner } from "@/components/ConnectionBanner";
 import { usePolling } from "@/hooks/usePolling";
 import { fa, coins, toEnDigits } from "@/lib/persian";
-import { placeBidAction, secondWindAction, bidBudgetAction } from "./actions";
+import { placeBidAction, bidBudgetAction } from "./actions";
 import type { AuctionState, BidBudget } from "@/lib/auction";
 
 const QUICK_STEPS = [0, 2, 5] as const;
@@ -92,10 +92,10 @@ export function AuctionStage({
 }: {
   initialId: string | null;
   initialBudget: BidBudget | null;
-  currentUser: { id: string; nickname: string; teamId: string | null; buyWallet: number; power: string; powerUsed: boolean };
+  currentUser: { id: string; nickname: string; teamId: string | null; buyWallet: number };
 }) {
   const [auctionId, setAuctionId] = useState(initialId);
-  // بودجهٔ خصوصی کاربر (کیف خرید و رزرو حراج‌های دیگر) برای حراج جاری؛ از وضعیت عمومی حراج جداست.
+  // بودجهٔ خصوصی کاربر (کیف سکه و رزرو حراج‌های دیگر) برای حراج جاری؛ از وضعیت عمومی حراج جداست.
   const [budget, setBudget] = useState<BidBudget | null>(initialBudget);
   const budgetFor = useRef<string | null>(initialId);
   const [state, setState] = useState<AuctionState | null>(null);
@@ -231,7 +231,7 @@ export function AuctionStage({
       if (iAmHighestNow) setOutbid(false);
       wasHighest.current = iAmHighestNow;
 
-      // با پایان یافتن حراج، کیف خرید سرور تغییر کرده است؛ صفحه را تازه کن.
+      // با پایان یافتن حراج، کیف سکهٔ سرور تغییر کرده است؛ صفحه را تازه کن.
       // (تغییر موجودی سرور پس از رفرش، بودجه را هم از طریق effect بالا تازه می‌کند.)
       if (lastStatus.current === "LIVE" && data.status === "ENDED") router.refresh();
       lastStatus.current = data.status;
@@ -361,24 +361,8 @@ export function AuctionStage({
     [auctionId, fetchState]
   );
 
-  const claimSecondWind = useCallback(() => {
-    if (!auctionId) return;
-    setError(null);
-    if (!confirm("نفس دوم فقط یک‌بار در کل بازی قابل استفاده است. همین حالا این حراج را دو دقیقه تمدید کنم؟")) return;
-    startTransition(async () => {
-      try {
-        const res = await secondWindAction(auctionId);
-        if ("error" in res && res.error) setError(res.error);
-        else router.refresh();
-      } catch {
-        setError(NETWORK_ERROR);
-      }
-      await fetchState(auctionId).catch(() => null);
-    });
-  }, [auctionId, fetchState, router]);
-
   // حراج عوض شد (قبلی تسویه شد و بعدی بلافاصله زنده شد، یا صف تمام شد): ممکن است وضعیت ENDED
-  // حراج قبلی هیچ‌وقت به کلاینت نرسیده باشد؛ پس کیف خرید و فهرست صف/پایان‌یافته‌ها را از سرور تازه کن.
+  // حراج قبلی هیچ‌وقت به کلاینت نرسیده باشد؛ پس کیف سکه و فهرست صف/پایان‌یافته‌ها را از سرور تازه کن.
   // در همان حال نتیجهٔ نهایی حراج قبلی یک‌بار گرفته و چند ثانیه در بنری بالای صحنه نشان داده می‌شود.
   useEffect(() => {
     const prev = prevAuctionId.current;
@@ -443,14 +427,14 @@ export function AuctionStage({
   // متن ناحیهٔ aria-live: فقط با تغییر قیمت/نفر اول/وضعیت یا عبور از آستانه‌های زمانی عوض می‌شود، نه هر ثانیه.
   let liveText = "";
   if (current?.status === "LIVE") {
-    const leader = current.highest
+    const leadText = current.highest
       ? `بالاترین پیشنهاد ${coins(current.highest.amount)} از ${current.highest.nickname}${
           current.highest.userId === currentUser.id ? " (خودت)" : ""
         }`
       : `هنوز پیشنهادی ثبت نشده؛ شروع از ${coins(current.nextMin)}`;
     const endsAt = current.endsAt ? new Date(current.endsAt).getTime() : null;
     const bucket = endsAt ? remainingBucket(endsAt - now) : "";
-    liveText = bucket ? `${leader}، ${bucket}` : leader;
+    liveText = bucket ? `${leadText}، ${bucket}` : leadText;
   } else if (current?.status === "ENDED") {
     liveText = current.winnerNickname
       ? `حراج تمام شد. برنده ${current.winnerNickname} با ${coins(current.finalPrice ?? 0)}`
@@ -530,7 +514,7 @@ export function AuctionStage({
             ⏳
           </div>
           <h3 className="text-xl font-black">فعلاً حراجی زنده نیست</h3>
-          <p className="mt-2 text-brand-slate">منتظر شروع حراج بعدی توسط برگزارکننده باش.</p>
+          <p className="mt-2 text-brand-slate">به‌محض اینکه تیمی محصولش را به صف حراج بفرستد، حراج خودکار شروع می‌شود.</p>
         </div>
       </>
     );
@@ -544,7 +528,7 @@ export function AuctionStage({
   const urgent = isLive && remaining <= 30_000;
   const isMyTeam = !!currentUser.teamId && current.product.teamId === currentUser.teamId;
   const quickAmounts = QUICK_STEPS.map((step) => current.nextMin + step);
-  // بودجه: اگر بودجهٔ همین حراج هنوز نرسیده، از کیف خرید سرور بدون رزرو استفاده می‌شود (سرور در هر حال بررسی می‌کند).
+  // بودجه: اگر بودجهٔ همین حراج هنوز نرسیده، از کیف سکهٔ سرور بدون رزرو استفاده می‌شود (سرور در هر حال بررسی می‌کند).
   const myBudget = budget && budget.auctionId === current.id ? budget : null;
   const wallet = myBudget?.buyWallet ?? currentUser.buyWallet;
   const reservedElsewhere = myBudget?.reservedElsewhere ?? 0;
@@ -552,7 +536,7 @@ export function AuctionStage({
   const iLead = current.highest?.userId === currentUser.id;
   const reservedHere = iLead && current.highest ? current.highest.amount : 0;
   const reserved = reservedElsewhere + reservedHere;
-  // برای کارت «کیف خرید تو»: کل رزرو (پیشتازی در همین حراج فقط تا وقتی زنده است) و باقیِ واقعاً آزاد کیف.
+  // برای کارت «کیف سکهٔ تو»: کل رزرو (پیشتازی در همین حراج فقط تا وقتی زنده است) و باقیِ واقعاً آزاد کیف.
   const reservedTotal = reservedElsewhere + (isLive ? reservedHere : 0);
   const freeToSpend = Math.max(0, wallet - reservedTotal);
   const cantAffordNext = current.nextMin > spendable;
@@ -717,7 +701,7 @@ export function AuctionStage({
               <div id="bid-hint" className="space-y-1 text-xs text-brand-slate">
                 <div className="flex flex-wrap gap-x-3 gap-y-1 rounded-xl bg-brand-ice px-3 py-2">
                   <span>
-                    موجودی کیف خرید: <span className="fa-num font-bold text-brand-navy">{coins(wallet)}</span>
+                    موجودی کیف سکه: <span className="fa-num font-bold text-brand-navy">{coins(wallet)}</span>
                   </span>
                   <span>
                     رزرو‌شده: <span className="fa-num font-bold text-brand-navy">{coins(reserved)}</span>
@@ -738,18 +722,6 @@ export function AuctionStage({
                   </div>
                 )}
               </div>
-
-              {currentUser.power === "SECOND_WIND" && !currentUser.powerUsed && (
-                <button
-                  type="button"
-                  onClick={claimSecondWind}
-                  disabled={pending || !biddingOpen}
-                  aria-label="استفاده از قدرت نفس دوم: دو دقیقه تمدید این حراج"
-                  className="btn-navy w-full sm:w-auto !px-4 !py-2"
-                >
-                  <span aria-hidden>⏱️</span> نفس دوم (دو دقیقه تمدید)
-                </button>
-              )}
             </div>
           )}
 
@@ -775,7 +747,7 @@ export function AuctionStage({
       </div>
 
       <div className="card p-5 h-fit">
-        <div className="text-sm font-black text-brand-navy mb-2">کیف خرید تو</div>
+        <div className="text-sm font-black text-brand-navy mb-2">کیف سکهٔ تو</div>
         <Coin n={wallet} />
         {reservedTotal > 0 && (
           <div className="mt-2 text-xs text-brand-slate">

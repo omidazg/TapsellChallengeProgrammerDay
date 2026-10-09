@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { Avatar } from "@/components/Avatar";
 import { Alert, Stat } from "@/components/ui";
-import { ROLES, POWERS, type RoleKey, type PowerKey } from "@/lib/constants";
+import { ROLES, type RoleKey } from "@/lib/constants";
 import { fa } from "@/lib/persian";
 import {
   registerAction,
@@ -19,7 +19,7 @@ import { PhoneVerify } from "@/components/PhoneVerify";
 import { PasswordInput } from "@/components/PasswordInput";
 import { DEPARTMENTS, type Department } from "./departments";
 
-const STEPS = ["حساب کاربری", "نقش", "قدرت", "کد بزن", "پیش‌نمایش"] as const;
+const STEPS = ["حساب کاربری", "مهارت", "کد بزن", "پیش‌نمایش"] as const;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -56,7 +56,6 @@ export function RegisterWizard({
   const [phone, setPhone] = useState<string | null>(null);
   const [phoneProof, setPhoneProof] = useState<string | null>(null);
   const [role, setRole] = useState<RoleKey | null>(null);
-  const [power, setPower] = useState<PowerKey | null>(null);
   const [stats, setStats] = useState<Stats>({ coffee: 5, bugs: 50, sleep: 7, confidence: 100 });
   const [ran, setRan] = useState(false);
   const [running, setRunning] = useState(false);
@@ -70,8 +69,9 @@ export function RegisterWizard({
   const [pending, startTransition] = useTransition();
 
   const avatarSeed = useMemo(
-    () => (role && power ? `${role}-${power}-${stats.coffee}-${stats.bugs}-${stats.sleep}-${stats.confidence}-${nickname}` : ""),
-    [role, power, stats, nickname]
+    // هم‌شکل بذر آواتاری که سرور می‌سازد (register/actions.ts)
+    () => (role ? `${role}-${stats.coffee}-${stats.bugs}-${stats.sleep}-${stats.confidence}-${nickname}` : ""),
+    [role, stats, nickname]
   );
 
   // فوکوس پس از رندر (و پس از بازگشت به مرحلهٔ اول) به اولین فیلد نامعتبر می‌رود
@@ -133,7 +133,7 @@ export function RegisterWizard({
         fail({ error: "", fieldErrors: fe });
         return;
       }
-      // لیست سفید را همین‌جا چک کن، نه بعد از پنج مرحله
+      // لیست سفید را همین‌جا چک کن، نه بعد از همهٔ مرحله‌ها
       setChecking(true);
       try {
         const res = await checkRegisterEmailAction(email, phone, phoneProof);
@@ -149,11 +149,7 @@ export function RegisterWizard({
       }
     }
     if (step === 1 && !role) {
-      setError("یک نقش انتخاب کن.");
-      return;
-    }
-    if (step === 2 && !power) {
-      setError("یک قدرت انتخاب کن.");
+      setError("مهارت اصلی‌ات را انتخاب کن.");
       return;
     }
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
@@ -180,7 +176,7 @@ export function RegisterWizard({
   }
 
   function submit() {
-    if (!role || !power) return;
+    if (!role) return;
     clearErrors();
     startTransition(async () => {
       const res = await registerAction({
@@ -189,7 +185,6 @@ export function RegisterWizard({
         nickname,
         department: department as Department,
         role,
-        power,
         coffee: stats.coffee,
         bugs: stats.bugs,
         sleep: stats.sleep,
@@ -348,7 +343,11 @@ export function RegisterWizard({
 
         {step === 1 && (
           <div>
-            <h2 className="mb-4 text-xl font-black text-brand-navy">نقشت را انتخاب کن</h2>
+            <h2 className="mb-1 text-xl font-black text-brand-navy">مهارت اصلی‌ات چیست؟</h2>
+            <p className="mb-4 text-sm text-brand-slate">
+              مهارت فقط برای معرفی و پیدا کردن هم‌تیمی است و در امتیاز اثری ندارد. بعد از ثبت‌نام می‌توانی فردی شرکت کنی یا تیم ۲ یا
+              ۳ نفره بسازی.
+            </p>
             <div className="grid gap-4 sm:grid-cols-3 stagger">
               {(Object.keys(ROLES) as RoleKey[]).map((k) => {
                 const r = ROLES[k];
@@ -373,31 +372,6 @@ export function RegisterWizard({
 
         {step === 2 && (
           <div>
-            <h2 className="mb-4 text-xl font-black text-brand-navy">قدرت ویژه‌ات را انتخاب کن</h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 stagger">
-              {(Object.keys(POWERS) as PowerKey[]).map((k) => {
-                const p = POWERS[k];
-                const active = power === k;
-                return (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => setPower(k)}
-                    aria-pressed={active}
-                    className={`rounded-2xl border-2 p-5 text-right transition anim-rise focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan ${active ? "border-brand-cyan-dark bg-brand-ice shadow-lift" : "border-brand-mist bg-white hover:border-brand-cyan"}`}
-                  >
-                    <div className="text-3xl">{p.emoji}</div>
-                    <div className="mt-2 font-black text-brand-navy">{p.label}</div>
-                    <div className="mt-1 text-xs text-brand-slate">{p.desc}</div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div>
             <h2 className="mb-1 text-xl font-black text-brand-navy">خودت را کد بزن</h2>
             <p className="mb-4 text-sm text-brand-slate">عددهای شخصیتت را تنظیم کن و اجرا بزن.</p>
             <div dir="ltr" className="overflow-x-auto rounded-2xl bg-brand-navy px-5 py-5 font-mono text-sm leading-8 text-brand-mist shadow-inner">
@@ -421,7 +395,7 @@ export function RegisterWizard({
           </div>
         )}
 
-        {step === 4 && role && power && (
+        {step === 3 && role && (
           <div>
             <h2 className="mb-4 text-xl font-black text-brand-navy">پیش‌نمایش شخصیت</h2>
             <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
@@ -429,8 +403,7 @@ export function RegisterWizard({
               <div className="flex-1 min-w-0 text-center sm:text-right">
                 <div className="text-2xl font-black text-brand-navy break-words">{nickname}</div>
                 <div className="mt-1 flex flex-wrap justify-center sm:justify-start gap-2">
-                  <span className="chip-red">{ROLES[role].emoji} {ROLES[role].label}</span>
-                  <span className="chip-cyan">{POWERS[power].emoji} {POWERS[power].label}</span>
+                  <span className="chip-cyan" title="مهارت اصلی">{ROLES[role].emoji} {ROLES[role].label}</span>
                   <span className="chip-navy">{department}</span>
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -439,6 +412,9 @@ export function RegisterWizard({
                   <Stat label="خواب" value={fa(stats.sleep)} />
                   <Stat label="اعتمادبه‌نفس" value={fa(stats.confidence)} />
                 </div>
+                <p className="mt-4 text-xs text-brand-slate leading-6">
+                  قدم بعد از ثبت‌نام: در «اتاق تیم» تیم بساز، به تیمی بپیوند یا «شرکت فردی» را انتخاب کن.
+                </p>
               </div>
             </div>
           </div>

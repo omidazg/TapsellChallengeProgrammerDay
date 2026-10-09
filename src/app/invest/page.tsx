@@ -1,20 +1,19 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { getPhase, getSetting, phaseIndex, PHASE_LABEL } from "@/lib/phase";
+import { getPhase, getSettingInt, phaseIndex, PHASE_LABEL } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
-import { getIdeasForFloor, lowestRaisedIdeaInfo, parseFloorFilter } from "@/lib/idea";
+import { getIdeasForFloor, parseFloorFilter } from "@/lib/idea";
 import { totalInvestedByUser } from "@/lib/invest";
+import { spendableBuyCoins } from "@/lib/market";
 import { PageHeader, Container, Locked, Stat, Alert } from "@/components/ui";
-import { UnspentReminder } from "@/components/UnspentReminder";
-import { fa, coins } from "@/lib/persian";
+import { coins } from "@/lib/persian";
 import { InvestFloor } from "./InvestFloor";
-import { AngelCard } from "./AngelCard";
 
-export const metadata = { title: "طبقهٔ سرمایه‌گذاری" };
+export const metadata = { title: "حمایت از ایده‌ها" };
 
 export default async function InvestPage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
   const user = await requireUser();
-  const { phase, endsAt } = await getPhase();
+  const { phase } = await getPhase();
   const sp = await searchParams;
   const aiOff = !process.env.ANTHROPIC_API_KEY;
   const filter = parseFloorFilter(sp.filter);
@@ -24,7 +23,7 @@ export default async function InvestPage({ searchParams }: { searchParams: Promi
       <>
         <PageHeader
           eyebrow={`از فاز «${PHASE_LABEL.SEED_ROUND}» باز می‌شود`}
-          title="طبقهٔ سرمایه‌گذاری"
+          title="حمایت از ایده‌ها"
           action={
             <Link href="/" className="btn-ghost">
               الان چه کنم؟
@@ -32,75 +31,55 @@ export default async function InvestPage({ searchParams }: { searchParams: Promi
           }
         />
         <Container>
-          <Locked title="هنوز زود است" desc="طبقهٔ سرمایه‌گذاری از فاز «دور سرمایه‌گذاری» باز می‌شود." />
+          <Locked title="هنوز زود است" desc={`حمایت از ایده‌ها از فاز «${PHASE_LABEL.SEED_ROUND}» باز می‌شود.`} />
         </Container>
       </>
     );
   }
 
-  const [ideas, invested, penaltyRaw] = await Promise.all([
+  const [ideas, invested, spendable, supportCap] = await Promise.all([
     getIdeasForFloor(filter),
     totalInvestedByUser(user.id),
-    // جریمه اعشاری است (پیش‌فرض ۱٫۵) پس نباید با getSettingInt خوانده شود.
-    getSetting("penalty_per_coin", String(DEFAULTS.penaltyPerCoin)),
+    spendableBuyCoins(user.id, user.buyWallet),
+    getSettingInt("support_cap", DEFAULTS.supportCap),
   ]);
-  const parsedPenalty = Number.parseFloat(penaltyRaw);
-  const penaltyPerCoin = Number.isFinite(parsedPenalty) ? parsedPenalty : DEFAULTS.penaltyPerCoin;
 
   const interactive = phase === "SEED_ROUND";
-
-  const canAngel = interactive && user.power === "ANGEL" && !user.powerUsed;
-  const angelTarget = canAngel ? await lowestRaisedIdeaInfo(user.teamId) : null;
 
   return (
     <>
       <PageHeader
-        eyebrow="فاز فعلی"
-        title="طبقهٔ سرمایه‌گذاری"
-        desc="با کیف بذر روی ایده‌های تیم‌های دیگر سرمایه‌گذاری کن و در سود آن‌ها شریک شو."
+        eyebrow={interactive ? "فاز فعلی" : PHASE_LABEL.SEED_ROUND}
+        title="حمایت از ایده‌ها"
+        desc="با سکه‌هایت از ایده‌هایی که دوست داری حمایت کن تا تیمشان امتیاز «حمایت مردمی» بگیرد."
         action={
           <div className="flex flex-wrap gap-3">
-            <Stat label="کیف بذر" value={coins(user.seedWallet)} tone="gold" />
-            <Stat label="سرمایه‌گذاری‌شده" value={coins(invested)} tone="cyan" />
+            <Stat label="سکهٔ قابل‌خرج" value={coins(spendable)} tone="gold" />
+            <Stat label="حمایت‌های من" value={coins(invested)} tone="cyan" />
           </div>
         }
       />
       <Container>
         {!interactive && (
           <div className="mb-6">
-            <Alert kind="info">دور سرمایه‌گذاری تمام شده است؛ این صفحه فقط برای مشاهده است.</Alert>
-          </div>
-        )}
-        {interactive && (
-          <div className="mb-6">
-            <Alert kind="error">
-              سکه‌های بذر خرج‌نشده در پایان بازی جریمه می‌شوند (به ازای هر سکه {fa(penaltyPerCoin)} امتیاز کسر) — بذرت را کامل به کار بگیر.
-            </Alert>
-          </div>
-        )}
-        {interactive && (
-          <div className="mb-6">
-            <UnspentReminder
-              phase={phase}
-              phaseLabel="فاز «دور سرمایه‌گذاری»"
-              endsAt={endsAt ? endsAt.toISOString() : null}
-              coinsLeft={user.seedWallet}
-              penaltyPerCoin={penaltyPerCoin}
-            />
+            <Alert kind="info">«{PHASE_LABEL.SEED_ROUND}» تمام شده است؛ این صفحه فقط برای مشاهده است.</Alert>
           </div>
         )}
         <div className="mb-6">
           <Alert kind="info">
-            «هدف جذب سرمایه» سقف سخت نیست: هرچه سرمایهٔ بیشتری روی یک ایده جمع شود، سهم هر سرمایه‌گذار از سود آن (که از
-            فروش × سهم سود، متناسب با مبلغ سرمایه‌گذاری‌اش تقسیم می‌شود) کوچک‌تر می‌شود؛ پس رقم بزرگ همیشه گزینهٔ بهتری
-            نیست.
+            <b>تعداد حامی‌ها مهم‌تر از مبلغ است:</b> ۱۰ نفر که هر کدام ۱۰ سکه بدهند، ۱۰ برابرِ یک نفر با ۱۰۰ سکه می‌ارزند.
+            از هر نفر حداکثر {coins(supportCap)} برای هر پروژه در امتیاز حساب می‌شود. حمایت از ایدهٔ تیم خودت ممکن نیست.
+            {interactive && (
+              <>
+                {" "}
+                سکهٔ بیشتر می‌خواهی؟{" "}
+                <Link href="/coins" className="font-bold underline underline-offset-4">
+                  خرید سکه
+                </Link>
+              </>
+            )}
           </Alert>
         </div>
-        {canAngel && angelTarget && (
-          <div className="mb-6">
-            <AngelCard ideaTitle={angelTarget.title} teamName={angelTarget.teamName} />
-          </div>
-        )}
         <InvestFloor ideas={ideas} ownTeamId={user.teamId} interactive={interactive} filter={filter} aiOff={aiOff} />
       </Container>
     </>

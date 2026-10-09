@@ -2,7 +2,7 @@
  * دود-تست فید زندهٔ رویدادها (item 47) و نمای سالن (item 44).
  * اجرا: npx tsx scripts/smoke-feed.ts
  *
- * روی یک پایگاه‌دادهٔ SQLite موقت: یک تیم، یک ایدهٔ ثبت‌شده، یک سرمایه‌گذاری،
+ * روی یک پایگاه‌دادهٔ SQLite موقت: یک تیم، یک ایدهٔ ثبت‌شده، یک حمایت،
  * یک خرید، یک حراج‌بردهٔ و یک تغییر فاز می‌سازد؛ سپس buildFeed و
  * getHallPayloadCached را می‌آزماید: ترتیب نزولی زمان، متن‌های فارسی مورد
  * انتظار، شکل payload سالن، و نشت‌نداشتن ایمیل/موجودی کیف پول در خروجی JSON.
@@ -72,9 +72,9 @@ async function main() {
         passwordHash: "x",
         nickname: `${TAG}_نیک_آلفا`,
         role: "DEALMAKER",
-        power: "HYPE",
+        power: "",
         teamId: teamA.id,
-        seedWallet: 123,
+        seedWallet: 0,
         buyWallet: 456,
       },
     });
@@ -84,9 +84,9 @@ async function main() {
         passwordHash: "x",
         nickname: `${TAG}_نیک_بتا`,
         role: "BUILDER",
-        power: "BARGAIN",
+        power: "",
         teamId: teamB.id,
-        seedWallet: 789,
+        seedWallet: 0,
         buyWallet: 101,
       },
     });
@@ -100,8 +100,8 @@ async function main() {
         problem: "مسئله",
         audience: "مخاطب",
         buildPlan: "برنامه",
-        fundingCap: 200,
-        revenueShare: 30,
+        fundingCap: 0,
+        revenueShare: 0,
         submittedAt: new Date(Date.now() - 5 * 60_000),
       },
     });
@@ -146,7 +146,7 @@ async function main() {
 
     // ---------- فید ----------
     const feed = await buildFeed(20);
-    check("فید حداقل ۶ رویداد دارد (تیم×۲ + ایده + سرمایه‌گذاری + خرید + حراج + فاز)", feed.length >= 7, `len=${feed.length}`);
+    check("فید حداقل ۶ رویداد دارد (تیم×۲ + ایده + حمایت + خرید + حراج + فاز)", feed.length >= 7, `len=${feed.length}`);
 
     const ids = feed.map((e) => e.id);
     check("شناسه‌ها یکتا هستند", new Set(ids).size === ids.length);
@@ -165,11 +165,11 @@ async function main() {
 
     const investEvent = feed.find((e) => e.id === `invest:${investment.id}`);
     check(
-      "متن رویداد سرمایه‌گذاری الگوی «سرمایهٔ تازه گرفت» را دارد و بدون مبلغ است",
-      investEvent?.text === `تیم «${teamA.name}» سرمایهٔ تازه گرفت`,
+      "متن رویداد حمایت الگوی «حمایت تازه گرفت» را دارد و بدون مبلغ است",
+      investEvent?.text === `تیم «${teamA.name}» حمایت تازه گرفت`,
       investEvent?.text
     );
-    check("متن سرمایه‌گذاری مبلغ (۹۹۹) را لو نمی‌دهد", !!investEvent && !investEvent.text.includes("999"), investEvent?.text);
+    check("متن حمایت مبلغ (۹۹۹) را لو نمی‌دهد", !!investEvent && !investEvent.text.includes("999"), investEvent?.text);
 
     const purchaseEvent = feed.find((e) => e.id === `purchase:${purchase.id}`);
     check(
@@ -192,7 +192,7 @@ async function main() {
     const feedJson = JSON.stringify(feed);
     check("فید هیچ ایمیلی ندارد", !feedJson.includes("@"));
     check("فید هیچ کلید موجودی کیف پولی ندارد", !containsWalletKey(feed));
-    check("فید مبلغ سرمایه‌گذاری (۹۹۹) را لو نمی‌دهد", !feedJson.includes("999"));
+    check("فید مبلغ حمایت (۹۹۹) را لو نمی‌دهد", !feedJson.includes("999"));
 
     // ---------- payload سالن ----------
     const hall = await getHallPayloadCached();

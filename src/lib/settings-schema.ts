@@ -18,11 +18,16 @@ const nonNegativeInt = z.coerce
 /** یک اسکیمای واحد برای همهٔ کلیدهای تنظیمات (بازی + زمان‌بند) */
 export const settingsSchema = z.object({
   // تنظیمات بازی
-  seed_wallet: z.coerce.number().int().min(0),
-  buy_wallet: z.coerce.number().int().min(0),
-  max_per_target: z.coerce.number().int().min(1),
-  penalty_per_coin: z.coerce.number().min(0),
+  starting_coins: z.coerce.number().int().min(0),
+  support_cap: z.coerce.number().int().min(1),
+  solo_boost_pct: z.coerce.number().int().min(0).max(100),
+  duo_boost_pct: z.coerce.number().int().min(0).max(100),
+  max_bought_coins_per_user: z.coerce.number().int().min(0),
   bid_increment: z.coerce.number().int().min(1),
+  adslot_price_banner: z.coerce.number().int().min(1),
+  adslot_price_featured: z.coerce.number().int().min(1),
+  adslot_price_push: z.coerce.number().int().min(1),
+  adslot_max_per_team: z.coerce.number().int().min(0),
   auction_duration_sec: z.coerce.number().int().min(10),
   market_starts_at: z
     .string()
@@ -37,15 +42,19 @@ export const settingsSchema = z.object({
   phase_hours_SEED_ROUND: nonNegativeInt,
   phase_hours_BUILD: nonNegativeInt,
   phase_hours_MARKET: nonNegativeInt,
-  phase_hours_AUCTION: nonNegativeInt,
 });
 
 export const gameSettingsSchema = settingsSchema.pick({
-  seed_wallet: true,
-  buy_wallet: true,
-  max_per_target: true,
-  penalty_per_coin: true,
+  starting_coins: true,
+  support_cap: true,
+  solo_boost_pct: true,
+  duo_boost_pct: true,
+  max_bought_coins_per_user: true,
   bid_increment: true,
+  adslot_price_banner: true,
+  adslot_price_featured: true,
+  adslot_price_push: true,
+  adslot_max_per_team: true,
   auction_duration_sec: true,
   market_starts_at: true,
 });
@@ -59,7 +68,6 @@ export const schedulerSettingsSchema = settingsSchema.pick({
   phase_hours_SEED_ROUND: true,
   phase_hours_BUILD: true,
   phase_hours_MARKET: true,
-  phase_hours_AUCTION: true,
 });
 export type SchedulerSettingsInput = z.infer<typeof schedulerSettingsSchema>;
 

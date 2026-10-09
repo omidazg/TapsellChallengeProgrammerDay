@@ -5,8 +5,6 @@
  */
 import { prisma } from "./db";
 import { cached } from "./ttl-cache";
-import { getSettingInt } from "./phase";
-import { DEFAULTS } from "./constants";
 
 export type ParticipationStats = {
   registered: number;
@@ -40,8 +38,12 @@ async function getParticipationStats(): Promise<ParticipationStats> {
 
 export type SpendBucket = { label: string; count: number };
 export type SpendStats = {
-  seed: { spentPct: number; buckets: SpendBucket[] };
-  buy: { spentPct: number; buckets: SpendBucket[] };
+  /** درصد کل سکه‌هایی (رایگان + خریده‌شده + افزودهٔ برگزارکننده) که خرج شده */
+  spentPct: number;
+  buckets: SpendBucket[];
+  /** سکه‌های فروخته‌شده با پول و تعداد خریداران سکه */
+  coinsSold: number;
+  coinBuyers: number;
 };
 
 const BUCKET_LABELS = ["۰–۲۵٪", "۲۵–۵۰٪", "۵۰–۷۵٪", "۷۵–۱۰۰٪"];
@@ -53,44 +55,39 @@ function bucketIndex(pct: number) {
 }
 
 /**
- * کیف اولیهٔ هر کاربر در پایگاه‌داده ذخیره نشده (فقط موجودی فعلی)؛ به‌عنوان تقریب
- * از مقدار فعلی Setting به‌عنوان کیف شروعِ همهٔ کاربران استفاده می‌شود (همان مقداری
- * که register/actions.ts هنگام ساخت کاربر جدید از آن می‌خواند).
+ * نرخ خرج سکه از روی دفتر کل: خرج هر کاربر = جمع ردیف‌های منفی کیف سکه (BUY)؛ کل سکه‌ای که داشته
+ * = موجودی فعلی + خرج. پس سکه‌های رایگان اولیه، خریده‌شده و افزودهٔ برگزارکننده همه حساب می‌شوند.
  */
 async function getSpendStats(): Promise<SpendStats> {
-  const [seedStart, buyStart, users] = await Promise.all([
-    getSettingInt("seed_wallet", DEFAULTS.seedWallet),
-    getSettingInt("buy_wallet", DEFAULTS.buyWallet),
-    prisma.user.findMany({ select: { seedWallet: true, buyWallet: true } }),
+  const [users, spentGroups, sold] = await Promise.all([
+    prisma.user.findMany({ select: { id: true, buyWallet: true } }),
+    prisma.ledgerEntry.groupBy({ by: ["userId"], where: { wallet: "BUY", delta: { lt: 0 } }, _sum: { delta: true } }),
+    prisma.coinOrder.groupBy({ by: ["userId"], where: { status: "PAID" }, _sum: { coins: true } }),
   ]);
+  const spentByUser = new Map(spentGroups.map((g) => [g.userId, -(g._sum.delta ?? 0)]));
 
-  let seedSpent = 0;
-  let buySpent = 0;
-  const seedBuckets = [0, 0, 0, 0];
-  const buyBuckets = [0, 0, 0, 0];
-
+  let totalSpent = 0;
+  let totalHad = 0;
+  const buckets = [0, 0, 0, 0];
   for (const u of users) {
-    const sSpent = Math.max(0, seedStart - u.seedWallet);
-    const bSpent = Math.max(0, buyStart - u.buyWallet);
-    seedSpent += sSpent;
-    buySpent += bSpent;
-    seedBuckets[bucketIndex(seedStart > 0 ? (sSpent / seedStart) * 100 : 0)]++;
-    buyBuckets[bucketIndex(buyStart > 0 ? (bSpent / buyStart) * 100 : 0)]++;
+    const spent = spentByUser.get(u.id) ?? 0;
+    const had = spent + u.buyWallet;
+    totalSpent += spent;
+    totalHad += had;
+    buckets[bucketIndex(had > 0 ? (spent / had) * 100 : 0)]++;
   }
 
-  const totalSeedStart = seedStart * users.length;
-  const totalBuyStart = buyStart * users.length;
-  const toBuckets = (arr: number[]) => arr.map((count, i) => ({ label: BUCKET_LABELS[i], count }));
-
   return {
-    seed: { spentPct: totalSeedStart > 0 ? Math.round((seedSpent / totalSeedStart) * 1000) / 10 : 0, buckets: toBuckets(seedBuckets) },
-    buy: { spentPct: totalBuyStart > 0 ? Math.round((buySpent / totalBuyStart) * 1000) / 10 : 0, buckets: toBuckets(buyBuckets) },
+    spentPct: totalHad > 0 ? Math.round((totalSpent / totalHad) * 1000) / 10 : 0,
+    buckets: buckets.map((count, i) => ({ label: BUCKET_LABELS[i], count })),
+    coinsSold: sold.reduce((a, g) => a + (g._sum.coins ?? 0), 0),
+    coinBuyers: sold.length,
   };
 }
 
 export type HourlyBucket = { hourStart: Date; count: number };
 
-/** هیستوگرام ساعتی ترکیبی سرمایه‌گذاری+خرید+پیشنهاد حراج+قلب، از اولین تا آخرین رخداد بازی */
+/** هیستوگرام ساعتی ترکیبی حمایت+خرید+پیشنهاد حراج+قلب، از اولین تا آخرین رخداد بازی */
 async function getHourlyActivity(): Promise<HourlyBucket[]> {
   const [inv, pur, bid, heart] = await Promise.all([
     prisma.investment.findMany({ select: { createdAt: true } }),

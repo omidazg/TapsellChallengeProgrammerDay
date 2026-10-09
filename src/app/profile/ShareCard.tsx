@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Avatar, avatarParts } from "@/components/Avatar";
-import { ROLES, POWERS, type RoleKey, type PowerKey } from "@/lib/constants";
+import { ROLES, type RoleKey } from "@/lib/constants";
 import { fa } from "@/lib/persian";
 
 type Stats = { coffee: number; bugs: number; sleep: number; confidence: number };
@@ -10,14 +10,13 @@ type Stats = { coffee: number; bugs: number; sleep: number; confidence: number }
 export function ShareCard({
   nickname,
   role,
-  power,
   department,
   avatarSeed,
   stats,
 }: {
   nickname: string;
-  role: RoleKey;
-  power: PowerKey;
+  /** مهارت اصلی (null اگر نامعتبر باشد) */
+  role: RoleKey | null;
   department: string;
   avatarSeed: string;
   stats: Stats;
@@ -87,9 +86,11 @@ export function ShareCard({
     ctx.font = `900 56px ${font}`;
     ctx.fillText(nickname, W - 70, 170);
 
-    ctx.font = `bold 30px ${font}`;
-    ctx.fillStyle = "#eaf4fa";
-    ctx.fillText(`${ROLES[role].emoji} ${ROLES[role].label}   ·   ${POWERS[power].emoji} ${POWERS[power].label}`, W - 70, 220);
+    if (role) {
+      ctx.font = `bold 30px ${font}`;
+      ctx.fillStyle = "#eaf4fa";
+      ctx.fillText(`${ROLES[role].emoji} ${ROLES[role].label}`, W - 70, 220);
+    }
 
     ctx.font = `24px ${font}`;
     ctx.fillStyle = "rgba(255,255,255,0.85)";
@@ -164,11 +165,11 @@ export function ShareCard({
           <Avatar seed={avatarSeed} size={88} className="ring-4 ring-white/70 sm:size-[110px] shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="text-xl sm:text-2xl font-black break-words">{nickname}</div>
-            <div className="mt-1 flex flex-wrap justify-center sm:justify-start items-center gap-2 text-xs font-bold text-white/90">
-              <span>{ROLES[role].emoji} {ROLES[role].label}</span>
-              <span className="hidden sm:inline">·</span>
-              <span>{POWERS[power].emoji} {POWERS[power].label}</span>
-            </div>
+            {role && (
+              <div className="mt-1 flex flex-wrap justify-center sm:justify-start items-center gap-2 text-xs font-bold text-white/90">
+                <span>{ROLES[role].emoji} {ROLES[role].label}</span>
+              </div>
+            )}
             <div className="mt-4 flex flex-wrap justify-center sm:justify-start gap-2 sm:gap-3 text-xs">
               <span className="rounded-xl bg-white/15 px-3 py-2 font-black whitespace-nowrap">قهوه {fa(stats.coffee)}</span>
               <span className="rounded-xl bg-white/15 px-3 py-2 font-black whitespace-nowrap">باگ {fa(stats.bugs)}</span>

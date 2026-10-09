@@ -12,35 +12,49 @@ const STORAGE_KEY = "arena:onboarding-seen";
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-// بدنهٔ تابعی با جریمهٔ مؤثر هر سکه (تنظیم برگزارکننده یا پیش‌فرض) ساخته می‌شود
-type Step = { title: string; body: React.ReactNode | ((penaltyPerCoin: number) => React.ReactNode) };
+/** مقادیر مؤثر بازی که در متن قدم‌ها آمده‌اند (تنظیم برگزارکننده یا پیش‌فرض) */
+type TourValues = { startingCoins: number; soloBoostPct: number; duoBoostPct: number };
+
+// بدنهٔ تابعی با مقادیر مؤثر بازی ساخته می‌شود
+type Step = { title: string; body: React.ReactNode | ((v: TourValues) => React.ReactNode) };
 
 const STEPS: Step[] = [
   {
-    title: "بازی در چهار مرحلهٔ اصلی پیش می‌رود",
+    title: "بازی در پنج مرحله پیش می‌رود",
     body: (
       <p>
-        بعد از ثبت‌نام، بازی از «{PHASE_LABEL.IDEATION}» شروع می‌شود و به‌ترتیب به «{PHASE_LABEL.SEED_ROUND}»، «
-        {PHASE_LABEL.BUILD}»، «{PHASE_LABEL.MARKET}» و «{PHASE_LABEL.AUCTION}» می‌رسد. در صفحهٔ اصلی همیشه می‌توانی فاز جاری و زمان
-        باقی‌مانده‌اش را ببینی.
+        «{PHASE_LABEL.REGISTRATION}» ← «{PHASE_LABEL.IDEATION}» ← «{PHASE_LABEL.SEED_ROUND}» ← «{PHASE_LABEL.BUILD}» ← «
+        {PHASE_LABEL.MARKET}». حراج زنده هم داخل روز بازار برگزار می‌شود. در صفحهٔ اصلی همیشه فاز جاری، زمان باقی‌مانده و کار
+        بعدی‌ات را می‌بینی.
       </p>
     ),
   },
   {
-    title: "دو کیف پول داری؛ سکهٔ خرج‌نشده جریمه دارد",
-    body: (penaltyPerCoin) => (
+    title: "همه‌چیز با یک کیف سکه است",
+    body: (v) => (
       <p>
-        🌱 «کیف بذر» فقط برای سرمایه‌گذاری روی ایدهٔ تیم‌های دیگر است و 🛒 «کیف خرید» برای خرید محصول و حراج زنده. هر سکهٔ خرج‌نشده در
-        پایان بازی {fa(penaltyPerCoin)} امتیاز از تیمت کم می‌کند؛ پس بهتر است هر دو کیف را تا آخر خرج کنی.
+        <b className="fa-num">{fa(v.startingCoins)}</b> سکهٔ رایگان داری و اگر خواستی می‌توانی سکهٔ بیشتر بخری (هر سکه هزار تومان؛
+        پولش به صندوق جایزه اضافه می‌شود). با سکه از ایده‌ها حمایت کن، محصول بخر، در حراج شرکت کن یا جایگاه تبلیغاتی بگیر. حمایت از
+        تیم خودت یا خرید از آن ممنوع است.
+      </p>
+    ),
+  },
+  {
+    title: "امتیاز از سه معیار ساخته می‌شود",
+    body: (
+      <p>
+        داوری انسانی، حمایت مردمی و داوری هوش مصنوعی. در حمایت مردمی <b>تعداد حامی‌ها</b> از مقدار سکه مهم‌تر است: ده نفر که هر کدام
+        ده سکه بدهند خیلی بیشتر از یک نفر با صد سکه می‌ارزند.
       </p>
     ),
   },
   {
     title: "قدم بعدی: اتاق تیمت",
-    body: (
+    body: (v) => (
       <p>
-        حالا برو به <b className="text-brand-navy">اتاق تیم</b> تا تیم سه‌نفره‌ات را بسازی یا به تیمی بپیوندی؛ بدون تیم کامل نمی‌توانی
-        وارد فازهای بعدی بازی شوی.
+        به <b className="text-brand-navy">اتاق تیم</b> برو و تیم ۲ یا ۳ نفره بساز، به تیمی بپیوند یا «شرکت فردی» را انتخاب کن. تیم
+        کوچک‌تر در داوری انسانی جبران می‌گیرد: فردی <b className="fa-num">+{fa(v.soloBoostPct)}٪</b> و دونفره{" "}
+        <b className="fa-num">+{fa(v.duoBoostPct)}٪</b>.
       </p>
     ),
   },
@@ -48,28 +62,28 @@ const STEPS: Step[] = [
     title: "اگر جایی گیر کردی، راهنما همیشه در دسترس است",
     body: (
       <p>
-        همهٔ قوانین، مثال‌ها و ترفندهای هر مرحله در{" "}
+        همهٔ قوانین و مثال‌های هر مرحله در{" "}
         <Link href="/guide" className="font-bold text-brand-cyan-deep underline underline-offset-2">
           راهنمای کامل بازی
         </Link>{" "}
-        نوشته شده؛ هر وقت خواستی می‌توانی این راهنمای شروع را هم دوباره از همین صفحه باز کنی.
+        نوشته شده؛ دستیار هوش مصنوعی پایین صفحه هم به سؤال‌هایت جواب می‌دهد.
       </p>
     ),
   },
 ];
 
 /**
- * راهنمای شروع کار (اونبوردینگ): یک مودال قابل‌دسترس با چهار قدم کوتاه.
+ * راهنمای شروع کار (اونبوردینگ): یک مودال قابل‌دسترس با چند قدم کوتاه.
  * یک‌بار به‌صورت خودکار (وقتی `autoOpen` و هنوز در localStorage دیده نشده) باز می‌شود،
  * و یک لینک کوچک برای بازکردن دستی‌اش همیشه در دسترس است.
  */
 export function OnboardingTour({
   autoOpen = false,
-  penaltyPerCoin = DEFAULTS.penaltyPerCoin,
+  values = DEFAULTS,
 }: {
   autoOpen?: boolean;
-  /** جریمهٔ مؤثر هر سکهٔ خرج‌نشده (از سرور) */
-  penaltyPerCoin?: number;
+  /** مقادیر مؤثر بازی (از سرور) */
+  values?: TourValues;
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
@@ -201,7 +215,7 @@ export function OnboardingTour({
             <h2 id={titleId} className="text-lg font-black text-brand-navy">
               {current.title}
             </h2>
-            <div className="mt-2 text-sm text-brand-navy/90 leading-7">{typeof current.body === "function" ? current.body(penaltyPerCoin) : current.body}</div>
+            <div className="mt-2 text-sm text-brand-navy/90 leading-7">{typeof current.body === "function" ? current.body(values) : current.body}</div>
 
             <div className="mt-6 flex items-center justify-between gap-3">
               <button type="button" onClick={close} className="btn-ghost !px-4 !py-1.5 text-sm">

@@ -4,12 +4,12 @@ import { useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { Avatar } from "@/components/Avatar";
 import { Alert, Locked } from "@/components/ui";
-import { ROLES, POWERS, type RoleKey, type PowerKey } from "@/lib/constants";
+import { ROLES, type RoleKey } from "@/lib/constants";
 import { fa, jdatetime } from "@/lib/persian";
 import { copyText } from "@/lib/clipboard";
-import type { RoleCoverage, TeamWithMembers } from "@/lib/team";
-import { inviteAction, leaveTeamAction } from "./actions";
-import { LeaderCard, type LeaderCardState } from "./LeaderCard";
+import type { TeamWithMembers } from "@/lib/team";
+import { inviteAction, leaveTeamAction, goSoloAction, openSoloTeamAction } from "./actions";
+import type { TeamBoost } from "./NoTeamPanel";
 
 const TEAM_FULL = 3;
 
@@ -78,22 +78,22 @@ function useInviteLink(slug: string, teamName: string) {
 
 export function TeamPanel({
   team,
-  coverage,
   currentUserId,
   registrationOpen,
   formingOpen,
-  leader,
+  boost,
 }: {
   team: TeamWithMembers;
-  coverage: RoleCoverage[];
   currentUserId: string;
   registrationOpen: boolean;
   formingOpen: boolean;
-  leader: LeaderCardState;
+  boost: TeamBoost;
 }) {
-  const full = team.members.length >= TEAM_FULL;
-  const missingRoles = coverage.filter((c) => !c.present);
-  const incomplete = team.members.length < TEAM_FULL || missingRoles.length > 0;
+  const size = team.members.length;
+  const full = size >= TEAM_FULL;
+  // تیم فردی بسته است: نه جای خالی نشان داده می‌شود، نه دعوت
+  const solo = team.solo;
+  const boostPct = size <= 1 ? boost.solo : size === 2 ? boost.duo : 0;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -103,64 +103,56 @@ export function TeamPanel({
           <div className="flex-1 min-w-[200px]">
             <h2 className="text-xl sm:text-2xl font-black text-brand-navy break-words">{team.name}</h2>
             <div className="mt-1 flex flex-wrap gap-1.5">
-              {coverage.map((c) => (
-                <span key={c.role} className={c.present ? "chip-ok" : "chip-red"} title={c.present ? "پوشش دارد" : "خالی است"}>
-                  {c.emoji} {c.label}
+              <span className={solo ? "chip-gold" : "chip-navy"}>
+                {solo ? "🧑‍🚀 شرکت فردی" : `👥 تیم ${fa(size)} نفره`}
+              </span>
+              {boostPct > 0 && (
+                <span className="chip-ok fa-num" title="جبران تیم کوچک در داوری انسانی">
+                  +{fa(boostPct)}٪ داوری
                 </span>
-              ))}
+              )}
             </div>
           </div>
           <div className="flex flex-wrap items-start gap-2">
             <Link href="/team/settings" className="btn-cyan">
-              ⚙️ {leader.leaderId === currentUserId || team.members.length <= 1 ? "تنظیمات تیم" : "نقش و قدرت اعضا"}
+              ⚙️ نام و نشان تیم
             </Link>
           </div>
         </div>
 
-        {leader.votingOpen && <LeaderBanner voted={!!leader.votes[currentUserId]} />}
-
-        {incomplete && (
-          <IncompleteTeamCard team={team} missingRoles={missingRoles} formingOpen={formingOpen} />
-        )}
+        <TeamSizeCard size={size} solo={solo} formingOpen={formingOpen} boost={boost} slug={team.slug} teamName={team.name} />
 
         <div>
-          <h3 className="mb-3 text-lg font-black text-brand-navy">اعضای تیم ({fa(team.members.length)} از {fa(TEAM_FULL)})</h3>
+          <h3 className="mb-3 text-lg font-black text-brand-navy">
+            اعضای تیم ({fa(size)} از {fa(TEAM_FULL)})
+          </h3>
           <div className="grid gap-3 sm:grid-cols-3 stagger">
             {team.members.map((m) => {
               const role = m.role as RoleKey;
-              const power = m.power as PowerKey;
               return (
                 <div key={m.id} className={`card p-4 ${m.id === currentUserId ? "ring-2 ring-brand-cyan" : ""}`}>
                   <Avatar seed={m.avatarSeed || m.id} size={56} />
                   <div className="mt-2 font-black text-brand-navy break-words">
                     {m.nickname}
-                    {m.id === leader.leaderId && (
-                      <span className="chip-ok mr-1.5 text-[11px]" title="سرپرست تیم">
-                        👑 سرپرست
-                      </span>
-                    )}
+                    {m.id === currentUserId && <span className="mr-1.5 text-xs font-bold text-brand-slate">(خودت)</span>}
                   </div>
-                  <div className="mt-1 flex flex-wrap gap-1 text-xs">
-                    <span className="chip-red">{ROLES[role]?.emoji} {ROLES[role]?.label}</span>
-                    <span className="chip-cyan">{POWERS[power]?.emoji} {POWERS[power]?.label}</span>
-                  </div>
+                  {ROLES[role] && (
+                    <div className="mt-1 flex flex-wrap gap-1 text-xs">
+                      <span className="chip-cyan" title="مهارت اصلی">{ROLES[role].emoji} {ROLES[role].label}</span>
+                    </div>
+                  )}
                 </div>
               );
             })}
-            {Array.from({ length: TEAM_FULL - team.members.length }).map((_, i) => (
-              <EmptySlot
-                key={`empty-${i}`}
-                role={missingRoles[i] ?? null}
-                slug={team.slug}
-                teamName={team.name}
-                canInvite={formingOpen && !full}
-              />
-            ))}
+            {!solo &&
+              Array.from({ length: TEAM_FULL - size }).map((_, i) => (
+                <EmptySlot key={`empty-${i}`} slug={team.slug} teamName={team.name} canInvite={formingOpen && !full} />
+              ))}
           </div>
         </div>
 
         {formingOpen ? (
-          <InviteForm full={full} pendingInvites={team.invites} slug={team.slug} />
+          <InviteForm full={full} solo={solo} pendingInvites={team.invites} slug={team.slug} />
         ) : (
           <Locked
             title="دعوت و پیوستن به تیم بسته است"
@@ -168,15 +160,17 @@ export function TeamPanel({
           />
         )}
 
-        {registrationOpen && <LeaveButton lastMember={team.members.length <= 1} />}
+        {registrationOpen && <LeaveButton lastMember={size <= 1} />}
       </div>
 
       <div className="space-y-4">
-        <LeaderCard
-          state={leader}
-          members={team.members.map((m) => ({ id: m.id, nickname: m.nickname, avatarSeed: m.avatarSeed }))}
-          currentUserId={currentUserId}
-        />
+        <div className="card p-5 anim-rise">
+          <h3 className="mb-2 font-black text-brand-navy">🤝 همه هم‌اختیارند</h3>
+          <p className="text-sm text-brand-slate leading-7">
+            هر عضو تیم می‌تواند ایده و محصول را ثبت و ویرایش کند، محصول را به صف حراج بفرستد، جایگاه تبلیغاتی بخرد و
+            درخواست انتشار در بازار استودیو بدهد. هر خرجی از کیف سکهٔ خود همان نفر برداشته می‌شود.
+          </p>
+        </div>
         <div className="card p-5 anim-rise">
           <h3 className="mb-3 font-black text-brand-navy">پیشرفت تیم</h3>
           <ChecklistItem done={!!team.idea?.submittedAt} label="ایده ثبت شده؟" href="/idea" />
@@ -187,56 +181,85 @@ export function TeamPanel({
   );
 }
 
-function IncompleteTeamCard({
-  team,
-  missingRoles,
+/**
+ * وضعیت اندازهٔ تیم: تیم‌ها ۱ تا ۳ نفره‌اند و تیم کوچک‌تر در داوری انسانی جبران می‌گیرد.
+ * تیم فردی را می‌شود برای هم‌تیمی باز کرد؛ تیم یک‌نفرهٔ باز را می‌شود «شرکت فردی» کرد.
+ */
+function TeamSizeCard({
+  size,
+  solo,
   formingOpen,
+  boost,
+  slug,
+  teamName,
 }: {
-  team: TeamWithMembers;
-  missingRoles: RoleCoverage[];
+  size: number;
+  solo: boolean;
   formingOpen: boolean;
+  boost: TeamBoost;
+  slug: string;
+  teamName: string;
 }) {
-  const pct = Math.round((team.members.length / TEAM_FULL) * 100);
-  const full = team.members.length >= TEAM_FULL;
-  const missingText =
-    missingRoles.length > 0 ? `نقش ${missingRoles.map((r) => r.label).join("، ")} خالی است.` : "";
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const full = size >= TEAM_FULL;
+
+  function run(action: () => Promise<{ error?: string }>, confirmText: string) {
+    if (!window.confirm(confirmText)) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await action();
+      if (res.error) setError(res.error);
+    });
+  }
 
   return (
-    <div className="card border-2 border-brand-red/30 bg-red-50/60 p-5 anim-pop">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-black text-brand-red"><span aria-hidden>⚠️</span> تیمت هنوز کامل نیست{missingText ? `: ${missingText}` : "."}</h3>
-        <span className="text-xs font-bold text-brand-navy fa-num">اعضا {fa(team.members.length)}/{fa(TEAM_FULL)}</span>
-      </div>
-      <div
-        className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-white"
-        role="progressbar"
-        aria-label="تکمیل اعضای تیم"
-        aria-valuemin={0}
-        aria-valuemax={TEAM_FULL}
-        aria-valuenow={team.members.length}
-      >
-        <div className="h-full rounded-full bg-brand-red transition-all" style={{ width: `${pct}%` }} />
-      </div>
+    <div className="card p-5 anim-rise space-y-3">
+      <p className="text-sm text-brand-navy leading-7">
+        {solo ? (
+          <>
+            فردی شرکت کرده‌ای و تیمت هم‌تیمی نمی‌پذیرد. نمرهٔ داوری انسانی‌ات{" "}
+            <b className="fa-num">+{fa(boost.solo)}٪</b> جبران می‌گیرد.
+          </>
+        ) : (
+          <>
+            تیم‌ها ۱ تا ۳ نفره‌اند و تیم کوچک‌تر در داوری انسانی جبران می‌گیرد: فردی{" "}
+            <b className="fa-num">+{fa(boost.solo)}٪</b>، دونفره <b className="fa-num">+{fa(boost.duo)}٪</b>.
+            {!full && formingOpen && " اگر خواستی، تا پایان فاز «اتاق ایده» هم‌تیمی دعوت کن."}
+          </>
+        )}
+      </p>
 
-      {full ? (
-        <p className="mt-3 text-sm text-brand-navy">
-          ظرفیت تیم پر است و عضو تازه‌ای نمی‌پذیرد؛ نبودِ این نقش را با تقسیم کار جبران کن یا برای جابه‌جایی با برگزارکننده هماهنگ کن.
-        </p>
-      ) : formingOpen ? (
-        <p className="mt-3 text-sm text-brand-navy">
-          یک هم‌تیمی دعوت کن یا لینک پیوستن تیمت را برایش بفرست — تا پایان فاز «اتاق ایده» فرصت داری.
-        </p>
-      ) : (
-        <p className="mt-3 text-sm text-brand-navy">
-          فاز اتاق ایده به پایان رسیده؛ دیگر نمی‌توانی عضو جدید اضافه کنی. برای تکمیل تیم با برگزارکننده هماهنگ کن.
-        </p>
+      {error && <Alert kind="error">{error}</Alert>}
+
+      {formingOpen && solo && (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() =>
+            run(openSoloTeamAction, "تیمت برای پذیرفتن هم‌تیمی باز شود؟ با آمدن عضو دوم، جبران «شرکت فردی» به جبران تیم دونفره تبدیل می‌شود.")
+          }
+          className="btn-cyan"
+        >
+          {pending ? "در حال باز کردن…" : "🔓 باز کردن تیم برای هم‌تیمی"}
+        </button>
       )}
 
-      {formingOpen && !full && (
-        <div className="mt-3">
-          <CopyJoinLink slug={team.slug} teamName={team.name} />
+      {formingOpen && !solo && size === 1 && (
+        <div className="space-y-2">
+          <CopyJoinLink slug={slug} teamName={teamName} />
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => run(goSoloAction, "فردی شرکت می‌کنی؟ تیمت بسته می‌شود و دعوت‌های در انتظار لغو می‌شوند.")}
+            className="btn-ghost !py-1.5 !px-3 text-sm"
+          >
+            {pending ? "در حال ثبت…" : "🧑‍🚀 فردی شرکت می‌کنم"}
+          </button>
         </div>
       )}
+
+      {formingOpen && !solo && size === 2 && <CopyJoinLink slug={slug} teamName={teamName} />}
     </div>
   );
 }
@@ -272,26 +295,14 @@ function CopyJoinLink({ slug, teamName }: { slug: string; teamName: string }) {
   );
 }
 
-/** جای خالی عضو: نقشی که تیم کم دارد و دعوت همان‌جا */
-function EmptySlot({
-  role,
-  slug,
-  teamName,
-  canInvite,
-}: {
-  role: RoleCoverage | null;
-  slug: string;
-  teamName: string;
-  canInvite: boolean;
-}) {
+/** جای خالی عضو (اختیاری) و دعوت همان‌جا */
+function EmptySlot({ slug, teamName, canInvite }: { slug: string; teamName: string; canInvite: boolean }) {
   const { copied, canShare, copy, share } = useInviteLink(slug, teamName);
 
   return (
     <div className="card flex flex-col items-center justify-center gap-2 border-2 border-dashed border-brand-mist p-4 text-center">
-      <div className="text-2xl" aria-hidden>{role ? role.emoji : "➕"}</div>
-      <div className="text-sm font-bold text-brand-navy">
-        {role ? `جای ${role.label} خالی است` : "جای یک هم‌تیمی خالی است"}
-      </div>
+      <div className="text-2xl" aria-hidden>➕</div>
+      <div className="text-sm font-bold text-brand-navy">جای یک هم‌تیمی (اختیاری)</div>
       {canInvite && (
         <div className="flex flex-wrap justify-center gap-1.5">
           <button type="button" onClick={copy} className="btn-cyan !px-2.5 !py-1.5 !text-xs" aria-live="polite">
@@ -309,21 +320,6 @@ function EmptySlot({
         </div>
       )}
     </div>
-  );
-}
-
-/** در موبایل کارت سرپرست زیر فهرست اعضاست؛ این بنر تا وقتی سرپرست انتخاب نشده به آن اشاره می‌کند */
-function LeaderBanner({ voted }: { voted: boolean }) {
-  return (
-    <a
-      href="#leader"
-      className="card flex items-center justify-between gap-3 border-2 border-gold/60 bg-amber-50 p-4 text-sm font-bold text-brand-navy lg:hidden"
-    >
-      <span>
-        <span aria-hidden>👑</span> هنوز سرپرست ندارید — {voted ? "رأی تو ثبت شده؛ نتیجه را ببین" : "رأی بده"}
-      </span>
-      <span className="shrink-0 text-brand-cyan-dark" aria-hidden>↓</span>
-    </a>
   );
 }
 
@@ -373,10 +369,12 @@ function LeaveButton({ lastMember }: { lastMember: boolean }) {
 
 function InviteForm({
   full,
+  solo,
   pendingInvites,
   slug,
 }: {
   full: boolean;
+  solo: boolean;
   pendingInvites: TeamWithMembers["invites"];
   slug: string;
 }) {
@@ -402,8 +400,10 @@ function InviteForm({
 
   return (
     <div className="card p-5 anim-rise scroll-mt-24" id="invite">
-      <h3 className="mb-3 font-black text-brand-navy">دعوت هم‌تیمی</h3>
-      {full ? (
+      <h3 className="mb-3 font-black text-brand-navy">دعوت هم‌تیمی (اختیاری)</h3>
+      {solo ? (
+        <Alert kind="info">فردی شرکت کرده‌ای؛ برای دعوت هم‌تیمی اول تیمت را باز کن.</Alert>
+      ) : full ? (
         <Alert kind="info">تیم پر است؛ ظرفیت هر تیم سه نفر است.</Alert>
       ) : (
         <form onSubmit={submit} className="flex flex-col sm:flex-row flex-wrap gap-3">

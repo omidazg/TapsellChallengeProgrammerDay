@@ -5,13 +5,17 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { getPhase } from "@/lib/phase";
 import { purchaseProduct } from "@/lib/market";
+import { enqueueAuction } from "@/lib/auction";
+import { teamManageError } from "@/lib/team-access";
+import { rateLimit, rateLimitMessage } from "@/lib/rate-limit";
 import { invalidate } from "@/lib/ttl-cache";
 
 export type PurchaseState = { error?: string; ok?: boolean; amount?: number };
 export type HeartState = { error?: string; ok?: boolean };
+export type EnqueueState = { error?: string; ok?: boolean; position?: number };
 
 /**
- * خرید یک محصول (هر کلیک یک خرید مستقل، تا سقف کیف/هدف).
+ * خرید یک محصول به قیمت کامل (هر کلیک یک خرید مستقل).
  * منطق اصلی در purchaseProduct (src/lib/market.ts) است؛ این اکشن فقط احراز هویت و
  * اثرات جانبی صفحه (revalidate/کش) را اضافه می‌کند.
  */
@@ -24,11 +28,10 @@ export async function purchaseAction(productId: string, slug: string): Promise<P
 
     revalidatePath(`/market`);
     revalidatePath(`/market/${slug}`);
-    // خرید روی netSales/grossSales تیم و در نتیجه امتیاز اثر می‌گذارد.
+    // خرید در امتیاز «حمایت مردمی» حساب می‌شود.
     invalidate("scores:");
     invalidate("api:market:ticker");
-    // amount = مبلغی که واقعاً از کیف خرید کم شد (قیمت − تخفیف چانه‌زنی، اگر بود)
-    return { ok: true, amount: result.paid };
+    return { ok: true, amount: result.amount };
   } catch (e) {
     console.error("purchase failed", e);
     return { error: "خرید ناموفق بود؛ دوباره تلاش کن" };
@@ -53,7 +56,29 @@ export async function heartAction(productId: string, slug: string): Promise<Hear
 
   revalidatePath(`/market`);
   revalidatePath(`/market/${slug}`);
-  // قلب روی امتیاز «جامعه» و جایزهٔ محبوب‌ترین محصول اثر می‌گذارد.
   invalidate("scores:");
   return { ok: true };
+}
+
+/**
+ * فرستادن نسخهٔ ویژهٔ محصولِ تیمِ کاربر به صف حراج زنده (هر عضو تیم، فقط در روز بازار).
+ * منطق و همهٔ شرط‌ها در enqueueAuction (src/lib/auction.ts) است؛ slug فقط برای تازه‌سازی صفحه است.
+ */
+export async function enqueueAuctionAction(slug: string): Promise<EnqueueState> {
+  const user = await requireUser();
+  const limit = rateLimit("auction:enqueue", user.id, { limit: 10, windowMs: 60 * 1000 });
+  if (!limit.ok) return { error: rateLimitMessage(limit.retryAfterSec) };
+  const accessError = await teamManageError(user);
+  if (accessError) return { error: accessError };
+
+  try {
+    const result = await enqueueAuction(user.id);
+    if (!result.ok) return { error: result.error };
+    revalidatePath(`/market/${slug}`);
+    revalidatePath("/auction");
+    return { ok: true, position: result.position };
+  } catch (e) {
+    console.error("enqueue auction failed", e);
+    return { error: "فرستادن به حراج ناموفق بود؛ دوباره تلاش کن" };
+  }
 }

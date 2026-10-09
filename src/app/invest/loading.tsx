@@ -1,6 +1,6 @@
 import { Container } from "@/components/ui";
 
-// دور سرمایه‌گذاری: فهرست ایده‌ها به‌همراه مجموع سرمایه‌گذاری هر کاربر خوانده می‌شود.
+// دور حمایت: فهرست ایده‌ها به‌همراه مجموع حمایت‌ها خوانده می‌شود.
 export default function Loading() {
   return (
     <Container className="pt-16">
@@ -12,7 +12,7 @@ export default function Loading() {
           <div className="h-40 rounded-3xl bg-brand-mist" />
         </div>
       </div>
-      <span className="sr-only">در حال بارگذاری دور سرمایه‌گذاری…</span>
+      <span className="sr-only">در حال بارگذاری ایده‌ها…</span>
     </Container>
   );
 }
