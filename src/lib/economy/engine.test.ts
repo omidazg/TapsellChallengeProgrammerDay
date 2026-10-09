@@ -7,7 +7,6 @@ import {
   peopleSupport,
   scoreGame,
   shouldExtendAuction,
-  smallTeamBoostPct,
   validateInvestment,
   validatePurchase,
 } from "./engine";
@@ -49,14 +48,10 @@ describe("defaultConfig", () => {
     const c = defaultConfig();
     expect(c).toEqual({
       supportCap: DEFAULTS.supportCap,
-      soloBoostPct: DEFAULTS.soloBoostPct,
-      duoBoostPct: DEFAULTS.duoBoostPct,
       weights: { jury: 500, people: 300, ai: 200 },
     });
     expect(c.weights.jury + c.weights.people + c.weights.ai).toBe(1000);
     expect(c.supportCap).toBe(50);
-    expect(c.soloBoostPct).toBe(15);
-    expect(c.duoBoostPct).toBe(7);
   });
 
   it("کپی تازه برمی‌گرداند؛ تغییر آن SCORE_WEIGHTS را خراب نمی‌کند", () => {
@@ -64,21 +59,6 @@ describe("defaultConfig", () => {
     c.weights.jury = 1;
     expect(SCORE_WEIGHTS.jury).toBe(500);
     expect(defaultConfig().weights.jury).toBe(500);
-  });
-});
-
-describe("smallTeamBoostPct (جبران تیم کوچک)", () => {
-  const cfg = { soloBoostPct: 15, duoBoostPct: 7 };
-  it("تیم یک‌نفره solo، دونفره duo و سه‌نفره صفر", () => {
-    expect(smallTeamBoostPct(cfg, 1)).toBe(15);
-    expect(smallTeamBoostPct(cfg, 2)).toBe(7);
-    expect(smallTeamBoostPct(cfg, 3)).toBe(0);
-    expect(smallTeamBoostPct(cfg, 4)).toBe(0);
-  });
-
-  it("از مقادیر پیکربندی پیروی می‌کند", () => {
-    expect(smallTeamBoostPct({ soloBoostPct: 30, duoBoostPct: 10 }, 1)).toBe(30);
-    expect(smallTeamBoostPct({ soloBoostPct: 30, duoBoostPct: 10 }, 2)).toBe(10);
   });
 });
 
@@ -309,56 +289,48 @@ describe("scoreGame: نرمال‌سازی نسبت به بهترین پروژه
   });
 });
 
-describe("scoreGame: جبران تیم کوچک روی داوری انسانی", () => {
-  const out = scoreGame(defaultConfig(), [
-    team({ teamId: "solo", memberIds: ["s1"], jury: jury(8) }),
-    team({ teamId: "duo", memberIds: ["d1", "d2"], jury: jury(8) }),
-    team({ teamId: "trio", jury: jury(9) }),
-  ]);
-  const solo = byId(out.teams, "solo");
-  const duo = byId(out.teams, "duo");
-  const trio = byId(out.teams, "trio");
-
-  it("تیم یک‌نفره +۱۵٪، دونفره +۷٪، سه‌نفره بدون جبران", () => {
+describe("scoreGame: تعداد اعضای تیم در امتیاز اثری ندارد", () => {
+  it("دو تیم با داوری، حمایت مردمی و هوش مصنوعی یکسان اما ۱ و ۳ عضو، امتیاز کاملاً یکسان می‌گیرند", () => {
+    // حامیان بیرونی‌اند (عضو هیچ‌کدام از دو تیم نیستند) تا ورودی واقعاً یکسان باشد
+    const same = { jury: jury(8, 7, 6), supports: supporters("fan", 4, 10), aiQuality: 70 };
+    const out = scoreGame(defaultConfig(), [
+      team({ teamId: "solo", memberIds: ["s1"], ...same }),
+      team({ teamId: "trio", memberIds: ["t1", "t2", "t3"], ...same }),
+      // تیم مرجع با عددهای بالاتر تا نسبت‌ها کمتر از یک باشند و نرمال‌سازی واقعاً آزموده شود
+      team({ teamId: "ref", memberIds: ["r1", "r2"], jury: jury(10), supports: supporters("big", 9, 10), aiQuality: 90 }),
+    ]);
+    const solo = byId(out.teams, "solo");
+    const trio = byId(out.teams, "trio");
     expect(solo.memberCount).toBe(1);
-    expect(solo.boostPct).toBe(15);
-    expect(solo.juryRaw).toBe(80);
-    expect(solo.juryAdjusted).toBeCloseTo(92, 9);
-
-    expect(duo.memberCount).toBe(2);
-    expect(duo.boostPct).toBe(7);
-    expect(duo.juryAdjusted).toBeCloseTo(85.6, 9);
-
     expect(trio.memberCount).toBe(3);
-    expect(trio.boostPct).toBe(0);
+
+    expect(solo.juryRaw).toBe(trio.juryRaw);
+    expect(solo.juryAdjusted).toBe(trio.juryAdjusted);
+    expect(solo.people).toBe(trio.people);
+    expect(solo.ai).toBe(trio.ai);
+    expect(solo.pts).toEqual(trio.pts);
+    expect(solo.total).toBe(trio.total);
+    expect(solo.total).toBeGreaterThan(0);
+    expect(solo.total).toBeLessThan(byId(out.teams, "ref").total);
+  });
+
+  it("نمرهٔ داوری همان نمرهٔ خام است؛ تیم فردی یا دونفره هیچ افزایشی نمی‌گیرد", () => {
+    const out = scoreGame(defaultConfig(), [
+      team({ teamId: "solo", memberIds: ["s1"], jury: jury(8) }),
+      team({ teamId: "duo", memberIds: ["d1", "d2"], jury: jury(8) }),
+      team({ teamId: "trio", jury: jury(9) }),
+    ]);
+    const solo = byId(out.teams, "solo");
+    const duo = byId(out.teams, "duo");
+    const trio = byId(out.teams, "trio");
+
+    expect(solo.juryAdjusted).toBe(80);
+    expect(duo.juryAdjusted).toBe(80);
     expect(trio.juryAdjusted).toBe(90);
-  });
-
-  it("نرمال‌سازی روی نمرهٔ جبران‌شده انجام می‌شود (تیم فردی با ۸۰ از تیم سه‌نفره با ۹۰ جلو می‌زند)", () => {
-    expect(solo.pts.jury).toBeCloseTo(500, 9);
-    expect(trio.pts.jury).toBeCloseTo((500 * 90) / 92, 9);
-    expect(duo.pts.jury).toBeCloseTo((500 * 85.6) / 92, 9);
-    expect(out.teams[0].teamId).toBe("solo");
-  });
-
-  it("جبران فقط روی داوری انسانی است، نه مردم و نه هوش مصنوعی", () => {
-    const r = scoreGame(defaultConfig(), [
-      team({ teamId: "solo", memberIds: ["s1"], supports: [{ userId: "x", amount: 25 }], aiQuality: 50 }),
-      team({ teamId: "trio", supports: [{ userId: "y", amount: 25 }], aiQuality: 50 }),
-    ]);
-    expect(byId(r.teams, "solo").pts.people).toBe(byId(r.teams, "trio").pts.people);
-    expect(byId(r.teams, "solo").pts.ai).toBe(byId(r.teams, "trio").pts.ai);
-    expect(byId(r.teams, "solo").juryAdjusted).toBe(0);
-  });
-
-  it("درصد جبران از پیکربندی خوانده می‌شود", () => {
-    const cfg: EconomyConfig = { ...defaultConfig(), soloBoostPct: 50, duoBoostPct: 0 };
-    const r = scoreGame(cfg, [
-      team({ teamId: "solo", memberIds: ["s1"], jury: jury(6) }),
-      team({ teamId: "duo", memberIds: ["d1", "d2"], jury: jury(6) }),
-    ]);
-    expect(byId(r.teams, "solo").juryAdjusted).toBeCloseTo(90, 9);
-    expect(byId(r.teams, "duo").juryAdjusted).toBeCloseTo(60, 9);
+    expect(trio.pts.jury).toBeCloseTo(500, 9);
+    expect(solo.pts.jury).toBeCloseTo((500 * 80) / 90, 9);
+    expect(duo.pts.jury).toBe(solo.pts.jury);
+    expect(out.teams[0].teamId).toBe("trio");
   });
 });
 
@@ -397,7 +369,7 @@ describe("scoreGame: حمایت مردمی و اعضای تیم", () => {
 });
 
 describe("scoreGame: داوری/هوش مصنوعیِ انجام‌نشده (null)", () => {
-  it("داوری نشده: juryRaw null، نمرهٔ تعدیل‌شده و امتیاز صفر", () => {
+  it("داوری نشده: juryRaw null، نمرهٔ داوری مؤثر و امتیاز صفر", () => {
     const out = scoreGame(defaultConfig(), [
       team({ teamId: "A", jury: jury(5) }),
       team({ teamId: "B", jury: null }),
@@ -504,7 +476,7 @@ describe("scoreGame: رتبه‌بندی و تساوی", () => {
     expect(out.teams.map((t) => t.rank)).toEqual([1, 2]);
   });
 
-  it("در تساوی کل و مردم، داوری تعدیل‌شدهٔ بالاتر جلوتر است", () => {
+  it("در تساوی کل و مردم، نمرهٔ داوری بالاتر جلوتر است", () => {
     const out = scoreGame(defaultConfig(), [
       // ۲۵۰ + ۳۰۰ = ۵۵۰
       team({ teamId: "Y", jury: jury(5), supports: [{ userId: "p", amount: 25 }] }),

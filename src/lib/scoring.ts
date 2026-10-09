@@ -35,12 +35,8 @@ export const WALLET_LABEL: Record<string, string> = {
 /** پیکربندی امتیازدهی با اعمال مقادیر جدول Setting روی پیش‌فرض‌ها. */
 export async function configFromSettings(): Promise<EconomyConfig> {
   const base = defaultConfig();
-  const [supportCap, soloBoostPct, duoBoostPct] = await Promise.all([
-    getSettingInt("support_cap", DEFAULTS.supportCap),
-    getSettingInt("solo_boost_pct", DEFAULTS.soloBoostPct),
-    getSettingInt("duo_boost_pct", DEFAULTS.duoBoostPct),
-  ]);
-  return { ...base, supportCap, soloBoostPct, duoBoostPct };
+  const supportCap = await getSettingInt("support_cap", DEFAULTS.supportCap);
+  return { ...base, supportCap };
 }
 
 /**

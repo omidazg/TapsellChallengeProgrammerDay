@@ -20,8 +20,6 @@ export const settingsSchema = z.object({
   // تنظیمات بازی
   starting_coins: z.coerce.number().int().min(0),
   support_cap: z.coerce.number().int().min(1),
-  solo_boost_pct: z.coerce.number().int().min(0).max(100),
-  duo_boost_pct: z.coerce.number().int().min(0).max(100),
   max_bought_coins_per_user: z.coerce.number().int().min(0),
   bid_increment: z.coerce.number().int().min(1),
   adslot_price_banner: z.coerce.number().int().min(1),
@@ -47,8 +45,6 @@ export const settingsSchema = z.object({
 export const gameSettingsSchema = settingsSchema.pick({
   starting_coins: true,
   support_cap: true,
-  solo_boost_pct: true,
-  duo_boost_pct: true,
   max_bought_coins_per_user: true,
   bid_increment: true,
   adslot_price_banner: true,

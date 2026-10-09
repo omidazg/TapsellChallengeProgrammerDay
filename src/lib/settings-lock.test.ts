@@ -17,8 +17,6 @@ import { gameSettingsSchema } from "./settings-schema";
 const before = {
   starting_coins: "200",
   support_cap: "50",
-  solo_boost_pct: "15",
-  duo_boost_pct: "7",
   max_bought_coins_per_user: "1000",
   bid_increment: "2",
   adslot_price_banner: "60",
@@ -33,8 +31,6 @@ const before = {
 const unchanged = {
   starting_coins: 200,
   support_cap: 50,
-  solo_boost_pct: 15,
-  duo_boost_pct: 7,
   max_bought_coins_per_user: 1000,
   bid_increment: 2,
   adslot_price_banner: 60,
@@ -51,8 +47,6 @@ describe("LOCKED_AFTER_START_KEYS", () => {
       [
         "starting_coins",
         "support_cap",
-        "solo_boost_pct",
-        "duo_boost_pct",
         "max_bought_coins_per_user",
         "bid_increment",
         "adslot_price_banner",
@@ -73,7 +67,7 @@ describe("LOCKED_AFTER_START_KEYS", () => {
   });
 
   it("legacy keys are no longer known", () => {
-    for (const legacy of ["seed_wallet", "buy_wallet", "max_per_target", "penalty_per_coin"]) {
+    for (const legacy of ["seed_wallet", "buy_wallet", "max_per_target", "penalty_per_coin", "solo_boost_pct", "duo_boost_pct"]) {
       expect(isLockedSettingKey(legacy)).toBe(false);
       expect(Object.keys(gameSettingsSchema.shape)).not.toContain(legacy);
     }
@@ -123,7 +117,7 @@ describe("lockedSettingChanges", () => {
   });
 
   it("detects small numeric changes", () => {
-    expect(lockedSettingChanges("CLOSED", before, { ...unchanged, duo_boost_pct: 8 })).toEqual(["duo_boost_pct"]);
+    expect(lockedSettingChanges("CLOSED", before, { ...unchanged, support_cap: 51 })).toEqual(["support_cap"]);
     expect(lockedSettingChanges("SEED_ROUND", before, { ...unchanged, adslot_max_per_team: 3, adslot_price_push: 81 })).toEqual([
       "adslot_price_push",
       "adslot_max_per_team",

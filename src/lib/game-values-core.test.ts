@@ -12,8 +12,6 @@ describe("DEFAULTS (اقتصاد ساده‌شدهٔ سکه)", () => {
   it("مقادیر پیش‌فرض بازی", () => {
     expect(DEFAULTS.startingCoins).toBe(200);
     expect(DEFAULTS.supportCap).toBe(50);
-    expect(DEFAULTS.soloBoostPct).toBe(15);
-    expect(DEFAULTS.duoBoostPct).toBe(7);
     expect(DEFAULTS.maxBoughtCoinsPerUser).toBe(1000);
     expect(DEFAULTS.minCoinPurchase).toBe(10);
     expect(DEFAULTS.auctionEnqueueCutoffMin).toBe(20);
@@ -21,7 +19,7 @@ describe("DEFAULTS (اقتصاد ساده‌شدهٔ سکه)", () => {
   });
 
   it("کلیدهای اقتصاد قدیمی دیگر وجود ندارند", () => {
-    for (const legacy of ["seedWallet", "buyWallet", "maxPerTarget", "penaltyPerCoin", "shieldFloor", "bargainDiscount"]) {
+    for (const legacy of ["seedWallet", "buyWallet", "maxPerTarget", "penaltyPerCoin", "shieldFloor", "bargainDiscount", "soloBoostPct", "duoBoostPct"]) {
       expect(DEFAULTS).not.toHaveProperty(legacy);
     }
   });
@@ -36,8 +34,6 @@ describe("mergeGameValues", () => {
     const v = mergeGameValues({
       starting_coins: "150",
       support_cap: "30",
-      solo_boost_pct: "20",
-      duo_boost_pct: "10",
       max_bought_coins_per_user: "500",
       bid_increment: "5",
       auction_duration_sec: "240",
@@ -50,8 +46,6 @@ describe("mergeGameValues", () => {
       ...DEFAULTS,
       startingCoins: 150,
       supportCap: 30,
-      soloBoostPct: 20,
-      duoBoostPct: 10,
       maxBoughtCoinsPerUser: 500,
       bidIncrement: 5,
       auctionDurationSec: 240,
@@ -73,11 +67,11 @@ describe("mergeGameValues", () => {
   });
 
   it("مقدار خالی/نامعتبر/null به پیش‌فرض برمی‌گردد و صفر معتبر است", () => {
-    const v = mergeGameValues({ starting_coins: "", support_cap: "abc", solo_boost_pct: null, duo_boost_pct: "0" });
+    const v = mergeGameValues({ starting_coins: "", support_cap: "abc", max_bought_coins_per_user: null, adslot_max_per_team: "0" });
     expect(v.startingCoins).toBe(DEFAULTS.startingCoins);
     expect(v.supportCap).toBe(DEFAULTS.supportCap);
-    expect(v.soloBoostPct).toBe(DEFAULTS.soloBoostPct);
-    expect(v.duoBoostPct).toBe(0);
+    expect(v.maxBoughtCoinsPerUser).toBe(DEFAULTS.maxBoughtCoinsPerUser);
+    expect(v.adslotMaxPerTeam).toBe(0);
   });
 
   it("کلیدهای ناشناخته یا قدیمی نادیده گرفته می‌شوند", () => {
@@ -89,6 +83,9 @@ describe("mergeGameValues", () => {
         max_per_target: "1",
         penalty_per_coin: "3",
         shield_floor: "0.9",
+        // کلیدهای حذف‌شده؛ ردیف‌های قدیمی Setting آن‌ها بی‌اثرند
+        solo_boost_pct: "20",
+        duo_boost_pct: "10",
       })
     ).toEqual(DEFAULTS);
   });

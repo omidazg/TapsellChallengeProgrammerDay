@@ -196,7 +196,7 @@ async function main() {
     check("رتبه‌ها ۱..n و یکتا", rows.map((r) => r.rank).join(",") === "1,2,3", rows.map((r) => r.rank).join(","));
 
     const gammaRow = rows.find((r) => r.teamId === teamIds.gamma)!;
-    check("شرکت فردی: memberCount=۱ و داوری با ۱۵٪ جبران", gammaRow.memberCount === 1 && near(gammaRow.juryAdjusted, 80 * 1.15), `${gammaRow.juryAdjusted}`);
+    check("شرکت فردی: memberCount=۱ و داوری همان ۸۰ (اندازهٔ تیم بی‌اثر)", gammaRow.memberCount === 1 && near(gammaRow.juryAdjusted, 80), `${gammaRow.juryAdjusted}`);
     const betaRow = rows.find((r) => r.teamId === teamIds.beta)!;
     check("بتا: حامیان ۳ (حمایت ۲۵ + دو خرید ۱۵)، سکهٔ دریافتی ۵۵", betaRow.supporters === 3 && betaRow.coinsReceived === 55, `${betaRow.supporters}/${betaRow.coinsReceived}`);
     const alphaRow = rows.find((r) => r.teamId === teamIds.alpha)!;
@@ -213,7 +213,7 @@ async function main() {
       const l = loadedById.get(t.teamId);
       return (
         !!l &&
-        l.boostPct === t.boostPct &&
+        near(l.juryAdjusted, t.juryAdjusted) &&
         near(l.total, t.total) &&
         l.rank === t.rank &&
         near(l.pts.jury, t.pts.jury) &&
@@ -221,7 +221,7 @@ async function main() {
         near(l.pts.ai, t.pts.ai)
       );
     });
-    check("loadSettledOutput همان نتیجه را بازسازی می‌کند (با درصد جبران)", loadOk, loaded.teams.map((t) => `${t.rank}:${t.boostPct}%`).join(" "));
+    check("loadSettledOutput همان نتیجه را بازسازی می‌کند", loadOk, loaded.teams.map((t) => `${t.rank}:${t.total.toFixed(1)}`).join(" "));
 
     // ---------- idempotency ----------
     // تغییر داده پس از تسویه نباید روی نتیجهٔ ثبت‌شده اثر بگذارد.

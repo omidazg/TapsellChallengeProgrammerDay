@@ -65,8 +65,6 @@ async function main() {
     const baseGame: Record<string, string> = {
       starting_coins: "200",
       support_cap: "50",
-      solo_boost_pct: "15",
-      duo_boost_pct: "7",
       max_bought_coins_per_user: "1000",
       bid_increment: "2",
       auction_duration_sec: "300",
@@ -81,7 +79,7 @@ async function main() {
     check("تنظیمات بازی معتبر: بدون خطا", parsedGame.ok, parsedGame);
     if (parsedGame.ok) {
       eq("starting_coins به عدد تبدیل شد", parsedGame.data.starting_coins, 200);
-      eq("solo_boost_pct به عدد تبدیل شد", parsedGame.data.solo_boost_pct, 15);
+      eq("support_cap به عدد تبدیل شد", parsedGame.data.support_cap, 50);
       eq("market_starts_at خالی مجاز است", parsedGame.data.market_starts_at, "");
     }
     const withDate = parseGameSettings(formDataOf({ ...baseGame, market_starts_at: "2026-10-10T12:00" }));
@@ -93,7 +91,6 @@ async function main() {
       ["مدت حراج کمتر از حداقل (۱۰) رد می‌شود", { ...baseGame, auction_duration_sec: "5" }],
       ["زمان شروع بازار نامعتبر رد می‌شود", { ...baseGame, market_starts_at: "not-a-date" }],
       ["سقف اثر حمایت صفر رد می‌شود", { ...baseGame, support_cap: "0" }],
-      ["درصد جبران بیش از ۱۰۰ رد می‌شود", { ...baseGame, solo_boost_pct: "150" }],
       ["سکهٔ اولیهٔ منفی رد می‌شود", { ...baseGame, starting_coins: "-1" }],
       ["سکهٔ اولیهٔ اعشاری رد می‌شود", { ...baseGame, starting_coins: "1.5" }],
       ["قیمت جایگاه صفر رد می‌شود", { ...baseGame, adslot_price_banner: "0" }],
@@ -103,7 +100,7 @@ async function main() {
       check(`تنظیمات بازی: ${label}`, !r.ok, r);
     }
     const missingKey = { ...baseGame };
-    delete missingKey.duo_boost_pct;
+    delete missingKey.bid_increment;
     check("تنظیمات بازی: کلید غایب رد می‌شود", !parseGameSettings(formDataOf(missingKey)).ok);
 
     // ---------- تنظیمات زمان‌بند: ورودی معتبر، شامل چک‌باکس غایب ----------

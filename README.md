@@ -41,7 +41,7 @@ Stack: Next.js 16 (App Router), React 19, TypeScript, Prisma 7 + SQLite, Tailwin
   cheat penalty is then subtracted:
   - human jury («داوری انسانی») — 500 points. Jurors answer three questions, each scored 0–10: does it
     really work, its real value for users or Pegah Group, and the teaser and pitch. The raw score is
-    the mean × 10. Solo teams get +15% and duos +7% (`solo_boost_pct`, `duo_boost_pct`);
+    the mean × 10. Team size (1–3 people, or a solo entry) makes no difference to any score;
   - people support («حمایت مردمی») — 300 points. This uses quadratic funding over idea supports,
     product purchases and auction wins: `(Σ √min(coins per person, 50))²`. The cap is set by
     `support_cap`, and the team's own members are excluded. Ten people giving 10 coins each are worth

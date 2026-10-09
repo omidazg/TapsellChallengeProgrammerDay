@@ -9,7 +9,6 @@ import { fa, jdatetime } from "@/lib/persian";
 import { copyText } from "@/lib/clipboard";
 import type { TeamWithMembers } from "@/lib/team";
 import { inviteAction, leaveTeamAction, goSoloAction, openSoloTeamAction } from "./actions";
-import type { TeamBoost } from "./NoTeamPanel";
 
 const TEAM_FULL = 3;
 
@@ -81,19 +80,16 @@ export function TeamPanel({
   currentUserId,
   registrationOpen,
   formingOpen,
-  boost,
 }: {
   team: TeamWithMembers;
   currentUserId: string;
   registrationOpen: boolean;
   formingOpen: boolean;
-  boost: TeamBoost;
 }) {
   const size = team.members.length;
   const full = size >= TEAM_FULL;
   // تیم فردی بسته است: نه جای خالی نشان داده می‌شود، نه دعوت
   const solo = team.solo;
-  const boostPct = size <= 1 ? boost.solo : size === 2 ? boost.duo : 0;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -106,11 +102,6 @@ export function TeamPanel({
               <span className={solo ? "chip-gold" : "chip-navy"}>
                 {solo ? "🧑‍🚀 شرکت فردی" : `👥 تیم ${fa(size)} نفره`}
               </span>
-              {boostPct > 0 && (
-                <span className="chip-ok fa-num" title="جبران تیم کوچک در داوری انسانی">
-                  +{fa(boostPct)}٪ داوری
-                </span>
-              )}
             </div>
           </div>
           <div className="flex flex-wrap items-start gap-2">
@@ -120,7 +111,7 @@ export function TeamPanel({
           </div>
         </div>
 
-        <TeamSizeCard size={size} solo={solo} formingOpen={formingOpen} boost={boost} slug={team.slug} teamName={team.name} />
+        <TeamSizeCard size={size} solo={solo} formingOpen={formingOpen} slug={team.slug} teamName={team.name} />
 
         <div>
           <h3 className="mb-3 text-lg font-black text-brand-navy">
@@ -182,21 +173,19 @@ export function TeamPanel({
 }
 
 /**
- * وضعیت اندازهٔ تیم: تیم‌ها ۱ تا ۳ نفره‌اند و تیم کوچک‌تر در داوری انسانی جبران می‌گیرد.
+ * وضعیت اندازهٔ تیم: تیم‌ها ۱ تا ۳ نفره‌اند و تعداد اعضا در امتیاز هیچ اثری ندارد.
  * تیم فردی را می‌شود برای هم‌تیمی باز کرد؛ تیم یک‌نفرهٔ باز را می‌شود «شرکت فردی» کرد.
  */
 function TeamSizeCard({
   size,
   solo,
   formingOpen,
-  boost,
   slug,
   teamName,
 }: {
   size: number;
   solo: boolean;
   formingOpen: boolean;
-  boost: TeamBoost;
   slug: string;
   teamName: string;
 }) {
@@ -217,14 +206,10 @@ function TeamSizeCard({
     <div className="card p-5 anim-rise space-y-3">
       <p className="text-sm text-brand-navy leading-7">
         {solo ? (
-          <>
-            فردی شرکت کرده‌ای و تیمت هم‌تیمی نمی‌پذیرد. نمرهٔ داوری انسانی‌ات{" "}
-            <b className="fa-num">+{fa(boost.solo)}٪</b> جبران می‌گیرد.
-          </>
+          <>فردی شرکت کرده‌ای و تیمت هم‌تیمی نمی‌پذیرد. تعداد اعضای تیم در امتیاز هیچ اثری ندارد.</>
         ) : (
           <>
-            تیم‌ها ۱ تا ۳ نفره‌اند و تیم کوچک‌تر در داوری انسانی جبران می‌گیرد: فردی{" "}
-            <b className="fa-num">+{fa(boost.solo)}٪</b>، دونفره <b className="fa-num">+{fa(boost.duo)}٪</b>.
+            تیم‌ها ۱ تا ۳ نفره‌اند و تعداد اعضای تیم در امتیاز هیچ اثری ندارد.
             {!full && formingOpen && " اگر خواستی، تا پایان فاز «اتاق ایده» هم‌تیمی دعوت کن."}
           </>
         )}
@@ -237,7 +222,7 @@ function TeamSizeCard({
           type="button"
           disabled={pending}
           onClick={() =>
-            run(openSoloTeamAction, "تیمت برای پذیرفتن هم‌تیمی باز شود؟ با آمدن عضو دوم، جبران «شرکت فردی» به جبران تیم دونفره تبدیل می‌شود.")
+            run(openSoloTeamAction, "تیمت برای پذیرفتن هم‌تیمی باز شود؟ دیگر «شرکت فردی» نیستی و تا پایان فاز «اتاق ایده» می‌توانی هم‌تیمی دعوت کنی.")
           }
           className="btn-cyan"
         >

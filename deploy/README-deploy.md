@@ -155,3 +155,24 @@ PAYMENT_FAKE_ALLOWED=1
 بعد از تغییر `.env`، سرویس `web` را دوباره بسازید تا مقدار تازه را بخواند: `docker compose up -d --force-recreate web`.
 
 درگاه واقعی بعداً با پیاده‌سازی رابط `PaymentDriver` در `src/lib/coins.ts` و ثبت آن در `getPaymentDriver()` و `driverByName()` اضافه می‌شود. جزئیات جریان سفارش و نحوهٔ افزودن درگاه در `docs/ops.md` بخش ۹ است.
+
+## ۱۰. سرور ابرآروان (منطقهٔ قیصر)
+
+سرور دوم روی ابرآروان در منطقهٔ قیصر (`ir-southwest1-a`) است: پلن `c6-medium1` (۲ هسته، ۴ گیگ رم، ۲۵ گیگ دیسک، Ubuntu 24.04) با IP `85.198.54.147` و کلید SSH `~/.ssh/tapsell_qeysar`.
+
+```bash
+SERVER=root@85.198.54.147 KEY=~/.ssh/tapsell_qeysar ./deploy/deploy.sh
+```
+
+شبکهٔ این سرور چند محدودیت دارد:
+
+- آرشیو پیش‌فرض Ubuntu آن‌قدر کند است که `apt-get update` گیر می‌کند. اسکریپت setup را با آینهٔ داخلی اجرا کنید: `APT_MIRROR=http://mirror.iranserver.com/ubuntu/ bash server-setup.sh`
+- `download.docker.com` کند است. اسکریپت در صورت شکست، خودش بستهٔ `docker.io` و `docker-compose-v2` اوبونتو را نصب می‌کند.
+- سرور IPv6 ندارد، ولی Docker با رکوردهای AAAA سراغ ghcr می‌رود و به IPv4 برنمی‌گردد. اسکریپت IPv6 را خاموش می‌کند. این دو خط هم باید در `/etc/hosts` سرور باشد:
+
+  ```
+  140.82.121.33 ghcr.io
+  185.199.108.154 pkg-containers.githubusercontent.com
+  ```
+
+- دانلود ایمیج از ghcr گاهی وسط کار قطع می‌شود. `deploy.sh` تا ۸ بار دوباره تلاش می‌کند و لایه‌های کامل‌شده دوباره دانلود نمی‌شوند.

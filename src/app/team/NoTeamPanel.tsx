@@ -3,23 +3,11 @@
 import { useState, useTransition } from "react";
 import type { Team, TeamInvite, User } from "@prisma/client";
 import { Alert, Locked } from "@/components/ui";
-import { fa } from "@/lib/persian";
 import { createTeamAction, joinMatchmakingAction, acceptInviteAction, declineInviteAction, goSoloAction } from "./actions";
 
 type InviteRow = TeamInvite & { team: Team; inviter: User };
 
-/** درصد جبران تیم کوچک در داوری انسانی */
-export type TeamBoost = { solo: number; duo: number };
-
-export function NoTeamPanel({
-  invites,
-  formingOpen,
-  boost,
-}: {
-  invites: InviteRow[];
-  formingOpen: boolean;
-  boost: TeamBoost;
-}) {
+export function NoTeamPanel({ invites, formingOpen }: { invites: InviteRow[]; formingOpen: boolean }) {
   return (
     <div className="space-y-8">
       {invites.length > 0 && (
@@ -38,9 +26,9 @@ export function NoTeamPanel({
           <div className="grid gap-6 md:grid-cols-3">
             <CreateTeamCard />
             <MatchmakingCard />
-            <SoloCard boost={boost} />
+            <SoloCard />
           </div>
-          <TeamSizeNote boost={boost} />
+          <TeamSizeNote />
         </>
       ) : (
         <Locked
@@ -170,7 +158,7 @@ function MatchmakingCard() {
 }
 
 /** شرکت فردی: تیم یک‌نفرهٔ بسته که هم‌تیمی نمی‌پذیرد (بعداً از اتاق تیم قابل باز کردن است) */
-function SoloCard({ boost }: { boost: TeamBoost }) {
+function SoloCard() {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -188,7 +176,7 @@ function SoloCard({ boost }: { boost: TeamBoost }) {
       <div className="text-3xl" aria-hidden>🧑‍🚀</div>
       <h3 className="mt-2 text-lg font-black text-brand-navy">شرکت فردی</h3>
       <p className="mt-1 text-sm text-brand-slate">
-        تنها بازی کن؛ نمرهٔ داوری انسانی‌ات <b className="fa-num text-brand-navy">{fa(boost.solo)}٪</b> جبران می‌گیرد. هر وقت خواستی (تا پایان «اتاق ایده») می‌توانی تیمت را برای هم‌تیمی باز کنی.
+        تنها بازی کن؛ تعداد اعضای تیم در امتیاز هیچ اثری ندارد. هر وقت خواستی (تا پایان «اتاق ایده») می‌توانی تیمت را برای هم‌تیمی باز کنی.
       </p>
       {error && (
         <div className="mt-3">
@@ -202,13 +190,11 @@ function SoloCard({ boost }: { boost: TeamBoost }) {
   );
 }
 
-/** توضیح کوتاه اندازهٔ تیم و جبران تیم کوچک */
-function TeamSizeNote({ boost }: { boost: TeamBoost }) {
+/** توضیح کوتاه اندازهٔ تیم */
+function TeamSizeNote() {
   return (
     <div className="card p-5 bg-brand-ice anim-rise text-sm text-brand-navy leading-7">
-      <b>تیم‌ها ۱ تا ۳ نفره‌اند.</b> تیم کوچک‌تر در داوری انسانی جبران می‌گیرد: شرکت فردی{" "}
-      <b className="fa-num">+{fa(boost.solo)}٪</b> و تیم دونفره <b className="fa-num">+{fa(boost.duo)}٪</b>. مهارت اعضا فقط برای معرفی است
-      و شرط شرکت نیست؛ تشکیل یا تکمیل تیم تا پایان فاز «اتاق ایده» باز است.
+      <b>تیم‌ها ۱ تا ۳ نفره‌اند.</b> تعداد اعضای تیم در امتیاز هیچ اثری ندارد. مهارت اعضا فقط برای معرفی است و شرط شرکت نیست؛ تشکیل یا تکمیل تیم تا پایان فاز «اتاق ایده» باز است.
     </div>
   );
 }

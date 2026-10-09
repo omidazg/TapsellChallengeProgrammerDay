@@ -1,9 +1,7 @@
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getSettingInt } from "@/lib/phase";
-import { DEFAULTS } from "@/lib/constants";
 import { computeAwards, computeScoresCached, getAwardPicks } from "@/lib/scoring";
-import { juryRawScore, smallTeamBoostPct } from "@/lib/economy/engine";
+import { juryRawScore } from "@/lib/economy/engine";
 import { PRIZES } from "@/lib/prizes";
 import { productAiTag } from "@/lib/ai-tag";
 import { LIVE_STATUS_LABEL, type LiveStatus } from "@/lib/studio";
@@ -22,14 +20,12 @@ function round1(n: number) {
 
 export default async function AdminJuryPage() {
   await requireAdmin();
-  const [products, soloBoostPct, duoBoostPct, picks, output] = await Promise.all([
+  const [products, picks, output] = await Promise.all([
     prisma.product.findMany({
       where: { submittedAt: { not: null } },
       include: { team: { select: { id: true, name: true, slug: true, solo: true, _count: { select: { members: true } } } } },
       orderBy: { submittedAt: "asc" },
     }),
-    getSettingInt("solo_boost_pct", DEFAULTS.soloBoostPct),
-    getSettingInt("duo_boost_pct", DEFAULTS.duoBoostPct),
     getAwardPicks(),
     computeScoresCached(),
   ]);
@@ -125,8 +121,8 @@ export default async function AdminJuryPage() {
             )}
           </div>
           <Alert kind="info">
-            هر پرسش از ۰ تا ۱۰. نمرهٔ خام = میانگین × ۱۰؛ تیم یک‌نفره {fa(soloBoostPct)}٪ و تیم دونفره {fa(duoBoostPct)}٪ جبران
-            می‌گیرد. نمرهٔ داور هوش مصنوعی جدا حساب می‌شود و فقط برای اطلاع نمایش داده شده است.
+            هر پرسش از ۰ تا ۱۰. نمرهٔ داوری = میانگین × ۱۰؛ تعداد اعضای تیم در امتیاز هیچ اثری ندارد. نمرهٔ داور هوش مصنوعی
+            جدا حساب می‌شود و فقط برای اطلاع نمایش داده شده است.
           </Alert>
 
           {products.length === 0 ? (
@@ -134,7 +130,6 @@ export default async function AdminJuryPage() {
           ) : (
             products.map((p) => {
               const members = p.team._count.members;
-              const boost = smallTeamBoostPct({ soloBoostPct, duoBoostPct }, members);
               const raw = juryRawScore({ works: p.juryWorks, value: p.juryValue, pitch: p.juryPitch });
               const liveStatus = p.liveStatus as LiveStatus;
               const aiTag = productAiTag(p);
@@ -164,7 +159,6 @@ export default async function AdminJuryPage() {
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs">
                       <span className="chip-navy">{members <= 1 ? "👤 شرکت فردی" : `👥 ${fa(members)} نفره`}</span>
-                      {boost > 0 && <span className="chip-gold">+{fa(boost)}٪ جبران تیم کوچک</span>}
                       {liveStatus && (
                         <span className={liveStatus === "LIVE" ? "chip-ok" : "chip-navy"}>
                           {liveStatus === "LIVE" ? LIVE_STATUS_LABEL.LIVE : `بازار استودیو: ${LIVE_STATUS_LABEL[liveStatus]}`}
@@ -194,10 +188,7 @@ export default async function AdminJuryPage() {
                       {raw === null ? (
                         <span className="text-brand-slate">هنوز نمره‌ای ثبت نشده</span>
                       ) : (
-                        <span className="fa-num text-brand-slate">
-                          نمرهٔ خام {fa(round1(raw))} از ۱۰۰
-                          {boost > 0 && <> ← با جبران {fa(round1(raw * (1 + boost / 100)))}</>}
-                        </span>
+                        <span className="fa-num text-brand-slate">نمرهٔ داوری {fa(round1(raw))} از ۱۰۰</span>
                       )}
                     </div>
                     <JuryScoreForm

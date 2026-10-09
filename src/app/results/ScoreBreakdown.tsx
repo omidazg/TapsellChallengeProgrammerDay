@@ -9,16 +9,10 @@ export function millionFa(n: number): string {
   return fa(Number(formatMillion(n))).replace(".", "٫");
 }
 
-/** عنوان جبران تیم کوچک بر اساس تعداد اعضا */
-export function boostLabel(memberCount: number): string {
-  return memberCount <= 1 ? "شرکت فردی" : "تیم دونفره";
-}
-
-/** «۷۷ → +۱۵٪ → ۸۹»؛ null یعنی هنوز داوری نشده */
-export function juryDetail(t: Pick<TeamResult, "juryRaw" | "boostPct" | "juryAdjusted">): string | null {
+/** «۷۷ از ۱۰۰»؛ null یعنی هنوز داوری نشده */
+export function juryDetail(t: Pick<TeamResult, "juryRaw">): string | null {
   if (t.juryRaw == null) return null;
-  if (t.boostPct <= 0) return `${fa(Math.round(t.juryRaw))} از ۱۰۰`;
-  return `${fa(Math.round(t.juryRaw))} → +${fa(t.boostPct)}٪ → ${fa(Math.round(t.juryAdjusted))}`;
+  return `${fa(Math.round(t.juryRaw))} از ۱۰۰`;
 }
 
 /**
@@ -42,14 +36,7 @@ export function ScoreBreakdown({ result, cheatNote, caption }: { result: TeamRes
         <Row
           label={`${SCORE_CATEGORY_LABELS.jury.emoji} ${SCORE_CATEGORY_LABELS.jury.label}`}
           detail={
-            jury == null ? (
-              "هنوز داوری نشده"
-            ) : (
-              <>
-                نمرهٔ داوران {jury}
-                {result.boostPct > 0 && <span className="block text-xs">جبران {boostLabel(result.memberCount)}</span>}
-              </>
-            )
+            jury == null ? "هنوز داوری نشده" : <>نمرهٔ داوران {jury}</>
           }
           pts={result.pts.jury}
           max={SCORE_WEIGHTS.jury}

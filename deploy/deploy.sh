@@ -45,7 +45,9 @@ tar \
   --exclude='.env.local' \
   --exclude='.env.production' \
   --exclude='dev.db' \
-  --exclude='dev.db-journal' \
+  --exclude='dev.db-*' \
+  --exclude='.claude' \
+  --exclude='.serena' \
   --exclude='*.tsbuildinfo' \
   --exclude='coverage' \
   -czf - . | "${SSH[@]}" "tar -xzf - -C '$REMOTE_DIR'"
@@ -60,7 +62,9 @@ else
 fi
 
 echo "==> Pulling prebuilt images and starting containers on the server"
-"${SSH[@]}" "cd '$REMOTE_DIR' && docker compose pull migrate web"
+# The link to ghcr.io's blob CDN from Iranian VPSes drops mid-download
+# ("short read: unexpected EOF"); finished layers are kept, so just retry.
+"${SSH[@]}" "cd '$REMOTE_DIR' && for i in 1 2 3 4 5 6 7 8; do docker compose pull -q migrate web && exit 0; echo \"    pull failed (try \$i), retrying...\"; sleep 5; done; exit 1"
 
 # Stop the two services that hold /srv/arena/data/dev.db before migrating.
 #

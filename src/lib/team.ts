@@ -176,7 +176,7 @@ export async function createTeamForUser(userId: string, name: string): Promise<T
 /**
  * شرکت فردی: برای کاربر بی‌تیم یک تیم یک‌نفرهٔ «بسته» می‌سازد (نامش همان نام مستعار کاربر است)؛
  * برای عضو تنهای یک تیم، همان تیم را بسته می‌کند. تیم فردی در هم‌تیم‌سازی خودکار و لینک دعوت عضو نمی‌پذیرد.
- * تیم فردی در امتیاز داوری جبران تیم کوچک می‌گیرد (solo_boost_pct).
+ * تعداد اعضای تیم (از جمله شرکت فردی) در امتیاز هیچ اثری ندارد.
  */
 export async function goSolo(userId: string): Promise<TeamResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });

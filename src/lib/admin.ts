@@ -23,8 +23,6 @@ export async function getAdminCounts() {
 export const SETTING_KEYS = [
   "starting_coins",
   "support_cap",
-  "solo_boost_pct",
-  "duo_boost_pct",
   "max_bought_coins_per_user",
   "bid_increment",
   "auction_duration_sec",
@@ -39,8 +37,6 @@ export type SettingKey = (typeof SETTING_KEYS)[number];
 export const SETTING_LABELS: Record<SettingKey, string> = {
   starting_coins: "سکهٔ رایگان اولیهٔ هر نفر",
   support_cap: "سقف اثر هر نفر روی حمایت مردمی یک پروژه (سکه)",
-  solo_boost_pct: "جبران داوری تیم یک‌نفره (درصد)",
-  duo_boost_pct: "جبران داوری تیم دونفره (درصد)",
   max_bought_coins_per_user: "سقف خرید سکه برای هر نفر",
   bid_increment: "حداقل افزایش پیشنهاد حراج",
   auction_duration_sec: "مدت هر حراج (ثانیه)",
@@ -54,8 +50,6 @@ export const SETTING_LABELS: Record<SettingKey, string> = {
 const SETTING_DEFAULTS: Record<SettingKey, string> = {
   starting_coins: String(DEFAULTS.startingCoins),
   support_cap: String(DEFAULTS.supportCap),
-  solo_boost_pct: String(DEFAULTS.soloBoostPct),
-  duo_boost_pct: String(DEFAULTS.duoBoostPct),
   max_bought_coins_per_user: String(DEFAULTS.maxBoughtCoinsPerUser),
   bid_increment: String(DEFAULTS.bidIncrement),
   auction_duration_sec: String(DEFAULTS.auctionDurationSec),

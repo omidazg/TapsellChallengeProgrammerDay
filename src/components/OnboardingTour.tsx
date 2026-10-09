@@ -13,7 +13,7 @@ const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /** مقادیر مؤثر بازی که در متن قدم‌ها آمده‌اند (تنظیم برگزارکننده یا پیش‌فرض) */
-type TourValues = { startingCoins: number; soloBoostPct: number; duoBoostPct: number };
+type TourValues = { startingCoins: number };
 
 // بدنهٔ تابعی با مقادیر مؤثر بازی ساخته می‌شود
 type Step = { title: string; body: React.ReactNode | ((v: TourValues) => React.ReactNode) };
@@ -50,11 +50,10 @@ const STEPS: Step[] = [
   },
   {
     title: "قدم بعدی: اتاق تیمت",
-    body: (v) => (
+    body: (
       <p>
-        به <b className="text-brand-navy">اتاق تیم</b> برو و تیم ۲ یا ۳ نفره بساز، به تیمی بپیوند یا «شرکت فردی» را انتخاب کن. تیم
-        کوچک‌تر در داوری انسانی جبران می‌گیرد: فردی <b className="fa-num">+{fa(v.soloBoostPct)}٪</b> و دونفره{" "}
-        <b className="fa-num">+{fa(v.duoBoostPct)}٪</b>.
+        به <b className="text-brand-navy">اتاق تیم</b> برو و تیم ۲ یا ۳ نفره بساز، به تیمی بپیوند یا «شرکت فردی» را انتخاب کن.
+        تعداد اعضای تیم در امتیاز هیچ اثری ندارد.
       </p>
     ),
   },

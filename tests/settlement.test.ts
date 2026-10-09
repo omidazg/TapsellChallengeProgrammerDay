@@ -100,15 +100,15 @@ describe("settlement.ts: settleGame", () => {
     // A: حمایت عضو خود تیم حساب نمی‌شود → (۴ × √۲۵)² = ۴۰۰
     expect(A).toMatchObject({ memberCount: 3, juryRaw: 90, juryAdjusted: 90, people: 400, supporters: 4, coinsReceived: 100, ai: 90 });
     expect(A.total).toBe(1000);
-    // B: فردی → ۷۰ × ۱٫۱۵؛ یک حامی ۱۰۰ سکه تا سقف ۵۰
+    // B: فردی → همان ۷۰ (اندازهٔ تیم در امتیاز اثری ندارد)؛ یک حامی ۱۰۰ سکه تا سقف ۵۰
     expect(B.memberCount).toBe(1);
     expect(B.juryRaw).toBe(70);
-    expect(B.juryAdjusted).toBeCloseTo(80.5, 9);
+    expect(B.juryAdjusted).toBe(70);
     expect(B.people).toBeCloseTo(50, 9);
     expect(B.coinsReceived).toBe(100);
     expect(B.ai).toBeNull();
     expect(B.cheatPenalty).toBe(10);
-    expect(B.total).toBeCloseTo((500 * 80.5) / 90 + (300 * 50) / 400 - 10, 6);
+    expect(B.total).toBeCloseTo((500 * 70) / 90 + (300 * 50) / 400 - 10, 6);
     // C: هیچ داده‌ای
     expect(C).toMatchObject({ memberCount: 2, juryRaw: null, people: 0, ai: null, total: 0 });
     expect(computed.teams.map((t) => t.teamId)).toEqual([ids.A, ids.B, ids.C]);
@@ -195,9 +195,10 @@ describe("settlement.ts: settleGame", () => {
       expect(t.pts.people).toBeCloseTo(c.pts.people, 9);
       expect(t.pts.ai).toBeCloseTo(c.pts.ai, 9);
     }
-    // درصد جبران از نسبت نمرهٔ تعدیل‌شده به خام بازسازی می‌شود
-    expect(output.teams.find((t) => t.teamId === ids.B)!.boostPct).toBe(15);
-    expect(output.teams.find((t) => t.teamId === ids.A)!.boostPct).toBe(0);
+    // نمرهٔ داوری ثبت‌شده همان نمرهٔ خام است؛ تیم فردی هیچ افزایشی ندارد
+    expect(output.teams.find((t) => t.teamId === ids.B)!.juryAdjusted).toBe(70);
+    expect(output.teams.find((t) => t.teamId === ids.A)!.juryAdjusted).toBe(90);
+    expect(output.teams.every((t) => !("boostPct" in t))).toBe(true);
 
     // خرید پس از تسویه در خروجی ثبت‌شده نیست ولی در بازمحاسبهٔ خام هست
     const fresh = await scoring.computeScores();

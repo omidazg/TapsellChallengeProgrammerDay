@@ -130,7 +130,7 @@ export default async function AdminSettlementPage() {
                     <th scope="col" className="px-3 py-3 font-bold">رتبه</th>
                     <th scope="col" className="px-3 py-3 font-bold">تیم</th>
                     <th scope="col" className="px-3 py-3 font-bold">اعضا</th>
-                    <th scope="col" className="px-3 py-3 font-bold whitespace-nowrap">داوری انسانی (خام → با جبران)</th>
+                    <th scope="col" className="px-3 py-3 font-bold whitespace-nowrap">داوری انسانی (از ۱۰۰)</th>
                     <th scope="col" className="px-3 py-3 font-bold whitespace-nowrap">حامیان / سکه</th>
                     <th scope="col" className="px-3 py-3 font-bold whitespace-nowrap">هوش مصنوعی</th>
                     {SCORE_CATEGORY_ORDER.map((k) => (
@@ -148,18 +148,9 @@ export default async function AdminSettlementPage() {
                     <tr key={t.teamId} className="border-b border-brand-mist last:border-0">
                       <td className="px-3 py-2 fa-num font-black text-brand-navy">{fa(t.rank ?? 0)}</td>
                       <td className="px-3 py-2 font-bold text-brand-navy">{teamNames.get(t.teamId) ?? t.teamId}</td>
-                      <td className="px-3 py-2 fa-num">
-                        {fa(t.memberCount)}
-                        {t.boostPct > 0 && <span className="text-xs text-amber-600"> (+{fa(t.boostPct)}٪)</span>}
-                      </td>
+                      <td className="px-3 py-2 fa-num">{fa(t.memberCount)}</td>
                       <td className="px-3 py-2 fa-num whitespace-nowrap">
-                        {t.juryRaw === null ? (
-                          <span className="text-brand-slate">داوری نشده</span>
-                        ) : (
-                          <>
-                            {fa(round1(t.juryRaw))} → {fa(round1(t.juryAdjusted))}
-                          </>
-                        )}
+                        {t.juryRaw === null ? <span className="text-brand-slate">داوری نشده</span> : fa(round1(t.juryRaw))}
                       </td>
                       <td className="px-3 py-2 fa-num whitespace-nowrap">
                         {fa(t.supporters)} / {coins(t.coinsReceived)}

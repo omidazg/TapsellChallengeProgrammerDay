@@ -56,7 +56,7 @@ export default async function GuidePage() {
           <div className="space-y-6 min-w-0">
             <OverviewSection />
             <TimelineSection phase={user ? phase : null} />
-            <TeamsSection values={values} />
+            <TeamsSection />
             <CoinsSection values={values} />
             <SpendSection values={values} />
             <ScoringSection values={values} />
@@ -217,7 +217,7 @@ function TimelineSection({ phase }: { phase: Phase | null }) {
   );
 }
 
-function TeamsSection({ values }: { values: GameValues }) {
+function TeamsSection() {
   return (
     <Section id="teams" emoji="👥" title="تیم" desc="تیم ۱ تا ۳ نفره است و همهٔ اعضا برابرند.">
       <List
@@ -228,27 +228,12 @@ function TeamsSection({ values }: { values: GameValues }) {
           "یا تیم بساز و یک یا دو هم‌تیمی دعوت کن، یا به تیمی که جای خالی دارد بپیوند.",
           "هر عضو می‌تواند ایده، محصول، حراج، جایگاه تبلیغاتی و درخواست انتشار تیم را ثبت کند.",
           "مهارتی که در پروفایل انتخاب می‌کنی (سازنده، قصه‌گو، معامله‌گر) فقط یک برچسب است و در امتیاز اثری ندارد.",
+          <>
+            <b>تعداد اعضای تیم در امتیاز هیچ اثری ندارد.</b> شرکت فردی، تیم دونفره و تیم سه‌نفره با همان معیارها امتیاز می‌گیرند.
+          </>,
         ]}
       />
-      <div className="rounded-2xl bg-brand-ice border border-brand-mist p-4">
-        <div className="text-xs font-bold text-brand-cyan-dark mb-2">جبران تیم کوچک در داوری انسانی</div>
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <BoostCell label="شرکت فردی" value={`+${fa(values.soloBoostPct)}٪`} />
-          <BoostCell label="تیم دونفره" value={`+${fa(values.duoBoostPct)}٪`} />
-          <BoostCell label="تیم سه‌نفره" value="بدون جبران" />
-        </div>
-        <p className="mt-2 text-xs text-brand-slate">تیم کوچک‌تر نیروی کمتری دارد؛ برای همین نمرهٔ داوران به همین اندازه بالاتر حساب می‌شود.</p>
-      </div>
     </Section>
-  );
-}
-
-function BoostCell({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl bg-white border border-brand-mist px-2 py-2">
-      <div className="text-xs text-brand-slate">{label}</div>
-      <div className="font-black text-brand-navy fa-num">{value}</div>
-    </div>
   );
 }
 
@@ -337,9 +322,7 @@ function ScoringSection({ values }: { values: GameValues }) {
               <li key={q}>{q}</li>
             ))}
           </ol>
-          <p>
-            شرکت فردی +{fa(values.soloBoostPct)}٪ و تیم دونفره +{fa(values.duoBoostPct)}٪ جبران می‌گیرد.
-          </p>
+          <p>تعداد اعضای تیم در امتیاز هیچ اثری ندارد.</p>
         </Box>
         <Box emoji={SCORE_CATEGORY_LABELS.people.emoji} title={<ScoreTitle label={SCORE_CATEGORY_LABELS.people.label} weight={SCORE_WEIGHTS.people} />}>
           <p>هر سکه‌ای که دیگران با حمایت از ایده، خرید محصول یا برد حراج به پروژه می‌دهند. حساب درجه‌دو است؛ تعداد حامی از مقدار سکه مهم‌تر است:</p>
@@ -466,8 +449,8 @@ function LoginSection() {
 // پاسخ تابعی با مقادیر مؤثر بازی (تنظیم برگزارکننده) ساخته می‌شود
 const FAQ: { q: string; a: React.ReactNode | ((v: GameValues) => React.ReactNode) }[] = [
   {
-    q: "تنها بازی کنم ضرر می‌کنم؟",
-    a: (v) => <>نه. نمرهٔ داوری انسانی شرکت فردی {fa(v.soloBoostPct)}٪ و تیم دونفره {fa(v.duoBoostPct)}٪ بیشتر حساب می‌شود تا کمبود نیرو جبران شود.</>,
+    q: "تعداد اعضای تیم در امتیاز اثر دارد؟",
+    a: "نه. تعداد اعضای تیم در امتیاز هیچ اثری ندارد؛ شرکت فردی، تیم دونفره و تیم سه‌نفره با همان سه معیار و همان وزن‌ها امتیاز می‌گیرند.",
   },
   {
     q: "سکه‌هایم تمام شد؛ چه کنم؟",

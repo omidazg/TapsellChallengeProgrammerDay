@@ -314,7 +314,7 @@ model TeamScore {
   // ─── امتیاز سه‌معیاره ───
   memberCount     Int      @default(0)
   juryRaw         Float? // ۰..۱۰۰ میانگین سه پرسش داوری؛ null = هنوز داوری نشده
-  juryAdjusted    Float    @default(0) // پس از جبران تیم کوچک
+  juryAdjusted    Float    @default(0) // همان juryRaw (یا ۰)؛ تعداد اعضا در امتیاز اثری ندارد
   people          Float    @default(0) // حمایت مردمی (فرمول درجه‌دو)
   supporters      Int      @default(0)
   coinsReceived   Int      @default(0)
@@ -384,7 +384,7 @@ model Setting {
 // کلیدهای Setting:
 // phase: REGISTRATION | IDEATION | SEED_ROUND | BUILD | MARKET | CLOSED  (حراج داخل روز بازار است)
 // phase_ends_at: ISO
-// starting_coins, support_cap, solo_boost_pct, duo_boost_pct, award_ai_team_id ...
+// starting_coins, support_cap, award_ai_team_id ...
 
 // ─── گزارش کارهای ادمین ───
 model AuditLog {

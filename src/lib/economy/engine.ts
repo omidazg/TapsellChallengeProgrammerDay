@@ -3,10 +3,11 @@
  * پیاده‌سازی قرارداد در ./types.ts
  *
  * سه معیار (جمع وزن‌ها ۱۰۰۰):
- *   داوری انسانی  — میانگین سه پرسش داوری × جبران تیم کوچک
+ *   داوری انسانی  — میانگین سه پرسش داوری × ۱۰
  *   حمایت مردمی   — (Σ √min(سکهٔ هر حامی، سقف))²  (تأمین مالی درجه‌دو)
  *   داوری هوش مصنوعی — نمرهٔ ۰..۱۰۰ داور هوش مصنوعی
  * هر معیار نسبت به بهترین پروژهٔ همان معیار سنجیده می‌شود؛ سپس کسر تقلب کم می‌شود.
+ * تعداد اعضای تیم (۱ تا ۳ نفر) در امتیاز هیچ اثری ندارد.
  */
 
 import { DEFAULTS, SCORE_WEIGHTS } from "@/lib/constants";
@@ -16,22 +17,12 @@ import type { EconomyConfig, JuryScores, ScoreOutput, TeamInput, TeamResult } fr
 export function defaultConfig(): EconomyConfig {
   return {
     supportCap: DEFAULTS.supportCap,
-    soloBoostPct: DEFAULTS.soloBoostPct,
-    duoBoostPct: DEFAULTS.duoBoostPct,
     weights: { ...SCORE_WEIGHTS },
   };
 }
 
 function sum(arr: number[]): number {
   return arr.reduce((a, b) => a + b, 0);
-}
-
-/** درصد جبران تیم کوچک بر اساس تعداد اعضا (۳ نفر یا بیشتر، یا تیم خالی: صفر). */
-export function smallTeamBoostPct(config: Pick<EconomyConfig, "soloBoostPct" | "duoBoostPct">, memberCount: number): number {
-  if (memberCount <= 0) return 0;
-  if (memberCount === 1) return config.soloBoostPct;
-  if (memberCount === 2) return config.duoBoostPct;
-  return 0;
 }
 
 /**
@@ -115,14 +106,13 @@ export function scoreGame(config: EconomyConfig, teams: TeamInput[]): ScoreOutpu
   const partials = teams.map((team) => {
     const memberCount = team.memberIds.length;
     const juryRaw = juryRawScore(team.jury);
-    const boostPct = smallTeamBoostPct(config, memberCount);
-    const juryAdjusted = juryRaw == null ? 0 : juryRaw * (1 + boostPct / 100);
+    // نمرهٔ داوری همان نمرهٔ خام است؛ اندازهٔ تیم اثری ندارد. داوری‌نشده = صفر.
+    const juryAdjusted = juryRaw ?? 0;
     const support = peopleSupport(team.supports, config.supportCap, new Set(team.memberIds));
     return {
       teamId: team.teamId,
       memberCount,
       juryRaw,
-      boostPct,
       juryAdjusted,
       people: support.score,
       supporters: support.supporters,

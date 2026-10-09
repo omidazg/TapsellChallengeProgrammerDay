@@ -15,7 +15,7 @@ export default async function AdminExportPage() {
           <div>
             <div className="font-black text-brand-navy">امتیاز تیم‌ها (CSV)</div>
             <div className="text-xs text-brand-slate break-words">
-              رتبه، اندازهٔ تیم، سه پاسخ داوری، جبران تیم کوچک، حمایت مردمی و حامیان، داوری هوش مصنوعی، امتیاز هر معیار، کسر تقلب و امتیاز کل
+              رتبه، اندازهٔ تیم، سه پاسخ داوری و نمرهٔ داوری، حمایت مردمی و حامیان، داوری هوش مصنوعی، امتیاز هر معیار، کسر تقلب و امتیاز کل
             </div>
           </div>
         </a>

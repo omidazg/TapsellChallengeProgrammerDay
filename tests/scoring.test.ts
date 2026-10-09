@@ -32,7 +32,6 @@ function result(teamId: string, o: Partial<TeamResult> = {}): TeamResult {
     teamId,
     memberCount: 3,
     juryRaw: null,
-    boostPct: 0,
     juryAdjusted: 0,
     people: 0,
     supporters: 0,
@@ -226,13 +225,13 @@ describe("scoring.ts: computeScores (داده‌ها از پایگاه‌داد�
     expect(A.people).toBeCloseTo((Math.sqrt(50) + Math.sqrt(20) + 5) ** 2, 9);
     expect(A.memberCount).toBe(3);
     expect(A.juryRaw).toBe(80);
-    expect(A.boostPct).toBe(0);
+    expect(A.juryAdjusted).toBe(80);
     expect(A.ai).toBe(70);
     expect(A.cheatPenalty).toBe(25);
     expect(A.total).toBeCloseTo(A.pts.jury + A.pts.people + A.pts.ai - 25, 9);
 
     const B = find(out, ids.B);
-    expect(B).toMatchObject({ memberCount: 1, boostPct: 15, juryRaw: null, juryAdjusted: 0, people: 16, supporters: 1, coinsReceived: 16, ai: 100 });
+    expect(B).toMatchObject({ memberCount: 1, juryRaw: null, juryAdjusted: 0, people: 16, supporters: 1, coinsReceived: 16, ai: 100 });
     expect(B.pts.ai).toBe(200);
 
     const C = find(out, ids.C);
@@ -243,7 +242,7 @@ describe("scoring.ts: computeScores (داده‌ها از پایگاه‌داد�
     expect(out.teams.map((t) => t.rank)).toEqual([1, 2, 3]);
   });
 
-  it("سقف حمایت و درصد جبران از جدول تنظیمات خوانده می‌شوند", async () => {
+  it("سقف حمایت از جدول تنظیمات خوانده می‌شود؛ کلید قدیمی solo_boost_pct بی‌اثر است", async () => {
     await prisma.setting.createMany({
       data: [
         { key: "support_cap", value: "100" },
@@ -252,10 +251,9 @@ describe("scoring.ts: computeScores (داده‌ها از پایگاه‌داد�
     });
     try {
       const config = await scoring.configFromSettings();
-      expect(config).toMatchObject({ supportCap: 100, soloBoostPct: 40, duoBoostPct: 7, weights: { jury: 500, people: 300, ai: 200 } });
+      expect(config).toEqual({ supportCap: 100, weights: { jury: 500, people: 300, ai: 200 } });
       const out = await scoring.computeScores();
       expect(find(out, ids.A).people).toBeCloseTo((Math.sqrt(60) + Math.sqrt(20) + 5) ** 2, 9);
-      expect(find(out, ids.B).boostPct).toBe(40);
     } finally {
       await prisma.setting.deleteMany({ where: { key: { in: ["support_cap", "solo_boost_pct"] } } });
     }

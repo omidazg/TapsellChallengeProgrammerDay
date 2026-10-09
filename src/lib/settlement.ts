@@ -4,8 +4,7 @@
  * (در اقتصاد ساده‌شده سود سهام و جریمه‌ای وجود ندارد؛ تسویه فقط امتیازها را تثبیت می‌کند.)
  */
 import { prisma } from "./db";
-import { computeScores, configFromSettings } from "./scoring";
-import { smallTeamBoostPct } from "./economy/engine";
+import { computeScores } from "./scoring";
 import { invalidate } from "./ttl-cache";
 import type { ScoreOutput, TeamResult } from "./economy/types";
 
@@ -123,16 +122,11 @@ export async function resettleGame(): Promise<SettlementResult> {
  * تا عددهای صفحه دقیقاً همانی باشد که ثبت شده است.
  */
 export async function loadSettledOutput(): Promise<ScoreOutput> {
-  const [scores, config] = await Promise.all([prisma.teamScore.findMany({ orderBy: { rank: "asc" } }), configFromSettings()]);
+  const scores = await prisma.teamScore.findMany({ orderBy: { rank: "asc" } });
   const teams: TeamResult[] = scores.map((s) => ({
     teamId: s.teamId,
     memberCount: s.memberCount,
     juryRaw: s.juryRaw,
-    // درصد جبران از نسبت ثبت‌شده؛ اگر نمرهٔ داوری صفر/خالی بوده، از اندازهٔ تیم و تنظیمات فعلی
-    boostPct:
-      s.juryRaw && s.juryRaw > 0
-        ? Math.round((s.juryAdjusted / s.juryRaw - 1) * 100)
-        : smallTeamBoostPct(config, s.memberCount),
     juryAdjusted: s.juryAdjusted,
     people: s.people,
     supporters: s.supporters,

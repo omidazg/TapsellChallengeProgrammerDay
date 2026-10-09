@@ -45,7 +45,7 @@ async function main() {
 
   const { prisma } = await import("../src/lib/db");
   const { computeScores, computeAwards } = await import("../src/lib/scoring");
-  const { peopleSupport, juryRawScore, smallTeamBoostPct, defaultConfig } = await import("../src/lib/economy/engine");
+  const { peopleSupport, juryRawScore, scoreGame, defaultConfig } = await import("../src/lib/economy/engine");
   const { detectAndFlagCollusion } = await import("../src/lib/admin");
   const { setPhase } = await import("../src/lib/phase");
   const { invalidate } = await import("../src/lib/ttl-cache");
@@ -67,10 +67,17 @@ async function main() {
       check("داوری: میانگین سه پرسش × ۱۰", juryRawScore({ works: 9, value: 8, pitch: 7 }) === 80);
       check("داوری: پرسش بی‌نمره کنار می‌رود", juryRawScore({ works: 6, value: null, pitch: 8 }) === 70);
       check("داوری: بدون نمره → null", juryRawScore({ works: null, value: null, pitch: null }) === null && juryRawScore(null) === null);
-      const cfg = defaultConfig();
+      // تعداد اعضای تیم در امتیاز هیچ اثری ندارد: ورودی یکسان با ۱ و ۳ عضو → امتیاز یکسان
+      const same = { supports: [{ userId: "fan", amount: 20 }], jury: { works: 8, value: 7, pitch: 6 }, aiQuality: 70, cheatPenalty: 0 };
+      const sized = scoreGame(defaultConfig(), [
+        { teamId: "one", memberIds: ["o1"], ...same },
+        { teamId: "three", memberIds: ["t1", "t2", "t3"], ...same },
+      ]);
+      const [soloT, trioT] = ["one", "three"].map((id) => sized.teams.find((t) => t.teamId === id)!);
       check(
-        "جبران تیم کوچک: فردی ۱۵٪، دونفره ۷٪، سه‌نفره ۰",
-        smallTeamBoostPct(cfg, 1) === 15 && smallTeamBoostPct(cfg, 2) === 7 && smallTeamBoostPct(cfg, 3) === 0
+        "اندازهٔ تیم بی‌اثر: تیم ۱ و ۳ نفره با ورودی یکسان امتیاز یکسان می‌گیرند",
+        soloT.juryAdjusted === trioT.juryAdjusted && soloT.total === trioT.total && JSON.stringify(soloT.pts) === JSON.stringify(trioT.pts),
+        `${soloT.total}/${trioT.total}`
       );
     }
 
@@ -175,12 +182,12 @@ async function main() {
     const D = byTeam.get(delta.id)!;
     check("هر چهار تیم امتیاز گرفتند", output.teams.length === 4, `تعداد=${output.teams.length}`);
 
-    // اندازهٔ تیم و جبران داوری
+    // اندازهٔ تیم در امتیاز داوری اثری ندارد
     check("تعداد اعضا: ۳ / ۲ / ۱ / ۲", A.memberCount === 3 && B.memberCount === 2 && G.memberCount === 1 && D.memberCount === 2);
-    check("جبران: آلفا ۰٪، بتا ۷٪، گاما (فردی) ۱۵٪", A.boostPct === 0 && B.boostPct === 7 && G.boostPct === 15, `${A.boostPct}/${B.boostPct}/${G.boostPct}`);
-    check("داوری خام آلفا = ۸۰ و بدون جبران", A.juryRaw === 80 && near(A.juryAdjusted, 80), `${A.juryRaw}/${A.juryAdjusted}`);
-    check("داوری بتا = ۸۰ × ۱٫۰۷ = ۸۵٫۶", B.juryRaw === 80 && near(B.juryAdjusted, 85.6), `${B.juryAdjusted}`);
-    check("داوری گاما = ۷۰ × ۱٫۱۵ = ۸۰٫۵", G.juryRaw === 70 && near(G.juryAdjusted, 80.5), `${G.juryAdjusted}`);
+    check("داوری آلفا = ۸۰", A.juryRaw === 80 && A.juryAdjusted === 80, `${A.juryRaw}/${A.juryAdjusted}`);
+    check("داوری بتا = ۸۰", B.juryRaw === 80 && B.juryAdjusted === 80, `${B.juryRaw}/${B.juryAdjusted}`);
+    check("داوری گاما (فردی) = همان ۷۰، بدون هیچ افزایشی", G.juryRaw === 70 && G.juryAdjusted === 70, `${G.juryRaw}/${G.juryAdjusted}`);
+    check("آلفا (۳ نفر) و بتا (۲ نفر) با داوری یکسان، امتیاز داوری یکسان", near(A.pts.jury, B.pts.jury), `${A.pts.jury}/${B.pts.jury}`);
     check("دلتا بی‌محصول: داوری null و صفر", D.juryRaw === null && D.juryAdjusted === 0, `${D.juryRaw}/${D.juryAdjusted}`);
 
     // حمایت مردمی
@@ -194,8 +201,8 @@ async function main() {
     check("داوری هوش مصنوعی: ۶۰ / ۸۰ / null / null", A.ai === 60 && B.ai === 80 && G.ai === null && D.ai === null);
 
     // امتیازها (هر معیار نسبت به بهترین)
-    const expA = { jury: (500 * 80) / 85.6, people: (300 * 50) / 160, ai: (200 * 60) / 80 };
-    const expG = { jury: (500 * 80.5) / 85.6, people: (300 * 100) / 160, ai: 0 };
+    const expA = { jury: 500, people: (300 * 50) / 160, ai: (200 * 60) / 80 };
+    const expG = { jury: (500 * 70) / 80, people: (300 * 100) / 160, ai: 0 };
     check("بتا در هر سه معیار بهترین است → ۱۰۰۰", near(B.pts.jury, 500) && near(B.pts.people, 300) && near(B.pts.ai, 200) && near(B.total, 1000), JSON.stringify(B.pts));
     check(
       "امتیاز آلفا = نسبت‌ها منهای کسر تقلب ۲۰",
@@ -216,8 +223,8 @@ async function main() {
     const awards = computeAwards(output, { teamNames, picks: { ai: delta.id, live: beta.id } });
     const awardOf = (key: string) => awards.find((a) => a.key === key);
     check("جایزهٔ قهرمان → بتا", awardOf("champion")?.teamId === beta.id, String(awardOf("champion")?.teamName));
-    check("انتخاب داوران → گاما (بتا قبلاً جایزه گرفته)", awardOf("jury")?.teamId === gamma.id, String(awardOf("jury")?.teamName));
-    check("انتخاب مردم → آلفا (بتا و گاما قبلاً جایزه گرفته‌اند)", awardOf("people")?.teamId === alpha.id, String(awardOf("people")?.teamName));
+    check("انتخاب داوران → آلفا (هم‌نمره با بتا؛ بتا قبلاً جایزه گرفته)", awardOf("jury")?.teamId === alpha.id, String(awardOf("jury")?.teamName));
+    check("انتخاب مردم → گاما (بتا قبلاً جایزه گرفته)", awardOf("people")?.teamId === gamma.id, String(awardOf("people")?.teamName));
     check("هوش مصنوعی (انتخاب داوران) → دلتا", awardOf("ai")?.teamId === delta.id, String(awardOf("ai")?.teamName));
     check("محصول لایو: انتخاب بتا که قبلاً جایزه گرفته اهدا نمی‌شود", !awardOf("live"), JSON.stringify(awardOf("live")));
     check("هیچ تیمی دو جایزه نگرفت", new Set(awards.map((a) => a.teamId)).size === awards.length, `${awards.length} جایزه`);
@@ -240,7 +247,7 @@ async function main() {
     const A2 = output2.teams.find((t) => t.teamId === alpha.id)!;
     const G2 = output2.teams.find((t) => t.teamId === gamma.id)!;
     check("support_cap=۱۰۰۰: حمایت مردمی آلفا = ۱۰۰", near(A2.people, 100), `=${A2.people}`);
-    check("solo_boost_pct=۲۰: داوری گاما = ۷۰ × ۱٫۲ = ۸۴", near(G2.juryAdjusted, 84) && G2.boostPct === 20, `=${G2.juryAdjusted}`);
+    check("کلید قدیمی solo_boost_pct بی‌اثر است: داوری گاما همان ۷۰", G2.juryAdjusted === 70, `=${G2.juryAdjusted}`);
     await prisma.setting.deleteMany({ where: { key: { in: ["support_cap", "solo_boost_pct"] } } });
 
     // ---------- تشخیص تبانی (خرید متقابل آلفا ↔ بتا) ----------

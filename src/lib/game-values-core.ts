@@ -13,8 +13,6 @@ export type GameValues = typeof DEFAULTS;
 export const GAME_VALUE_SETTINGS = {
   starting_coins: { field: "startingCoins", kind: "int" },
   support_cap: { field: "supportCap", kind: "int" },
-  solo_boost_pct: { field: "soloBoostPct", kind: "int" },
-  duo_boost_pct: { field: "duoBoostPct", kind: "int" },
   max_bought_coins_per_user: { field: "maxBoughtCoinsPerUser", kind: "int" },
   bid_increment: { field: "bidIncrement", kind: "int" },
   auction_duration_sec: { field: "auctionDurationSec", kind: "int" },
