@@ -96,8 +96,11 @@ function driverByName(name: string): PaymentDriver | null {
 // ---------- سفارش ----------
 
 /** سکه‌هایی که کاربر خریده یا در انتظار پرداخت دارد (برای سقف خرید هر نفر) */
-export async function boughtOrPendingCoins(userId: string): Promise<{ paid: number; pending: number }> {
-  const groups = await prisma.coinOrder.groupBy({
+export async function boughtOrPendingCoins(
+  userId: string,
+  db: Pick<typeof prisma, "coinOrder"> = prisma
+): Promise<{ paid: number; pending: number }> {
+  const groups = await db.coinOrder.groupBy({
     by: ["status"],
     where: { userId, status: { in: ["PAID", "PENDING"] } },
     _sum: { coins: true },
@@ -123,22 +126,27 @@ export async function createCoinOrder(userId: string, coinsWanted: number, callb
   if (phase === "CLOSED") return { ok: false, error: "بازی تمام شده و خرید سکه بسته است" };
 
   const maxPerUser = await getSettingInt("max_bought_coins_per_user", DEFAULTS.maxBoughtCoinsPerUser);
-  const { paid, pending } = await boughtOrPendingCoins(userId);
-  const room = Math.max(0, maxPerUser - paid - pending);
-  if (coins > room) {
-    return {
-      ok: false,
-      error:
-        room === 0
-          ? `به سقف خرید سکه (${fa(maxPerUser)} سکه) رسیده‌ای${pending > 0 ? "؛ سفارش‌های در انتظار را تکمیل یا لغو کن" : ""}`
-          : `حداکثر ${fa(room)} سکهٔ دیگر می‌توانی بخری`,
-    };
-  }
-
   const driver = getPaymentDriver();
-  const order = await prisma.coinOrder.create({
-    data: { userId, coins, amountRial: coinsToRial(coins), gateway: driver.name },
+  // بررسی سقف و ساخت سفارش در یک تراکنش: درخواست‌های هم‌زمان نباید هر دو از یک «جای خالی» رد شوند.
+  const created = await prisma.$transaction(async (tx) => {
+    const { paid, pending } = await boughtOrPendingCoins(userId, tx);
+    const room = Math.max(0, maxPerUser - paid - pending);
+    if (coins > room) {
+      return {
+        error:
+          room === 0
+            ? `به سقف خرید سکه (${fa(maxPerUser)} سکه) رسیده‌ای${pending > 0 ? "؛ سفارش‌های در انتظار را تکمیل یا لغو کن" : ""}`
+            : `حداکثر ${fa(room)} سکهٔ دیگر می‌توانی بخری`,
+      };
+    }
+    return {
+      order: await tx.coinOrder.create({
+        data: { userId, coins, amountRial: coinsToRial(coins), gateway: driver.name },
+      }),
+    };
   });
+  if (!created.order) return { ok: false, error: created.error };
+  const { order } = created;
   try {
     const next = await driver.start(
       { id: order.id, amountRial: order.amountRial, coins },
@@ -244,6 +252,6 @@ export const MANUAL_INSTRUCTIONS_KEY = "coin_manual_instructions";
 export async function getManualInstructions(): Promise<string> {
   return getSetting(
     MANUAL_INSTRUCTIONS_KEY,
-    "سفارشت ثبت شد. برگزارکننده پس از دریافت وجه، سکه‌ها را به کیفت اضافه می‌کند."
+    "شمارهٔ کارت و نحوهٔ ارسال رسید را از برگزارکننده بپرس. پس از دریافت وجه، سکه‌ها به کیفت اضافه می‌شوند."
   );
 }

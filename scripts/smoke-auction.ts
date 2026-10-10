@@ -242,8 +242,13 @@ async function main() {
     eq("تسویه: کیف برنده کم شد", await walletOf(b1.id), 100 - finalBid);
     eq("تسویه: از پیشنهاددهندهٔ بازنده چیزی کم نشد", await walletOf(free.id), 100);
 
+    // حراج بعدی را تسویه شروع نمی‌کند؛ زمان‌بند پس از auction_gap_sec از last_auction_ended_at شروعش می‌کند.
+    eq("پس از تسویه حراج بعدی هنوز SCHEDULED است (فاصله)", (await prisma.auction.findUniqueOrThrow({ where: { id: queue[1]!.id } })).status, "SCHEDULED");
+    const endedAtSetting = await prisma.setting.findUnique({ where: { key: "last_auction_ended_at" } });
+    check("تسویه: last_auction_ended_at ثبت شد", !!endedAtSetting && Date.now() - new Date(endedAtSetting.value).getTime() < 60_000, endedAtSetting);
+    await startNextAuction(); // همان کاری که زمان‌بند پس از فاصله می‌کند
     const autoNext = await prisma.auction.findUniqueOrThrow({ where: { id: queue[1]!.id } });
-    eq("شروع خودکار: حراج بعدیِ صف پس از تسویه زنده شد", autoNext.status, "LIVE");
+    eq("شروع بعدی: حراج دومِ صف زنده شد", autoNext.status, "LIVE");
     eq("پس از تسویه هم فقط یک حراج LIVE", await prisma.auction.count({ where: { status: "LIVE" } }), 1);
     await expectError("placeBid روی حراج پایان‌یافته رد می‌شود", () => placeBid(liveId, free.id, 60), "زنده");
 
@@ -321,8 +326,10 @@ async function main() {
       eq("تسویهٔ بدون پیشنهاد معتبر: تسویه شد", await settleIfEnded(aE.id), true);
       const settledE = await prisma.auction.findUniqueOrThrow({ where: { id: aE.id } });
       eq("تسویهٔ بدون پیشنهاد معتبر: بدون برنده و بدون خرید", `${settledE.winnerId}/${await prisma.purchase.count({ where: { productId: D2.product.id } })}`, "null/0");
+      eq("پس از تسویه حراج تیم E هنوز SCHEDULED است (فاصله)", (await prisma.auction.findUniqueOrThrow({ where: { productId: E.product.id } })).status, "SCHEDULED");
+      await startNextAuction(); // همان کاری که زمان‌بند پس از auction_gap_sec می‌کند
       const eAuction = await prisma.auction.findUniqueOrThrow({ where: { productId: E.product.id } });
-      eq("شروع خودکار: حراج بعدیِ صف (تیم E) زنده شد", eAuction.status, "LIVE");
+      eq("شروع بعدی: حراج بعدیِ صف (تیم E) زنده شد", eAuction.status, "LIVE");
     }
 
     // ---------- پایان بازی: حراج زنده تسویه و صف باقی‌مانده پاک می‌شود ----------

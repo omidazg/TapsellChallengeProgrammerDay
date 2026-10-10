@@ -6,7 +6,7 @@ import Image from "next/image";
 import { Alert } from "@/components/ui";
 import { ImageUploadField } from "@/components/ImageUploadField";
 import { useDraftAutosave, type DraftValues } from "@/hooks/useDraftAutosave";
-import { isLocalUploadUrl, imageUrlError } from "@/lib/product-utils";
+import { isLocalUploadUrl, imageUrlError, randomImageUrl } from "@/lib/product-utils";
 import { DraftBanner } from "../build/DraftBanner";
 import { saveIdeaAction, unsubmitIdeaAction, type IdeaActionState } from "./actions";
 
@@ -19,11 +19,6 @@ type IdeaInput = {
   coverUrl: string;
 };
 
-function randomCover() {
-  const seed = Math.random().toString(36).slice(2, 10);
-  return `https://picsum.photos/seed/${seed}/800/500`;
-}
-
 /** فیلدهایی که پیش‌نویس محلی‌شان ذخیره می‌شود */
 const DRAFT_FIELDS = ["title", "oneLiner", "problem", "audience", "buildPlan", "coverUrl"] as const;
 
@@ -32,7 +27,8 @@ function SubmitButtons() {
   const intent = status.pending ? String(status.data?.get("intent") ?? "") : "";
   return (
     <div className="flex flex-col sm:flex-row flex-wrap gap-3 pt-2">
-      <button type="submit" name="intent" value="draft" disabled={status.pending} className="btn-ghost w-full sm:w-auto">
+      {/* پیش‌نویس ناقص هم ذخیره می‌شود؛ اعتبارسنجی مرورگر (required) فقط برای ثبت نهایی است */}
+      <button type="submit" name="intent" value="draft" formNoValidate disabled={status.pending} className="btn-ghost w-full sm:w-auto">
         {status.pending && intent === "draft" ? "در حال ذخیره…" : "ذخیرهٔ پیش‌نویس"}
       </button>
       <button type="submit" name="intent" value="submit" disabled={status.pending} className="btn-primary w-full sm:w-auto">
@@ -127,9 +123,10 @@ export function IdeaForm({
               aria-invalid={coverError ? true : undefined}
               aria-describedby={coverError ? "coverUrlError" : undefined}
               className="input flex-1 min-w-0 sm:min-w-[220px]"
-              placeholder="https://picsum.photos/seed/.../800/500 یا از دکمهٔ بالا آپلود کن"
+              placeholder="از دکمهٔ بالا آپلود کن یا «تصویر تصادفی» را بزن"
+              dir="ltr"
             />
-            <button type="button" className="btn-ghost shrink-0 w-full sm:w-auto" onClick={() => setCoverUrl(randomCover())}>
+            <button type="button" className="btn-ghost shrink-0 w-full sm:w-auto" onClick={() => setCoverUrl(randomImageUrl())}>
               تصویر تصادفی
             </button>
           </div>

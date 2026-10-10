@@ -98,7 +98,7 @@ export function PurchasePanel({
       <div className="flex items-center justify-between">
         <Coin n={price} label="قیمت" />
         <div className="flex items-center gap-3 text-xs text-brand-slate">
-          <span>🛒 {fa(sold)} فروش</span>
+          <span>🛒 {fa(sold)} سکه فروش</span>
           <span>❤️ {fa(hearts)}</span>
         </div>
       </div>

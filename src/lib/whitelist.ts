@@ -19,12 +19,21 @@ export async function isWhitelistEnabled() {
   return (await getSetting(WHITELIST_SETTING, "1")) !== "0";
 }
 
-/** ایمیل یا شمارهٔ موبایل (در صورت وجود) در لیست سفید است؟ */
+/**
+ * ایمیل یا شمارهٔ موبایل (در صورت وجود) در لیست سفید است؟
+ * هر ردیف فقط یک حساب می‌سازد: ردیفی که ایمیل یا شماره‌اش قبلاً حساب دارد مصرف شده است
+ * (وگرنه یک نفر یک‌بار با شمارهٔ ردیف و ایمیلی دیگر، و یک‌بار با ایمیل ردیف ثبت‌نام می‌کرد).
+ */
 export async function isWhitelisted(email: string, phone?: string | null) {
   const or: { email?: string; phone?: string }[] = [{ email: normalizeEmail(email) }];
   if (phone) or.push({ phone });
-  const row = await prisma.allowedEmail.findFirst({ where: { OR: or }, select: { id: true } });
-  return !!row;
+  const rows = await prisma.allowedEmail.findMany({ where: { OR: or }, select: { email: true, phone: true } });
+  for (const row of rows) {
+    const owners: { email?: string; phone?: string }[] = [{ email: row.email }];
+    if (row.phone) owners.push({ phone: row.phone });
+    if (!(await prisma.user.findFirst({ where: { OR: owners }, select: { id: true } }))) return true;
+  }
+  return false;
 }
 
 /**

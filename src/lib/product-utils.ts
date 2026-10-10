@@ -1,5 +1,6 @@
 import { fa } from "./persian";
 import { DEFAULTS } from "./constants";
+import { generatedCoverUrl, isGeneratedCoverUrl, randomCoverUrl } from "./cover-art";
 
 
 /** حداکثر تعداد تصویر مجاز برای محصول */
@@ -23,15 +24,14 @@ export function serializeImages(images: string[]): string {
   return JSON.stringify(images.filter((u) => u.trim().length > 0).slice(0, MAX_IMAGES));
 }
 
-/** پوششِ محصول: اولین تصویر یا تصویر پیش‌فرض بر اساس seed */
+/** پوششِ محصول: اولین تصویر یا جلد ساخته‌شدهٔ محلی بر اساس seed (src/lib/cover-art.ts) */
 export function coverUrl(images: string[], seed: string): string {
-  return images[0] || `https://picsum.photos/seed/${encodeURIComponent(seed)}/800/500`;
+  return images[0] || generatedCoverUrl(seed);
 }
 
-/** یک آدرس تصادفی از picsum با seed تصادفی برای دکمهٔ «تصویر تصادفی» */
-export function randomPicsumUrl(): string {
-  const seed = Math.random().toString(36).slice(2, 10);
-  return `https://picsum.photos/seed/${seed}/800/500`;
+/** جلد ساخته‌شدهٔ محلی با seed تصادفی برای دکمهٔ «تصویر تصادفی» (picsum در ایران geoblock است) */
+export function randomImageUrl(): string {
+  return randomCoverUrl();
 }
 
 export type UploadResult = { url: string; thumb: string };
@@ -139,6 +139,9 @@ export function imageUrlError(raw: string): string | null {
   if (v.length > 500) return "نشانی تصویر خیلی طولانی است";
   if (v.startsWith("/uploads/")) {
     return isLocalUploadUrl(v) ? null : "نشانی فایل آپلودی نامعتبر است؛ تصویر را دوباره آپلود کن";
+  }
+  if (v.startsWith("/covers/")) {
+    return isGeneratedCoverUrl(v) ? null : "نشانی تصویر نامعتبر است؛ دوباره «تصویر تصادفی» را بزن";
   }
   let u: URL;
   try {

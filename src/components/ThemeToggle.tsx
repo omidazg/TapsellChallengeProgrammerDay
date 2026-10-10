@@ -81,7 +81,10 @@ export function ThemeToggle({ className = "inline-flex" }: { className?: string 
   }, [mode]);
 
   const cycle = useCallback(() => {
-    const next = NEXT[mode ?? "system"];
+    const current = mode ?? "system";
+    let next = NEXT[current];
+    // هر کلیک باید رنگ صفحه را عوض کند: «سیستم» با سیستم روشن همان «روشن» است، پس از آن رد می‌شویم.
+    if (resolve(next) === resolve(current)) next = NEXT[next];
     setMode(next);
     try {
       window.localStorage.setItem(STORAGE_KEY, next);

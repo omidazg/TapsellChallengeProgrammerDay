@@ -97,7 +97,7 @@ test("full journey: register → team/solo → idea → support → build → bu
   await rivalPage.goto("/build");
   await rivalPage.locator('[name="name"]').fill("بازارچهٔ دفتر");
   await rivalPage.locator('[name="tagline"]').fill("خرید و فروش ساده بین همکاران");
-  await rivalPage.locator('[name="description"]').fill("یک صفحهٔ آگهی داخلی برای وسایل دست‌دوم همکاران.");
+  await rivalPage.locator('textarea[name="description"]').fill("یک صفحهٔ آگهی داخلی برای وسایل دست‌دوم همکاران.");
   // چک‌لیست «ثبت نهایی» این سه را هم لازم دارد (lib/product-utils.ts → readyToSubmit)؛
   // بدون آن‌ها دکمه با «همهٔ موارد چک‌لیست را کامل کن» رد می‌شود و محصول در بازار ظاهر نمی‌شود.
   await rivalPage.locator('[name="demoUrl"]').fill("https://example.com/demo");
@@ -132,7 +132,8 @@ test("full journey: register → team/solo → idea → support → build → bu
   await rivalPage.getByRole("link", { name: /بازارچهٔ دفتر/ }).first().click();
   await expect(rivalPage).toHaveURL(/\/market\//);
   await rivalPage.getByRole("button", { name: /فرستادن به حراج/ }).click();
-  await expect(rivalPage.getByText(/به صف حراج رفت/)).toBeVisible({ timeout: 10_000 });
+  // پس از فرستادن، صفحه تازه می‌شود و به‌جای دکمه وضعیت «در صف حراج» می‌آید.
+  await expect(rivalPage.getByText(/به صف حراج رفت|در صف حراج ·/).first()).toBeVisible({ timeout: 10_000 });
 
   // حراج‌ها به ترتیب صف خودکار شروع می‌شوند؛ ادمین برای سرعت حراج بعدی را دستی شروع می‌کند
   // (اگر زمان‌بند زودتر شروعش کرده باشد، این فقط خطای «حراجی زنده است» می‌دهد که مهم نیست).

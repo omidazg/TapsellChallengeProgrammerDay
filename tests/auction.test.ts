@@ -355,7 +355,7 @@ describe("auction.ts: اجرای صف (شروع و تسویهٔ خودکار)", 
     expect(await auction.currentOrNextAuctionId()).toBe(a.auctionId);
   });
 
-  it("برندهٔ حراج دقیقاً مبلغ پیشنهادش را می‌پردازد و برد او یک خرید است؛ حراج بعدی خودکار شروع می‌شود", async () => {
+  it("برندهٔ حراج دقیقاً مبلغ پیشنهادش را می‌پردازد و برد او یک خرید است", async () => {
     const [a, b] = await queueOf(2);
     await auction.startNextAuction();
     const loser = await makeBidder(100);
@@ -377,8 +377,8 @@ describe("auction.ts: اجرای صف (شروع و تسویهٔ خودکار)", 
     expect(ledger).toHaveLength(1);
     expect(ledger[0]).toMatchObject({ wallet: "BUY", delta: -30, reason: "AUCTION_WIN", refId: a.auctionId });
 
-    // در روز بازار با auto_auction پیش‌فرض (۱) حراج بعدی بلافاصله شروع می‌شود
-    expect((await prisma.auction.findUniqueOrThrow({ where: { id: b.auctionId } })).status).toBe("LIVE");
+    // تسویه حراج بعدی را شروع نمی‌کند؛ زمان‌بند پس از auction_gap_sec آن را زنده می‌کند
+    expect((await prisma.auction.findUniqueOrThrow({ where: { id: b.auctionId } })).status).toBe("SCHEDULED");
 
     // تسویهٔ دوباره idempotent است
     expect(await auction.settleAuction(a.auctionId)).toBe(false);
@@ -412,7 +412,7 @@ describe("auction.ts: اجرای صف (شروع و تسویهٔ خودکار)", 
       winnerId: null,
       finalPrice: null,
     });
-    expect((await prisma.auction.findUniqueOrThrow({ where: { id: b.auctionId } })).status).toBe("LIVE");
+    expect((await prisma.auction.findUniqueOrThrow({ where: { id: b.auctionId } })).status).toBe("SCHEDULED");
   });
 
   it("با auto_auction=0 حراج بعدی خودکار شروع نمی‌شود", async () => {
@@ -449,8 +449,18 @@ describe("auction.ts: اجرای صف (شروع و تسویهٔ خودکار)", 
       winnerId: bidder.id,
       finalPrice: 25,
     });
-    expect((await prisma.auction.findUniqueOrThrow({ where: { id: b.auctionId } })).status).toBe("LIVE");
     expect(await walletOf(bidder.id)).toBe(75);
+    // حراج بعدی تا گذشتن auction_gap_sec از پایان قبلی در صف می‌ماند
+    expect((await prisma.auction.findUniqueOrThrow({ where: { id: b.auctionId } })).status).toBe("SCHEDULED");
+    await scheduler.runScheduledTasks();
+    expect((await prisma.auction.findUniqueOrThrow({ where: { id: b.auctionId } })).status).toBe("SCHEDULED");
+
+    await prisma.setting.update({
+      where: { key: "last_auction_ended_at" },
+      data: { value: new Date(Date.now() - 61_000).toISOString() },
+    });
+    await scheduler.runScheduledTasks();
+    expect((await prisma.auction.findUniqueOrThrow({ where: { id: b.auctionId } })).status).toBe("LIVE");
   });
 
   it("زمان‌بند بیرون از روز بازار حراجی شروع نمی‌کند", async () => {

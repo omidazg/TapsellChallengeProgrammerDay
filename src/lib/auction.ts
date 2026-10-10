@@ -10,6 +10,7 @@ import { publishAuctionChange, AUCTION_CACHE_PREFIX } from "./auction-events";
 import { nextMinBid, shouldExtendAuction } from "./economy/engine";
 import { pickFirstPriceWinner } from "./economy/bids";
 import { reservedBuyCoins } from "./reservations";
+import { coverUrl } from "./product-utils";
 export { reservedBuyCoins } from "./reservations";
 
 /** ضریب ایمنی: فقط تا این نسبت از زمان باقی‌ماندهٔ فاز صرف حراج‌ها می‌شود (بقیه برای تسویه/تأخیرها). */
@@ -222,7 +223,13 @@ async function settleCore(id: string, opts: { startNext?: boolean } = {}) {
 
   if (settled) {
     publishAuctionChange();
-    if (opts.startNext === false) return settled;
+    // حراج بعدی را فقط زمان‌بند شروع می‌کند، auction_gap_sec ثانیه پس از همین لحظه
+    // (تا بنر «نتیجهٔ حراج قبلی» وقت دیده‌شدن داشته باشد).
+    const endedAt = new Date().toISOString();
+    await prisma.setting
+      .upsert({ where: { key: "last_auction_ended_at" }, update: { value: endedAt }, create: { key: "last_auction_ended_at", value: endedAt } })
+      .catch(() => {});
+    if (opts.startNext !== true) return settled;
     const { phase } = await getPhase().catch(() => ({ phase: null as string | null }));
     const autoAuction = await getSetting("auto_auction", "1").catch(() => "0");
     if (phase === "MARKET" && autoAuction === "1") {
@@ -237,7 +244,7 @@ export async function settleAuction(id: string) {
   return settleCore(id);
 }
 
-/** اگر حراج زنده و زمانش تمام شده، پایانش می‌دهد و بعدی را شروع می‌کند. */
+/** اگر حراج زنده و زمانش تمام شده، پایانش می‌دهد (حراج بعدی را زمان‌بند پس از فاصله شروع می‌کند). */
 export async function settleIfEnded(id: string) {
   const auction = await prisma.auction.findUnique({ where: { id } });
   if (!auction || auction.status !== "LIVE" || !auction.endsAt) return false;
@@ -403,7 +410,7 @@ export async function getAuctionState(id: string): Promise<AuctionState | null> 
       name: auction.product.name,
       specialName: auction.product.specialName || auction.product.name,
       specialDesc: auction.product.specialDesc,
-      cover: images[0] ?? `https://picsum.photos/seed/${auction.product.id}/800/500`,
+      cover: coverUrl(images, auction.product.id),
       teamName: auction.product.team.name,
       teamId: auction.product.teamId,
     },

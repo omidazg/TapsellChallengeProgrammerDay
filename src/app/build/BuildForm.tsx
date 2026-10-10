@@ -8,7 +8,7 @@ import { Alert } from "@/components/ui";
 import { ImageUploadField } from "@/components/ImageUploadField";
 import { useDraftAutosave, type DraftValues } from "@/hooks/useDraftAutosave";
 import { DEFAULTS } from "@/lib/constants";
-import { parseTeaser, randomPicsumUrl, MAX_IMAGES, isLocalUploadUrl, imageUrlError } from "@/lib/product-utils";
+import { parseTeaser, randomImageUrl, MAX_IMAGES, isLocalUploadUrl, imageUrlError } from "@/lib/product-utils";
 import { saveProductAction, type ProductActionState } from "./actions";
 import { DraftBanner } from "./DraftBanner";
 import { ChecklistLink } from "./ChecklistLink";
@@ -300,13 +300,13 @@ function ImagesField({ images, setImages, disabled }: { images: string[]; setIma
           aria-invalid={urlError ? true : undefined}
           aria-describedby={urlError ? "productImageUrlError" : undefined}
           className="input flex-1 min-w-[220px]"
-          placeholder="https://picsum.photos/seed/.../800/500"
+          placeholder="https://… یا «تصویر تصادفی»"
           dir="ltr"
         />
         <button type="button" disabled={disabled || !draft.trim() || full} className="btn-cyan shrink-0" onClick={() => addImage(draft, true)}>
           افزودن
         </button>
-        <button type="button" disabled={disabled || full} className="btn-ghost shrink-0" onClick={() => addImage(randomPicsumUrl())}>
+        <button type="button" disabled={disabled || full} className="btn-ghost shrink-0" onClick={() => addImage(randomImageUrl())}>
           تصویر تصادفی
         </button>
       </div>

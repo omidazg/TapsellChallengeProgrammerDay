@@ -34,6 +34,14 @@ const ideaSchema = z.object({
     }),
 });
 
+/** پیش‌نویس فقط عنوان لازم دارد؛ بقیهٔ فیلدها می‌توانند فعلاً خالی بمانند */
+const draftSchema = ideaSchema.extend({
+  oneLiner: z.string().trim().max(120, "یک‌خطی باید حداکثر ۱۲۰ نویسه باشد"),
+  problem: z.string().trim().max(LONG_TEXT_MAX, "توضیح مسئله خیلی طولانی است"),
+  audience: z.string().trim().max(LONG_TEXT_MAX, "توضیح مخاطب خیلی طولانی است"),
+  buildPlan: z.string().trim().max(LONG_TEXT_MAX, "برنامهٔ ساخت خیلی طولانی است"),
+});
+
 async function assertIdeationEditable() {
   const { phase } = await getPhase();
   if (phase !== "IDEATION") {
@@ -67,7 +75,7 @@ export async function saveIdeaAction(prevState: IdeaActionState, formData: FormD
     }
   }
 
-  const parsed = ideaSchema.safeParse({
+  const parsed = (intent === "submit" ? ideaSchema : draftSchema).safeParse({
     title: formData.get("title"),
     oneLiner: formData.get("oneLiner"),
     problem: formData.get("problem"),

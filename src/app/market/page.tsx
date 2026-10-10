@@ -134,7 +134,7 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                       <Coin n={p.price} label="سکه" />
                       <div className="flex items-center gap-2 text-xs text-brand-slate">
-                        <span>🛒 {fa(p.sold)}</span>
+                        <span title="سکهٔ فروش‌رفته">🛒 {fa(p.sold)} سکه</span>
                         <span>❤️ {fa(p.hearts)}</span>
                       </div>
                     </div>

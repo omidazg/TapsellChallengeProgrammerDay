@@ -63,7 +63,7 @@ export default async function AuctionPage() {
           <div className="card p-4 sm:p-5 mb-6 bg-brand-ice space-y-2 text-sm text-brand-navy leading-7">
             <p>
               تیم‌ها محصولشان را از صفحهٔ محصول به صف حراج می‌فرستند؛ تا {fa(cutoffMin)} دقیقه پیش از پایان روز بازار. هر حراج که تمام شود،
-              بعدی خودکار شروع می‌شود.
+              بعدی پس از فاصله‌ای کوتاه خودکار شروع می‌شود.
             </p>
             <p className="text-brand-slate">
               برندهٔ هر حراج همان مبلغ پیشنهادش را می‌پردازد و این برد مثل یک خرید، حمایت از آن تیم حساب می‌شود. روی نسخهٔ ویژهٔ تیم خودت
