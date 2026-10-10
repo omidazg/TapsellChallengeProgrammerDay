@@ -2,7 +2,7 @@
 # Deploy the app to the server over SSH and (re)start it via Docker Compose.
 #
 # Usage (from the dev machine, in Git Bash / any POSIX shell):
-#   SERVER=root@89.42.199.174 KEY=~/.ssh/founders_arena ./deploy/deploy.sh
+#   SERVER=root@188.121.125.246 KEY=~/.ssh/tapsell_qeysar ./deploy/deploy.sh
 #
 # What it does:
 #   1. Packs the repo (excluding node_modules, .next, data, .git) into a
@@ -22,8 +22,8 @@
 # a mid-phase deploy still has a brief restart window.
 set -euo pipefail
 
-SERVER="${SERVER:?Set SERVER=user@host, e.g. SERVER=root@89.42.199.174}"
-KEY="${KEY:-$HOME/.ssh/founders_arena}"
+SERVER="${SERVER:?Set SERVER=user@host, e.g. SERVER=root@188.121.125.246}"
+KEY="${KEY:-$HOME/.ssh/tapsell_qeysar}"
 REMOTE_DIR="${REMOTE_DIR:-/srv/arena/app}"
 
 SSH=(ssh -i "$KEY" -o StrictHostKeyChecking=accept-new "$SERVER")
@@ -50,7 +50,7 @@ tar \
   --exclude='.serena' \
   --exclude='*.tsbuildinfo' \
   --exclude='coverage' \
-  -czf - . | "${SSH[@]}" "tar -xzf - -C '$REMOTE_DIR'"
+  -czf - . | "${SSH[@]}" "tar --no-same-owner -xzf - -C '$REMOTE_DIR'"
 
 echo "==> Checking remote .env"
 if ! "${SSH[@]}" "test -f '$REMOTE_DIR/.env'"; then
@@ -90,9 +90,19 @@ echo "==> Recent container status"
 "${SSH[@]}" "cd '$REMOTE_DIR' && docker compose ps"
 
 HOST_ONLY="${SERVER#*@}"
-echo "==> Health check: http://$HOST_ONLY/api/phase"
+# Once a domain is enabled (deploy/enable-domain.sh sets SITE_URL=https://...),
+# Caddy only serves that hostname, so a plain-IP curl says nothing useful --
+# follow the server's own SITE_URL unless HEALTH_URL overrides it.
+if [ -z "${HEALTH_URL:-}" ]; then
+  REMOTE_SITE_URL="$("${SSH[@]}" "sed -n 's/^SITE_URL=//p' '$REMOTE_DIR/.env'" 2>/dev/null | tr -d '\r' || true)"
+  case "$REMOTE_SITE_URL" in
+    https://*) HEALTH_URL="${REMOTE_SITE_URL%/}/api/phase" ;;
+    *) HEALTH_URL="http://$HOST_ONLY/api/phase" ;;
+  esac
+fi
+echo "==> Health check: $HEALTH_URL"
 sleep 2
-curl -fsS -m 10 "http://$HOST_ONLY/api/phase" || {
+curl -fsS -m 10 "$HEALTH_URL" || {
   echo "!! Health check failed. Check logs with:"
   echo "   $SSH ${SSH[*]:1} 'cd $REMOTE_DIR && docker compose logs --tail=100 web'"
   exit 1
