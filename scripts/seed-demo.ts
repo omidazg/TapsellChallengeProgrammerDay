@@ -390,7 +390,7 @@ async function main() {
     const { settleGame } = await import("../src/lib/settlement");
     await setPhase(prisma, "CLOSED", null);
     const r = await settleGame();
-    console.log("[seed-demo] settled:", r.dividendsPaid, "dividends");
+    console.log("[seed-demo] settled:", r.teams, "teams", r.alreadySettled ? "(already settled)" : "");
     await seedSurvey(prisma);
   }
   console.log(`[seed-demo] done (stage=${stage}). login: <nick>@${DOMAIN} / ${PASSWORD}`);
