@@ -6,7 +6,7 @@
 ## پیش از رویداد (Pre-event checklist)
 
 - [ ] آخرین کد با `deploy/deploy.sh` روی سرور دیپلوی و health-check
-      (`curl http://89.42.199.174/api/phase`) سبز شده.
+      (`curl http://188.121.125.246/api/phase`) سبز شده.
 - [ ] `deploy/harden-server.sh` روی سرور اجرا شده (ufw/fail2ban/unattended-upgrades/SSH).
 - [ ] سرویس `backup` بالاست و حداقل یک بک‌آپ موفق در لاگ دارد:
       ```bash
@@ -17,12 +17,12 @@
       شبی که سرور کلاً در دسترس نیست):
       ```bash
       docker compose run --rm backup node /app/scripts/backup.mjs --once
-      SERVER=root@89.42.199.174 KEY=~/.ssh/founders_arena ./deploy/pull-backups.sh
+      SERVER=root@188.121.125.246 KEY=~/.ssh/tapsell_qeysar ./deploy/pull-backups.sh
       ```
 - [ ] یک تمرین ریستور (drill) روی staging یا یک کپی محلی انجام شده — نه
       روی دیتابیس واقعی رویداد.
 - [ ] مانیتور uptime (UptimeRobot یا مشابه) روی
-      `http://89.42.199.174/api/health` فعال است و یک هشدار تست دریافت شده.
+      `http://188.121.125.246/api/health` فعال است و یک هشدار تست دریافت شده.
 - [ ] `scripts/reset-game.ts --yes` روی staging تست شده (نه production) تا
       مطمئن شوید قبل از شروع واقعی، اگر لازم شد، بازنشانی درست کار می‌کند.
 - [ ] فاز بازی روی `REGISTRATION` است (یا هر فاز شروع برنامه‌ریزی‌شده).
@@ -55,7 +55,7 @@
   1. مطمئن شوید در یک گپ بین فازها هستید (نه در حال شمارش معکوس یک حراج).
   2. `SERVER=... KEY=... ./deploy/deploy.sh` را اجرا کنید (build جدا از up
      است، پس داون‌تایم واقعی چند ثانیه‌ای).
-  3. بلافاصله `curl http://89.42.199.174/api/phase` را چک کنید.
+  3. بلافاصله `curl http://188.121.125.246/api/phase` را چک کنید.
 - بک‌آپ‌های خودکار هر ۱۵ دقیقه ادامه دارند؛ نیازی به کار دستی نیست مگر
   بخواهید قبل از یک عملیات پرخطر (مثل تغییر فاز یا اجرای settlement) یک
   بک‌آپ فوری بگیرید:
@@ -162,7 +162,7 @@
 ### سایت پایین است / ۵۰۲ مداوم
 
 ```bash
-ssh -i ~/.ssh/founders_arena root@89.42.199.174
+ssh -i ~/.ssh/tapsell_qeysar root@188.121.125.246
 cd /srv/arena/app
 docker compose ps
 docker compose logs --tail=200 web
@@ -184,7 +184,7 @@ docker compose logs --tail=50 caddy
    ```
    این اسکریپت خودش یک نسخهٔ ایمنی از وضعیت فعلی می‌گیرد، integrity check
    می‌کند، و فقط اگر سالم بود جایگزین می‌کند.
-۴. بعد از ریستور، `curl http://89.42.199.174/api/phase` و چند صفحهٔ کلیدی
+۴. بعد از ریستور، `curl http://188.121.125.246/api/phase` و چند صفحهٔ کلیدی
    (بازار، پنل ادمین) را دستی چک کنید.
 
 ### نیاز به شروع دوباره از صفر (بازنشانی کامل بازی)

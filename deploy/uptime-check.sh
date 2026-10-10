@@ -7,17 +7,17 @@
 #   deploy/uptime-check.sh [URL]
 #
 # Defaults:
-#   URL defaults to http://89.42.199.174/api/health, and if that endpoint
+#   URL defaults to http://188.121.125.246/api/health, and if that endpoint
 #   doesn't exist (404/connection issue with that specific path) it falls
-#   back to http://89.42.199.174/api/phase, which every deployment has.
+#   back to http://188.121.125.246/api/phase, which every deployment has.
 #
 # Env:
 #   ALERT_WEBHOOK_URL   optional; if set, a JSON POST is sent to it on failure
 #   TIMEOUT_SECS        default 10
 set -euo pipefail
 
-PRIMARY_URL="${1:-http://89.42.199.174/api/health}"
-FALLBACK_URL="${FALLBACK_URL:-http://89.42.199.174/api/phase}"
+PRIMARY_URL="${1:-http://188.121.125.246/api/health}"
+FALLBACK_URL="${FALLBACK_URL:-http://188.121.125.246/api/phase}"
 TIMEOUT_SECS="${TIMEOUT_SECS:-10}"
 
 check() {

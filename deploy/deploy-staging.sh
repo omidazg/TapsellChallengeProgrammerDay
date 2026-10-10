@@ -5,7 +5,7 @@
 # /srv/arena/data -- staging gets its own /srv/arena/staging-data.
 #
 # Usage (from the dev machine, in Git Bash / any POSIX shell):
-#   SERVER=root@89.42.199.174 KEY=~/.ssh/founders_arena ./deploy/deploy-staging.sh
+#   SERVER=root@188.121.125.246 KEY=~/.ssh/tapsell_qeysar ./deploy/deploy-staging.sh
 #
 # Requires /srv/arena/staging-app/.env.staging to exist on the server
 # already (copy .env.example there, give it its own SESSION_SECRET/
@@ -13,8 +13,8 @@
 # Staging is reachable at http://SERVER:8080.
 set -euo pipefail
 
-SERVER="${SERVER:?Set SERVER=user@host, e.g. SERVER=root@89.42.199.174}"
-KEY="${KEY:-$HOME/.ssh/founders_arena}"
+SERVER="${SERVER:?Set SERVER=user@host, e.g. SERVER=root@188.121.125.246}"
+KEY="${KEY:-$HOME/.ssh/tapsell_qeysar}"
 REMOTE_DIR="${REMOTE_DIR:-/srv/arena/staging-app}"
 PROJECT="${PROJECT:-arena-staging}"
 
@@ -40,7 +40,7 @@ tar \
   --exclude='dev.db-journal' \
   --exclude='*.tsbuildinfo' \
   --exclude='coverage' \
-  -czf - . | "${SSH[@]}" "tar -xzf - -C '$REMOTE_DIR'"
+  -czf - . | "${SSH[@]}" "tar --no-same-owner -xzf - -C '$REMOTE_DIR'"
 
 echo "==> Checking remote .env.staging"
 if ! "${SSH[@]}" "test -f '$REMOTE_DIR/.env.staging'"; then

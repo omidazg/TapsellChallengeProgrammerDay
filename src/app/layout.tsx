@@ -17,7 +17,7 @@ const vazir = localFont({
   fallback: ["Tahoma", "sans-serif"],
 });
 
-const SITE_URL = process.env.SITE_URL ?? "http://89.42.199.174";
+const SITE_URL = process.env.SITE_URL ?? "http://188.121.125.246";
 const SITE_TITLE = "میدان بنیان‌گذاران";
 const SITE_DESCRIPTION = "بازار استارتاپی چهارروزهٔ روز برنامه‌نویس گروه پگاه: ایده بده، حامی جذب کن، بساز، بفروش.";
 

@@ -49,9 +49,9 @@ ls -lh /srv/arena/backups
 از ماشین توسعه:
 
 ```bash
-SERVER=root@89.42.199.174 KEY=~/.ssh/founders_arena ./deploy/pull-backups.sh
+SERVER=root@188.121.125.246 KEY=~/.ssh/tapsell_qeysar ./deploy/pull-backups.sh
 # یا با تعداد دلخواه:
-SERVER=root@89.42.199.174 KEY=~/.ssh/founders_arena COUNT=10 ./deploy/pull-backups.sh
+SERVER=root@188.121.125.246 KEY=~/.ssh/tapsell_qeysar COUNT=10 ./deploy/pull-backups.sh
 ```
 
 بک‌آپ‌ها در `./backups/` محلی ذخیره می‌شوند (skip می‌کند اگر فایل از قبل
@@ -110,10 +110,10 @@ production مشترک نیست.
 # (یک کپی از .env.example با SESSION_SECRET/ADMIN_PASSWORD متفاوت؛
 #  SITE_ADDRESS لازم نیست چون staging کدی caddy ندارد).
 
-SERVER=root@89.42.199.174 KEY=~/.ssh/founders_arena ./deploy/deploy-staging.sh
+SERVER=root@188.121.125.246 KEY=~/.ssh/tapsell_qeysar ./deploy/deploy-staging.sh
 ```
 
-بعد از دیپلوی، staging روی `http://89.42.199.174:8080` در دسترس است.
+بعد از دیپلوی، staging روی `http://188.121.125.246:8080` در دسترس است.
 برای متوقف کردنش، روی سرور:
 
 ```bash
@@ -127,7 +127,7 @@ docker compose -p arena-staging -f docker-compose.staging.yml down
 ## ۴. مانیتورینگ Uptime
 
 `deploy/uptime-check.sh` یک URL را curl می‌کند (پیش‌فرض
-`http://89.42.199.174/api/health`، با fallback به `/api/phase`) و در صورت
+`http://188.121.125.246/api/health`، با fallback به `/api/phase`) و در صورت
 شکست، اگر `ALERT_WEBHOOK_URL` ست شده باشد یک JSON POST به آن می‌فرستد.
 
 ### ثبت در یک مانیتور رایگان خارجی (UptimeRobot یا مشابه)
@@ -135,7 +135,7 @@ docker compose -p arena-staging -f docker-compose.staging.yml down
 ۱. در [uptimerobot.com](https://uptimerobot.com) (یا مشابه مثل Better
    Uptime / Freshping) ثبت‌نام کنید.
 ۲. یک Monitor نوع HTTP(s) بسازید با آدرس
-   `http://89.42.199.174/api/health` و بازهٔ چک هر ۵ دقیقه.
+   `http://188.121.125.246/api/health` و بازهٔ چک هر ۵ دقیقه.
 ۳. یک Alert Contact (ایمیل/تلگرام/Slack webhook) وصل کنید.
 ۴. (اختیاری) در تنظیمات UptimeRobot یک Webhook alert هم بسازید که به یک
    Slack/Discord incoming-webhook شما POST کند، و همان URL را به‌عنوان
@@ -161,8 +161,8 @@ crontab -e
 اجرا **نشده**؛ فقط نوشته شده — مسئول دیپلوی آن را دستی اجرا می‌کند):
 
 ```bash
-scp -i ~/.ssh/founders_arena deploy/harden-server.sh root@89.42.199.174:/root/
-ssh -i ~/.ssh/founders_arena root@89.42.199.174 'bash /root/harden-server.sh'
+scp -i ~/.ssh/tapsell_qeysar deploy/harden-server.sh root@188.121.125.246:/root/
+ssh -i ~/.ssh/tapsell_qeysar root@188.121.125.246 'bash /root/harden-server.sh'
 ```
 
 این اسکریپت idempotent است (اجرای دوباره مشکلی ایجاد نمی‌کند) و:
@@ -185,7 +185,7 @@ ssh -i ~/.ssh/founders_arena root@89.42.199.174 'bash /root/harden-server.sh'
 `.env.example`. برای فعال کردن HTTPS واقعی:
 
 ۱. یک دامنه بخرید/داشته باشید و DNS آن را (رکورد A) به IP سرور
-   (`89.42.199.174`) اشاره دهید. منتظر بمانید تا propagate شود (`dig
+   (`188.121.125.246`) اشاره دهید. منتظر بمانید تا propagate شود (`dig
    your-domain.com` باید IP سرور را برگرداند).
 ۲. در `.env` روی سرور، `SITE_ADDRESS` را از `:80` به دامنه تغییر دهید،
    مثلاً:
@@ -206,7 +206,7 @@ ssh -i ~/.ssh/founders_arena root@89.42.199.174 'bash /root/harden-server.sh'
    ری‌استارت شود و گواهی بگیرد.
 ۵. Push notification و PWA (نصب روی صفحهٔ اصلی) هر دو نیازمند HTTPS واقعی
    هستند (Service Worker و `PushManager` در مرورگرها روی HTTP ساده — غیر از
-   `localhost` — غیرفعال‌اند)؛ تا وقتی سایت روی `http://89.42.199.174`
+   `localhost` — غیرفعال‌اند)؛ تا وقتی سایت روی `http://188.121.125.246`
    است، toggle اعلان‌ها پیام «نیاز به HTTPS» نشان می‌دهد (طبق کامنت
    `.env.example`) — بعد از این مراحل خودش فعال می‌شود.
 

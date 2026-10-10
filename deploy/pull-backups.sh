@@ -2,7 +2,7 @@
 # Copy the newest off-server backups down to a laptop/dev machine.
 #
 # Usage (from the dev machine, in Git Bash / any POSIX shell):
-#   SERVER=root@89.42.199.174 KEY=~/.ssh/founders_arena ./deploy/pull-backups.sh
+#   SERVER=root@188.121.125.246 KEY=~/.ssh/tapsell_qeysar ./deploy/pull-backups.sh
 #
 # Optional:
 #   COUNT=10                 how many of the newest *.gz backups to pull (default 5)
@@ -10,8 +10,8 @@
 #   LOCAL_DIR=./backups
 set -euo pipefail
 
-SERVER="${SERVER:?Set SERVER=user@host, e.g. SERVER=root@89.42.199.174}"
-KEY="${KEY:-$HOME/.ssh/founders_arena}"
+SERVER="${SERVER:?Set SERVER=user@host, e.g. SERVER=root@188.121.125.246}"
+KEY="${KEY:-$HOME/.ssh/tapsell_qeysar}"
 REMOTE_BACKUP_DIR="${REMOTE_BACKUP_DIR:-/srv/arena/backups}"
 LOCAL_DIR="${LOCAL_DIR:-./backups}"
 COUNT="${COUNT:-5}"
