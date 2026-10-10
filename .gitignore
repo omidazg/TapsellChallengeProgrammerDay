@@ -56,3 +56,6 @@ loadtest-cookies*.json
 /test-results/
 /playwright-report/
 /blob-report/
+
+# خروجی خام اسکریپت تصویرهای سایت (scripts/site-screenshots.mjs)
+site-assets/*/.raw/
