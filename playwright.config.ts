@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 import os from "node:os";
 import path from "node:path";
+import { ADMIN_EMAIL, ADMIN_PASSWORD } from "./e2e/helpers";
 
 /**
  * پیکربندی Playwright — فقط Chromium، فقط برای مسیر e2e/.
@@ -64,6 +65,9 @@ export default defineConfig({
           DATABASE_URL: tempDbUrl,
           PORT: String(PORT),
           SESSION_SECRET: DUMMY_SESSION_SECRET,
+          // seed حساب ادمین را فقط با ADMIN_PASSWORD می‌سازد؛ همان حسابی که تست‌ها با آن وارد می‌شوند.
+          ADMIN_EMAIL,
+          ADMIN_PASSWORD,
           NODE_ENV: "production",
         },
       },
