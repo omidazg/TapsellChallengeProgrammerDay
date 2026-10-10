@@ -16,7 +16,7 @@ export default async function SurveyPage() {
       <>
         <PageHeader eyebrow="نظرسنجی" title="نظرسنجی پایان بازی" />
         <Container>
-          <Locked title="هنوز زود است" desc="نظرسنجی از فاز «حراج زنده» باز می‌شود." />
+          <Locked title="هنوز زود است" desc="نظرسنجی از فاز «روز بازار» باز می‌شود." />
         </Container>
       </>
     );
@@ -29,7 +29,7 @@ export default async function SurveyPage() {
       <PageHeader
         eyebrow="نظرسنجی"
         title="نظرسنجی پایان بازی"
-        desc="چند سؤال کوتاه دربارهٔ تجربه‌ات از میدان بنیان‌گذاران. تا پایان بازی می‌توانی پاسخت را ویرایش کنی."
+        desc="چند سؤال کوتاه دربارهٔ تجربه‌ات از میدان بنیان‌گذاران. هر وقت خواستی می‌توانی پاسخت را ویرایش کنی."
       />
       <Container>
         <div className="max-w-xl">

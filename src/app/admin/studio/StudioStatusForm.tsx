@@ -1,7 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { useFormStatus } from "react-dom";
+import { startTransition, useActionState, useState } from "react";
 import { Alert } from "@/components/ui";
 import { setLiveStatusAction, type StudioActionState } from "./actions";
 
@@ -18,11 +17,10 @@ const OPTIONS: { value: AdminStatus; label: string }[] = [
 /** وضعیت پیشنهادی بعدی برای هر وضعیت فعلی */
 const NEXT: Record<string, AdminStatus> = { REQUESTED: "PUBLISHING", PUBLISHING: "LIVE", LIVE: "LIVE", REJECTED: "REQUESTED" };
 
-function SubmitButton() {
-  const status = useFormStatus();
+function SubmitButton({ pending }: { pending: boolean }) {
   return (
-    <button type="submit" disabled={status.pending} className="btn-primary !py-2 !px-4 text-sm min-h-10">
-      {status.pending ? "…" : "اعمال وضعیت"}
+    <button type="submit" disabled={pending} className="btn-primary !py-2 !px-4 text-sm min-h-10">
+      {pending ? "…" : "اعمال وضعیت"}
     </button>
   );
 }
@@ -40,17 +38,21 @@ export function StudioStatusForm({
   liveUrl: string;
   adminNote: string;
 }) {
-  const [state, formAction] = useActionState<StudioActionState, FormData>(setLiveStatusAction, {});
+  const [state, formAction, pending] = useActionState<StudioActionState, FormData>(setLiveStatusAction, {});
   const [status, setStatus] = useState<AdminStatus>(NEXT[current] ?? "PUBLISHING");
   const idp = `studio-${productId}`;
 
   return (
     <form
-      action={formAction}
       className="space-y-3"
+      // ارسال دستی به‌جای action={formAction}: ری‌ست خودکار فرم (React 19) select کنترل‌شده را در DOM
+      // به گزینهٔ اول برمی‌گرداند در حالی که state گزینهٔ دیگری را نشان می‌دهد.
       onSubmit={(e) => {
+        e.preventDefault();
         const label = OPTIONS.find((o) => o.value === status)?.label ?? status;
-        if (!confirm(`وضعیت «${productName}» به «${label}» تغییر کند؟ تیم اعلان می‌گیرد.`)) e.preventDefault();
+        if (!confirm(`وضعیت «${productName}» به «${label}» تغییر کند؟ تیم اعلان می‌گیرد.`)) return;
+        const data = new FormData(e.currentTarget);
+        startTransition(() => formAction(data));
       }}
     >
       <input type="hidden" name="productId" value={productId} />
@@ -103,7 +105,7 @@ export function StudioStatusForm({
           className="input w-full"
         />
       </div>
-      <SubmitButton />
+      <SubmitButton pending={pending} />
       {state.error && <Alert kind="error">{state.error}</Alert>}
       {state.ok && <span className="text-emerald-600 text-xs font-bold" role="status">وضعیت به‌روز شد</span>}
     </form>

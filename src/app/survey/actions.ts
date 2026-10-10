@@ -20,7 +20,7 @@ const surveySchema = z.object({
 async function assertOpen() {
   const { phase } = await getPhase();
   if (phase !== "MARKET" && phase !== "CLOSED") {
-    return "نظرسنجی فقط از فاز «حراج زنده» تا پایان بازی باز است.";
+    return "نظرسنجی از فاز «روز بازار» به بعد باز است.";
   }
   return null;
 }

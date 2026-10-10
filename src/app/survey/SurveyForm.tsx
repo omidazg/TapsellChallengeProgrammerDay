@@ -1,18 +1,16 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { useFormStatus } from "react-dom";
+import { startTransition, useActionState, useState } from "react";
 import { fa } from "@/lib/persian";
 import { Alert } from "@/components/ui";
 import { submitSurveyAction, type SurveyActionState } from "./actions";
 
 type Initial = { rating: number; fun: number; learned: number; comment: string } | null;
 
-function SubmitButton() {
-  const status = useFormStatus();
+function SubmitButton({ pending }: { pending: boolean }) {
   return (
-    <button type="submit" disabled={status.pending} className="btn-primary w-full sm:w-auto">
-      {status.pending ? "در حال ذخیره…" : "ثبت پاسخ"}
+    <button type="submit" disabled={pending} className="btn-primary w-full sm:w-auto">
+      {pending ? "در حال ذخیره…" : "ثبت پاسخ"}
     </button>
   );
 }
@@ -64,16 +62,25 @@ function RatingGroup({
 }
 
 export function SurveyForm({ initial }: { initial: Initial }) {
-  const [state, formAction] = useActionState<SurveyActionState, FormData>(submitSurveyAction, {});
+  const [state, formAction, pending] = useActionState<SurveyActionState, FormData>(submitSurveyAction, {});
   const [rating, setRating] = useState(initial?.rating ?? 0);
   const [fun, setFun] = useState(initial?.fun ?? 0);
   const [learned, setLearned] = useState(initial?.learned ?? 0);
   const [comment, setComment] = useState(initial?.comment ?? "");
 
   return (
-    <form action={formAction} className="card p-6 space-y-6 anim-rise">
+    <form
+      // ارسال دستی به‌جای action={formAction}: ری‌ست خودکار فرم (React 19) رادیوهای کنترل‌شده را در DOM
+      // خالی می‌کند در حالی که state هنوز انتخاب را نشان می‌دهد؛ ویرایش بعدی بدون تازه‌کردن صفحه رد می‌شد.
+      onSubmit={(e) => {
+        e.preventDefault();
+        const data = new FormData(e.currentTarget);
+        startTransition(() => formAction(data));
+      }}
+      className="card p-6 space-y-6 anim-rise"
+    >
       {state.error && <Alert kind="error">{state.error}</Alert>}
-      {state.ok && <Alert kind="ok">پاسخت ذخیره شد؛ می‌توانی تا پایان بازی دوباره ویرایشش کنی.</Alert>}
+      {state.ok && <Alert kind="ok">پاسخت ذخیره شد؛ هر وقت خواستی می‌توانی دوباره ویرایشش کنی.</Alert>}
 
       <RatingGroup name="rating" legend="رضایت کلی از بازی" value={rating} onChange={setRating} />
       <RatingGroup name="fun" legend="چقدر سرگرم‌کننده بود؟" value={fun} onChange={setFun} />
@@ -93,7 +100,7 @@ export function SurveyForm({ initial }: { initial: Initial }) {
         <div className="mt-1 text-left text-xs text-brand-slate fa-num">{fa(comment.length)}/{fa(1000)}</div>
       </div>
 
-      <SubmitButton />
+      <SubmitButton pending={pending} />
     </form>
   );
 }

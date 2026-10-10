@@ -71,7 +71,7 @@
   :root:has(.nav-bottom-bar) { --bottom-nav-h: 0px; }
 }
 
-html { direction: rtl; scroll-behavior: smooth; scroll-padding-bottom: var(--bottom-nav-h); }
+html { direction: rtl; scroll-behavior: smooth; scroll-padding-bottom: var(--bottom-nav-h); scroll-padding-top: 7rem; }
 body {
   background: var(--bg);
   color: var(--ink);

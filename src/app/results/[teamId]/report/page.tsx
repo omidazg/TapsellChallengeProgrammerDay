@@ -17,7 +17,7 @@ import { PrintButton } from "./PrintButton";
 export async function generateMetadata({ params }: { params: Promise<{ teamId: string }> }) {
   const { teamId } = await params;
   const team = await prisma.team.findUnique({ where: { id: teamId }, select: { name: true } });
-  return { title: team ? `گزارش تیم ${team.name}` : "گزارش تیم" };
+  return { title: team ? `گزارش پایانی · ${team.name}` : "گزارش تیم" };
 }
 
 /**
@@ -120,7 +120,7 @@ export default async function TeamReportPage({ params }: { params: Promise<{ tea
         <section>
           <h2 className="text-lg font-black text-brand-navy mb-2">ریزامتیاز</h2>
           <div className="card p-0 overflow-x-auto">
-            <ScoreBreakdown result={result} cheatNote={team.cheatNote} caption={`ریزامتیاز تیم ${team.name} به تفکیک معیار`} />
+            <ScoreBreakdown result={result} cheatNote={team.cheatNote} caption={`ریزامتیاز «${team.name}» به تفکیک معیار`} />
           </div>
         </section>
 
