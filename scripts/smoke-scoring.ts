@@ -223,8 +223,9 @@ async function main() {
     const awards = computeAwards(output, { teamNames, picks: { ai: delta.id, live: beta.id } });
     const awardOf = (key: string) => awards.find((a) => a.key === key);
     check("جایزهٔ قهرمان → بتا", awardOf("champion")?.teamId === beta.id, String(awardOf("champion")?.teamName));
-    check("انتخاب داوران → آلفا (هم‌نمره با بتا؛ بتا قبلاً جایزه گرفته)", awardOf("jury")?.teamId === alpha.id, String(awardOf("jury")?.teamName));
-    check("انتخاب مردم → گاما (بتا قبلاً جایزه گرفته)", awardOf("people")?.teamId === gamma.id, String(awardOf("people")?.teamName));
+    // آلفا کسر تقلب دارد → برای جوایز خودکار «انتخاب داوران/مردم» واجد شرایط نیست.
+    check("انتخاب داوران → گاما (بتا قبلاً جایزه گرفته؛ آلفا کسر تقلب دارد)", awardOf("jury")?.teamId === gamma.id, String(awardOf("jury")?.teamName));
+    check("انتخاب مردم → اهدا نمی‌شود (بتا و گاما جایزه گرفته‌اند، آلفا کسر تقلب دارد، دلتا حمایت مردمی ندارد)", awardOf("people") === undefined, String(awardOf("people")?.teamName));
     check("هوش مصنوعی (انتخاب داوران) → دلتا", awardOf("ai")?.teamId === delta.id, String(awardOf("ai")?.teamName));
     check("محصول لایو: انتخاب بتا که قبلاً جایزه گرفته اهدا نمی‌شود", !awardOf("live"), JSON.stringify(awardOf("live")));
     check("هیچ تیمی دو جایزه نگرفت", new Set(awards.map((a) => a.teamId)).size === awards.length, `${awards.length} جایزه`);
