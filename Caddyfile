@@ -28,20 +28,29 @@
 		X-Content-Type-Options nosniff
 		X-Frame-Options SAMEORIGIN
 		Referrer-Policy strict-origin-when-cross-origin
-		# روی HTTP ساده (SITE_ADDRESS=:80) مرورگرها این هدر را نادیده می‌گیرند؛ فقط روی HTTPS اثر دارد.
-		Strict-Transport-Security "max-age=31536000"
-		# Next.js inline scripts + the inline theme-init script in layout.tsx need
-		# 'unsafe-inline' on script-src (no nonce support in this setup). img-src
-		# lists the remotePatterns hosts from next.config.ts (also used directly
-		# by src/lib/product-utils.ts). connect-src 'self' covers the SSE stream
-		# at /api/auction/stream (same-origin fetch/EventSource).
-		# بدون default-src عمداً: تیزرهای محصول از طریق <iframe> به یوتیوب/آپارات
-		# امبد می‌شوند (src/lib/product-utils.ts) و frame-src اینجا محدود نشده؛
-		# اگر default-src 'self' اضافه شود، آن ایفریم‌ها می‌شکنند.
-		Content-Security-Policy "script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://picsum.photos https://images.unsplash.com https://tapsell.com; connect-src 'self'; font-src 'self' data:; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
 		-Server
 	}
+
+	# HSTS فقط روی پاسخ‌های HTTPS. در حالت HTTP ساده (SITE_ADDRESS=:80) هیچ‌وقت فرستاده نمی‌شود؛
+	# با دامنه، درخواست‌های :80 فقط ریدایرکت خودکار Caddy به HTTPS را می‌گیرند.
+	@https protocol https
+	header @https Strict-Transport-Security "max-age=31536000"
+
+	# CSP سراسری — با «?» فقط وقتی گذاشته می‌شود که خود اپ CSP نفرستاده باشد؛ مسیرهای
+	# /covers/* و /uploads/* سیاست سخت‌گیرانهٔ خودشان را دارند (default-src 'none'; sandbox)
+	# و نباید بازنویسی شوند.
+	# - script-src: اسکریپت‌های inline خود Next.js و اسکریپت theme-init در layout.tsx
+	#   (nonce در این راه‌اندازی نداریم) → 'unsafe-inline'.
+	# - img-src: میزبان‌های remotePatterns در next.config.ts (src/lib/product-utils.ts هم
+	#   مستقیم از آن‌ها استفاده می‌کند).
+	# - frame-src: فقط آدرس‌هایی که parseTeaser در src/lib/product-utils.ts برای iframe
+	#   می‌سازد (youtube.com/embed و aparat.com/video/video/embed) + youtube-nocookie.
+	# - media-src: تیزرهای <video> فقط از خود سایت؛ لینک مستقیم ویدیو روی میزبان دیگر
+	#   (parseTeaser → kind "video") در مرورگر بلاک می‌شود. برای مجاز کردن یک میزبان
+	#   ویدیو، آن را همین‌جا به media-src اضافه کنید.
+	# - connect-src 'self': جریان SSE در /api/auction/stream و polling ها.
+	header ?Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://picsum.photos https://images.unsplash.com https://tapsell.com; media-src 'self' blob:; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://www.aparat.com; connect-src 'self'; font-src 'self' data:; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 
 	# Server-Sent Events حراج زنده: بدون encode (فشرده‌سازی بافر می‌کند)
 	# و با flush فوری هر رویداد به کلاینت.
@@ -59,11 +68,29 @@
 	# بقیهٔ مسیرها: فشرده‌سازی + پروکسی عادی.
 	handle {
 		encode gzip zstd
+		# health_uri: فقط دیتابیس (probe=db) — اسکجولرِ کند نباید Caddy را وادار کند کل سایت
+		# را ۵۰۳ کند؛ آن را healthcheck داکر و uptime-check با /api/health کامل گزارش می‌کنند.
 		reverse_proxy web:3000 {
-			health_uri /api/phase
+			health_uri /api/health?probe=db
 			health_interval 30s
 			lb_try_duration 30s
 			lb_try_interval 250ms
 		}
 	}
+}
+
+# ریدایرکت آدرس قدیمی (IP) به دامنه، پس از ./deploy/enable-domain.sh.
+# با SITE_ADDRESS=festival.pegah.tech، Caddy فقط همان نام را سرو می‌کند و لینک‌های قدیمی
+# http://188.121.125.246/... هیچ پاسخی نمی‌گرفتند. enable-domain.sh این دو مقدار را در
+# .env سرور می‌گذارد:
+#   LEGACY_HTTP_ADDRESS=http://188.121.125.246
+#   LEGACY_REDIRECT_TO=https://festival.pegah.tech
+# پیش‌فرض (http://legacy.invalid) نامی است که هرگز resolve نمی‌شود، پس در حالت HTTP ساده
+# (SITE_ADDRESS=:80) این بلوک بی‌اثر است و با :80 تداخلی ندارد (Caddy میزبان مشخص را
+# پیش از catch-all تطبیق می‌دهد؛ http:// صریح یعنی گواهی هم درخواست نمی‌شود).
+# 302 (موقت) عمداً: اگر با --rollback به HTTP روی IP برگردیم، مرورگرها ریدایرکت را کش
+# نکرده‌اند.
+{$LEGACY_HTTP_ADDRESS:http://legacy.invalid} {
+	header -Server
+	redir {$LEGACY_REDIRECT_TO:https://localhost}{uri} 302
 }

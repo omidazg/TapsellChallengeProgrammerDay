@@ -6,21 +6,28 @@ name: Build and push images
 # internet access and are native linux/amd64 (avoiding the QEMU crash we hit
 # trying to cross-build linux/amd64 images on an arm64 dev machine). The
 # server then just pulls the finished images and runs them.
+#
+# Images are only built for commits that PASSED CI: this workflow is triggered
+# by the "CI" workflow (.github/workflows/ci.yml) completing successfully for a
+# push to main, and builds exactly the commit CI tested (workflow_run.head_sha),
+# not whatever main points to by then. Every commit gets an image (no path
+# filter): deploy/deploy.sh pins IMAGE_TAG to the commit being deployed, so a
+# docs-only commit must have an image too.
+#
+# Tags: <full commit sha> (immutable; what deploy.sh / rollback.sh use) and
+# latest (fallback). workflow_dispatch builds the selected branch's HEAD
+# without waiting for CI -- use it only to rebuild a commit that already
+# passed (e.g. after a registry hiccup).
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
-    paths:
-      - "src/**"
-      - "prisma/**"
-      - "docker/**"
-      - "Dockerfile"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig.json"
-      - "prisma.config.ts"
-      - "next.config.*"
-      - ".github/workflows/build-images.yml"
   workflow_dispatch: {}
+
+concurrency:
+  group: build-images-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
@@ -28,6 +35,13 @@ env:
 
 jobs:
   build:
+    # workflow_run fires for failed/cancelled CI runs too, and for pull
+    # requests whose head branch happens to be called main -- skip those.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -39,8 +53,12 @@ jobs:
             suffix: web
           - target: tools
             suffix: migrate
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -57,6 +75,15 @@ jobs:
           target: ${{ matrix.target }}
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_BASE }}-${{ matrix.suffix }}:latest,${{ env.IMAGE_BASE }}-${{ matrix.suffix }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          build-args: |
+            GIT_SHA=${{ env.SHA }}
+          tags: |
+            ${{ env.IMAGE_BASE }}-${{ matrix.suffix }}:${{ env.SHA }}
+            ${{ env.IMAGE_BASE }}-${{ matrix.suffix }}:latest
+          labels: |
+            org.opencontainers.image.revision=${{ env.SHA }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          # One cache scope per target: with a shared scope the two matrix jobs
+          # overwrite each other's cache manifest and every build is cold.
+          cache-from: type=gha,scope=${{ matrix.suffix }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.suffix }}

@@ -1,3 +1,14 @@
+# Image tags: deploy/deploy.sh exports IMAGE_TAG=<full git sha> in the remote
+# shell before `docker compose up`, so every deploy runs an exact, immutable
+# build (and deploy/rollback.sh can go back to the previous one). Without it
+# the stack falls back to :latest. The server's .env is NOT used for this.
+#
+# Resource limits are sized for the single production VPS (2 vCPU, ~3.9 GB
+# RAM) and leave ~1.5 GB for the host and peaks of the one-shot migrate.
+#
+# `web` MUST stay a single replica: the game scheduler, rate limits, TTL
+# caches and the auction SSE fan-out all live in that one process's memory.
+# Never `--scale web=N`.
 x-logging: &default-logging
   driver: json-file
   options:
@@ -14,6 +25,8 @@ services:
     volumes:
       - /srv/arena/data:/app/data
     restart: "no"
+    mem_limit: 1g
+    cpus: 1.5
     logging: *default-logging
 
   web:
@@ -26,16 +39,22 @@ services:
       HOSTNAME: 0.0.0.0
       PORT: 3000
       NODE_ENV: production
+      # Heap cap below mem_limit so V8 GCs before the kernel OOM-kills the
+      # container (native memory: sharp/libvips, sqlite page cache, buffers).
+      NODE_OPTIONS: --max-old-space-size=1024
     volumes:
       - /srv/arena/data:/app/data
     depends_on:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
+    mem_limit: 1536m
+    cpus: 1.5
     expose:
       - "3000"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/phase').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      # Full health (db + scheduler, 503 when unhealthy); see src/app/api/health.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -52,10 +71,18 @@ services:
   # the image (only prisma/src are), so it's bind-mounted in directly.
   backup:
     image: ${IMAGE_BASE:-ghcr.io/omidazg/founders-arena}-migrate:${IMAGE_TAG:-latest}
-    entrypoint: ["node", "/app/scripts/backup.mjs"]
+    # Same command as before (node /app/scripts/backup.mjs), but through the
+    # image's privilege drop (docker/drop-privs.sh) so the backup runs as the
+    # same `node` user as web/migrate: a root-owned dev.db-wal/-shm created by
+    # this container would make the db read-only for web. CHOWN_DIRS also hands
+    # /backups to that user so retention can still delete old files. The `-x`
+    # test keeps backups working if an older image without drop-privs.sh is
+    # deployed (deploy/rollback.sh) -- it then simply runs as root, as before.
+    entrypoint: ["/bin/sh", "-c", "if [ -x /app/docker/drop-privs.sh ]; then exec /app/docker/drop-privs.sh node /app/scripts/backup.mjs; else exec node /app/scripts/backup.mjs; fi"]
     env_file:
       - .env
     environment:
+      CHOWN_DIRS: /app/data /backups
       DATABASE_URL: file:/app/data/dev.db
       BACKUP_DIR: /backups
       BACKUP_INTERVAL_MIN: ${BACKUP_INTERVAL_MIN:-15}
@@ -72,16 +99,26 @@ services:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.5
     logging: *default-logging
 
   caddy:
-    image: caddy:2
+    # Pinned (was caddy:2): a new Caddy minor must not arrive unannounced on a
+    # routine deploy. Pulled through the server's registry mirror.
+    image: caddy:2.11.4
     restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
     ports:
       - "80:80"
       - "443:443"
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      # Old http://<IP> links -> the domain, once deploy/enable-domain.sh has
+      # set these in .env. The defaults make that Caddyfile block a no-op.
+      LEGACY_HTTP_ADDRESS: ${LEGACY_HTTP_ADDRESS:-http://legacy.invalid}
+      LEGACY_REDIRECT_TO: ${LEGACY_REDIRECT_TO:-https://localhost}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

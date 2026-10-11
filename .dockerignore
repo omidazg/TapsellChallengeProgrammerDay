@@ -3,6 +3,8 @@ node_modules
 data
 dev.db
 dev.db-journal
+dev.db-wal
+dev.db-shm
 .git
 .gitignore
 .env
@@ -19,3 +21,28 @@ README.md
 CONTRACTS.md
 AGENTS.md
 CLAUDE.md
+
+# Not needed by any image stage (builder does `COPY . .`, so everything here
+# would otherwise be sent to the build context and bust the build cache).
+# Kept IN the context on purpose: src/, public/, prisma/, scripts/ (tsconfig's
+# "**/*.ts" typechecks them during `next build`), docker/ (entrypoints),
+# package*.json, tsconfig.json, next.config.ts, postcss.config.mjs,
+# prisma.config.ts, eslint.config.mjs.
+**/*.md
+docs
+e2e
+tests
+test-results
+playwright-report
+blob-report
+playwright.config.ts
+vitest.config.ts
+site-assets
+.claude
+.serena
+.github
+.gitattributes
+Caddyfile
+docker-compose*.yml
+loadtest-*.json
+*-cookies.json

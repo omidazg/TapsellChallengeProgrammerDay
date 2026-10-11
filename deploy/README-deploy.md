@@ -54,25 +54,50 @@ bash /srv/arena/app/deploy/server-setup.sh --harden
 
 ## ۳. استقرار برنامه (deploy)
 
+ایمیج‌ها روی سرور ساخته نمی‌شوند. GitHub Actions (`.github/workflows/build-images.yml`) **فقط پس از سبز شدن CI** روی `main`، برای همان کامیتی که CI تست کرده دو ایمیج `ghcr.io/omidazg/founders-arena-web` و `-migrate` را با دو تگ می‌سازد: SHA کامل کامیت (ثابت) و `latest`. SHA داخل ایمیج هم به‌صورت `GIT_SHA` هست و `/api/health` آن را در فیلد `version` نشان می‌دهد.
+
 از روی ماشین توسعه (Windows/Git Bash، یا هر شل POSIX)، از ریشهٔ پروژه:
 
 ```bash
-SERVER=root@89.42.199.174 KEY=~/.ssh/founders_arena ./deploy/deploy.sh
+SERVER=root@188.121.125.246 KEY=~/.ssh/tapsell_qeysar ./deploy/deploy.sh
+# یک بیلد مشخص:
+IMAGE_TAG=<sha کامل کامیت> SERVER=root@188.121.125.246 KEY=~/.ssh/tapsell_qeysar ./deploy/deploy.sh
 ```
 
 این اسکریپت:
-1. کد پروژه را (بدون `node_modules`، `.next`، `data`، `.git`) روی سرور در `/srv/arena/app` قرار می‌دهد.
-2. اگر فایل `.env` روی سرور نبود، از روی `.env.example` می‌سازد و هشدار می‌دهد که مقادیر را ویرایش کنید.
-3. `docker compose up -d --build` را روی سرور اجرا می‌کند (سرویس‌های `migrate`، `web`، `caddy`).
-4. سلامت سرویس را با `curl` به آدرس `http://89.42.199.174/api/phase` بررسی می‌کند.
+1. تگ را انتخاب می‌کند: `IMAGE_TAG` اگر داده شده باشد؛ وگرنه SHA کامل `git rev-parse HEAD` محلی، اگر ایمیجش در ghcr باشد (روی سرور با `docker manifest inspect` چک می‌شود). اگر نبود (کامیت push نشده یا CI/بیلد هنوز تمام نشده) با هشدار بزرگ و ۱۰ ثانیه مکث به `latest` برمی‌گردد و آن را به SHA داخل برچسب ایمیج پین می‌کند. برای جلوگیری، Ctrl-C بزنید و بعد از تمام شدن بیلد دوباره اجرا کنید.
+2. کد پروژه را (بدون `node_modules`، `.next`، `data`، `.git`) در `/srv/arena/app` قرار می‌دهد (فایل compose و Caddyfile و `scripts/backup.mjs` از همین‌جا خوانده می‌شوند).
+3. اگر `.env` روی سرور نبود، از روی `.env.example` می‌سازد. **`.env` سرور هرگز برای تگ ایمیج دست نمی‌خورد**: `IMAGE_TAG` فقط در شل راه‌دور پیش از `docker compose` export می‌شود.
+4. ایمیج‌ها را pull می‌کند (تا ۸ بار تلاش)، `web` و `backup` را متوقف می‌کند تا `migrate` تنها روی دیتابیس اجرا شود، و `docker compose up -d` می‌زند.
+5. تا ۲ دقیقه منتظر می‌ماند `/api/health` از داخل کانتینر `web` سالم جواب دهد. **اگر migrate یا این چک شکست بخورد، خودکار تگ قبلی را (بدون اجرای دوبارهٔ migrate) بالا می‌آورد و با کد غیرصفر خارج می‌شود.**
+6. تگ را در `/srv/arena/.deployed-tag` و تگ قبلی را در `/srv/arena/.previous-tag` ثبت می‌کند، تگ‌های محلی `latest` سرور را هم به همین بیلد می‌برد (تا یک `docker compose up` دستی بدون `IMAGE_TAG` همان کد را اجرا کند)، Caddy را دوباره می‌سازد و `/api/health` را از پشت Caddy (`SITE_URL` سرور یا `HEALTH_URL`) چک می‌کند.
 
-**نکتهٔ مهم:** پیش از اولین اجرا، حتماً فایل `/srv/arena/app/.env` را روی سرور ویرایش کنید و مقادیر واقعی (`SESSION_SECRET`، `ADMIN_PASSWORD`، `ANTHROPIC_API_KEY` و در صورت نیاز `SITE_ADDRESS` و `PAYMENT_DRIVER` — بخش ۹) را قرار دهید:
+### برگشت به نسخهٔ قبل (rollback)
 
 ```bash
-ssh -i ~/.ssh/founders_arena root@89.42.199.174
-nano /srv/arena/app/.env
-cd /srv/arena/app && docker compose up -d --build
+SERVER=root@188.121.125.246 KEY=~/.ssh/tapsell_qeysar ./deploy/rollback.sh          # تگ /srv/arena/.previous-tag
+SERVER=root@188.121.125.246 KEY=~/.ssh/tapsell_qeysar ./deploy/rollback.sh <sha>    # یک بیلد قدیمی‌تر مشخص
 ```
+
+- فقط `web`، `backup` و `caddy` را روی تگ قبلی بالا می‌آورد؛ کد آپلود نمی‌کند و **migrate اجرا نمی‌شود**. مهاجرت‌های دیتابیسی که نسخهٔ جدیدتر اعمال کرده باقی می‌مانند (در این پروژه افزایشی‌اند و نسخهٔ قدیمی آن‌ها را نادیده می‌گیرد).
+- پس از موفقیت، دو تگ جابه‌جا می‌شوند؛ اجرای دوباره یعنی برگشت به جلو.
+- برای رفتن به یک بیلد جدیدتر از `deploy.sh` با `IMAGE_TAG=<sha>` استفاده کنید تا migrate اجرا شود.
+- اولین استقرار با این روش، ایمیج‌های در حال اجرا را محلی با تگ `pre-pinning` نگه می‌دارد تا چیزی برای برگشت باشد.
+- اگر migrate نیمه‌کاره شکست بخورد، `prisma migrate deploy` تا رفع دستی (`npx prisma migrate resolve ...` داخل ایمیج migrate) دوباره اجرا نمی‌شود؛ rollback خودکار برای همین migrate را اجرا نمی‌کند.
+
+### اجرای دستی compose روی سرور
+
+compose بدون `IMAGE_TAG` سراغ `:latest` محلی می‌رود (که پس از هر استقرار موفق به همان بیلد اشاره می‌کند). برای اطمینان، دستورهای دستی را با تگ ثبت‌شده اجرا کنید:
+
+```bash
+cd /srv/arena/app
+export IMAGE_TAG=$(cat /srv/arena/.deployed-tag)
+docker compose up -d --force-recreate web
+```
+
+(`docker compose pull` دستی بدون `IMAGE_TAG`، `latest` رجیستری را می‌آورد؛ استقرار استیجینگ با تگ `latest` هم همین کار را می‌کند.)
+
+**نکتهٔ مهم:** پیش از اولین اجرا، حتماً فایل `/srv/arena/app/.env` را روی سرور ویرایش کنید و مقادیر واقعی (`SESSION_SECRET`، `ADMIN_PASSWORD`، `ANTHROPIC_API_KEY` و در صورت نیاز `SITE_ADDRESS` و `PAYMENT_DRIVER` — بخش ۹) را قرار دهید، سپس `deploy.sh` را دوباره اجرا کنید.
 
 ## ۴. دیدن لاگ‌ها
 
@@ -141,7 +166,9 @@ festival.pegah.tech.   A   188.121.125.246
 
 بعد از فعال شدن:
 
-- `deploy/deploy.sh` چک سلامت را خودش از `SITE_URL` سرور می‌خواند (`https://festival.pegah.tech/api/phase`)؛ با `HEALTH_URL=...` می‌شود override کرد. برای `uptime-check.sh` آدرس را صریح بدهید: `deploy/uptime-check.sh https://festival.pegah.tech/api/health`.
+- `deploy/deploy.sh` چک سلامت را خودش از `SITE_URL` سرور می‌خواند (`https://festival.pegah.tech/api/health`)؛ با `HEALTH_URL=...` می‌شود override کرد. برای `uptime-check.sh` آدرس را صریح بدهید: `deploy/uptime-check.sh https://festival.pegah.tech/api/health` (آدرس پیش‌فرض IP هم کار می‌کند چون ریدایرکت دنبال می‌شود).
+- لینک‌های قدیمی `http://188.121.125.246/...` با 302 به `https://festival.pegah.tech/...` می‌روند: اسکریپت `LEGACY_HTTP_ADDRESS=http://188.121.125.246` و `LEGACY_REDIRECT_TO=https://festival.pegah.tech` را هم در `.env` می‌گذارد (بلوک دوم Caddyfile). بدون این دو مقدار آن بلوک بی‌اثر است. `--rollback` با برگرداندن `.env` قبلی آن‌ها را هم برمی‌دارد.
+- `Strict-Transport-Security` فقط روی پاسخ‌های HTTPS فرستاده می‌شود.
 - کاربرانی که روی `http://188.121.125.246` لاگین بودند باید دوباره وارد شوند (کوکی `Secure` و روی دامنه است).
 - اعلان‌های Push و نصب PWA که به HTTPS نیاز دارند خودکار فعال می‌شوند.
 
@@ -223,3 +250,49 @@ curl -s -o /dev/null -m 20 -w "%{speed_download}
 - سرور بی IPv6: اسکریپت IPv6 را خاموش می‌کند تا Docker سراغ رکوردهای AAAA نرود.
 - قطع شدن دانلود از ghcr: `deploy.sh` تا ۸ بار دوباره تلاش می‌کند.
 - `server-setup.sh --harden` فایل `/etc/ssh/sshd_config.d/00-arena-hardening.conf` را می‌سازد. ایمیج ابرآروان فایل `01-arvan-root-login.conf` را با `PasswordAuthentication yes` دارد و چون sshd اولین مقدار را نگه می‌دارد، تغییر خود `sshd_config` کافی نیست.
+
+## ۱۱. منابع، کاربر اجرا، تک‌نمونه بودن و استیجینگ
+
+### فقط یک نمونه از `web`
+
+اسکجولر بازی، محدودیت نرخ (`src/lib/rate-limit.ts`)، کش‌های کوتاه (`src/lib/ttl-cache.ts`) و پخش SSE حراج همه در حافظهٔ همان یک پردازه‌اند. **هرگز `web` را scale نکنید** (`--scale web=2` یا replicas) — دو اسکجولر هم‌زمان فازها و حراج‌ها را دوبار جلو می‌برند و کاربران SSE فقط نیمی از رویدادها را می‌بینند.
+
+### سقف منابع (`docker-compose.yml`)
+
+سرور: ۲ هسته، ۳٫۹ گیگ رم. سقف‌ها طوری‌اند که میزبان و پیک migrate جا داشته باشند:
+
+| سرویس | `mem_limit` | `cpus` | توضیح |
+|---|---|---|---|
+| `web` | 1536m | 1.5 | `NODE_OPTIONS=--max-old-space-size=1024` تا V8 پیش از OOM-kill کرنل GC کند |
+| `migrate` | 1g | 1.5 | یک‌باره، فقط هنگام استقرار |
+| `backup` | 512m | 0.5 | |
+| `caddy` | 256m | 0.5 | ایمیج پین‌شدهٔ `caddy:2.11.4` (ارتقا = تغییر آگاهانهٔ همین خط) |
+
+اگر `web` با OOM ری‌استارت شد (`docker inspect app-web-1 --format '{{.State.OOMKilled}}'`)، `mem_limit` و `--max-old-space-size` را با هم بالا ببرید.
+
+### اجرا با کاربر غیر root
+
+هر سه سرویس `web`، `migrate` و `backup` با کاربر `node` (uid/gid 1000) اجرا می‌شوند. اسکریپت `docker/drop-privs.sh` (ENTRYPOINT ایمیج‌ها) با root شروع می‌کند، مالکیت `/app/data` (و برای backup، `/backups`) را — فقط فایل‌هایی که مالکشان `node` نیست — به `1000:1000` می‌دهد و بعد با `setpriv` به `node` سقوط می‌کند. بنابراین روی میزبان، `/srv/arena/data` و `/srv/arena/backups` پس از اولین استقرار مالکیت `1000:1000` می‌گیرند؛ این عمدی است. همهٔ سرویس‌هایی که دیتابیس را باز می‌کنند باید با یک کاربر اجرا شوند، وگرنه فایل `dev.db-wal`/`-shm` ساخته‌شده با root برای اپ فقط‌خواندنی می‌شود.
+
+- کار دستی لازم نیست؛ اگر فایلی را با root در `/srv/arena/data` کپی کردید (مثلاً restore)، ری‌استارت بعدی خودش مالکیت را درست می‌کند. برای درست کردن فوری: `chown -R 1000:1000 /srv/arena/data /srv/arena/backups`.
+- کلید اضطراری: `RUN_AS_USER=root` در `/srv/arena/app/.env` و سپس `docker compose up -d --force-recreate web backup` (با `IMAGE_TAG` بالا) رفتار قدیمی (اجرا با root) را برمی‌گرداند.
+
+### استیجینگ فقط از طریق تونل SSH
+
+استیجینگ (`deploy/deploy-staging.sh`، `docker-compose.staging.yml`) فقط روی `127.0.0.1:8080` سرور گوش می‌دهد و از اینترنت در دسترس نیست (کاربران آزمایشی، درگاه پرداخت آزمایشی، بدون CSP). برای دیدنش:
+
+```bash
+ssh -i ~/.ssh/tapsell_qeysar -N -L 8080:127.0.0.1:8080 root@188.121.125.246
+# سپس در مرورگر: http://localhost:8080
+```
+
+سقف منابع استیجینگ کوچک است (web: 768m / 0.5 cpu، migrate: 512m) تا هرگز production را گرسنه نگذارد. یک بیلد مشخص را با `IMAGE_TAG=<sha> ./deploy/deploy-staging.sh` روی استیجینگ ببرید.
+
+### چک‌های سلامت
+
+- `/api/health`: دیتابیس + اسکجولر؛ در صورت مشکل ۵۰۳. healthcheck داکر، `deploy.sh` و `uptime-check.sh` از این استفاده می‌کنند. `uptime-check.sh` فقط وقتی به `/api/phase` برمی‌گردد که `/api/health` وجود نداشته باشد (۴۰۴)؛ ۵۰۳ همیشه هشدار است.
+- `/api/health?probe=db`: فقط دیتابیس — `health_uri` در Caddyfile. اسکجولرِ متوقف نباید Caddy را وادار کند کل سایت را ۵۰۳ کند.
+
+### CSP
+
+CSP سراسری در Caddyfile است و فقط وقتی گذاشته می‌شود که اپ خودش CSP نفرستاده باشد (`/covers/*` و `/uploads/*` سیاست سخت‌گیرانهٔ خودشان را نگه می‌دارند). `frame-src` فقط یوتیوب (`www.youtube.com`، `www.youtube-nocookie.com`) و آپارات (`www.aparat.com`) است و `media-src` فقط خود سایت؛ لینک مستقیم فایل ویدیو روی میزبان دیگر به‌عنوان تیزر در مرورگر بلاک می‌شود — برای مجاز کردن یک میزبان، آن را به `media-src` در Caddyfile اضافه کنید.

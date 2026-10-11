@@ -7,7 +7,12 @@
 #   docker compose -p arena-staging -f docker-compose.staging.yml up -d
 #
 # No Caddy here on purpose -- `web` is published directly on 8080 so it
-# doesn't need port 80/443, which production's Caddy already owns.
+# doesn't need port 80/443, which production's Caddy already owns. It is
+# bound to 127.0.0.1 only (not public: no CSP/HSTS, test users, fake payment
+# gateway). Reach it through an SSH tunnel from your machine:
+#   ssh -i ~/.ssh/tapsell_qeysar -N -L 8080:127.0.0.1:8080 root@188.121.125.246
+#   -> http://localhost:8080
+# Limits are small: staging shares the production VPS and must never starve it.
 x-logging: &default-logging
   driver: json-file
   options:
@@ -29,6 +34,8 @@ services:
     volumes:
       - /srv/arena/staging-data:/app/data
     restart: "no"
+    mem_limit: 512m
+    cpus: 0.5
     logging: *default-logging
 
   web:
@@ -41,16 +48,19 @@ services:
       HOSTNAME: 0.0.0.0
       PORT: 3000
       NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=512
     volumes:
       - /srv/arena/staging-data:/app/data
     depends_on:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
+    mem_limit: 768m
+    cpus: 0.5
     ports:
-      - "8080:3000"
+      - "127.0.0.1:8080:3000"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/phase').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3

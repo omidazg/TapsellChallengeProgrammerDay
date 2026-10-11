@@ -28,8 +28,14 @@
 #        SITE_ADDRESS=DOMAIN         (Caddy site address -> auto HTTPS + redirect)
 #        SITE_URL=https://DOMAIN     (metadataBase, payment callback base)
 #        COOKIE_SECURE=true          (session cookie gets the Secure flag)
+#        LEGACY_HTTP_ADDRESS=http://<EXPECTED_IP>   + LEGACY_REDIRECT_TO=https://DOMAIN
+#                                    (Caddyfile's second site block: old
+#                                     http://<IP>/... links 302 to the domain
+#                                     instead of getting no answer at all)
 #   3. Recreates ONLY web and caddy (--no-deps: never re-runs the one-shot
-#      migrate container against the live sqlite file, see deploy.sh).
+#      migrate container against the live sqlite file, see deploy.sh), on the
+#      build recorded in /srv/arena/.deployed-tag (IMAGE_TAG exported in the
+#      remote shell, like deploy.sh -- never :latest by accident).
 #   4. Waits up to ~3 minutes for https://DOMAIN/api/phase to answer 200 from
 #      the server itself and from this machine, and checks that
 #      http://DOMAIN redirects to https. On failure prints caddy's log and the
@@ -58,6 +64,10 @@ SSH=(ssh -i "$KEY" -o StrictHostKeyChecking=accept-new -o BatchMode=yes "$SERVER
 remote() { "${SSH[@]}" "$@"; }
 
 # ---------------------------------------------------------------------------
+# Compose must keep running the deployed build (see deploy/lib-release.sh).
+STATE_DIR="${STATE_DIR:-/srv/arena}"
+PIN="export IMAGE_TAG=\$(cat '$STATE_DIR/.deployed-tag' 2>/dev/null || echo latest)"
+
 # Rollback: restore newest .env.bak-* and recreate web + caddy.
 # ---------------------------------------------------------------------------
 if [ "$MODE" = "rollback" ]; then
@@ -68,7 +78,9 @@ if [ "$MODE" = "rollback" ]; then
     echo \"    restoring \$BAK\"
     cp .env .env.rolledback-\$(date +%Y%m%d-%H%M%S)
     cp \"\$BAK\" .env
-    grep -E '^(SITE_ADDRESS|SITE_URL|COOKIE_SECURE)=' .env
+    grep -E '^(SITE_ADDRESS|SITE_URL|COOKIE_SECURE|LEGACY_HTTP_ADDRESS|LEGACY_REDIRECT_TO)=' .env || true
+    $PIN
+    echo \"    IMAGE_TAG=\$IMAGE_TAG\"
     docker compose up -d --no-deps --force-recreate web caddy"
   echo "==> Health check: http://$HOST_ONLY/api/phase"
   sleep 3
@@ -149,7 +161,7 @@ fi
 # Apply on the server.
 # ---------------------------------------------------------------------------
 echo "==> Current site settings on $SERVER"
-remote "cd '$REMOTE_DIR' && grep -E '^(SITE_ADDRESS|SITE_URL|COOKIE_SECURE)=' .env | sed 's/^/    /'"
+remote "cd '$REMOTE_DIR' && grep -E '^(SITE_ADDRESS|SITE_URL|COOKIE_SECURE|LEGACY_HTTP_ADDRESS|LEGACY_REDIRECT_TO)=' .env | sed 's/^/    /'"
 
 echo "==> Updating .env (backup kept as .env.bak-<timestamp>)"
 remote "cd '$REMOTE_DIR' && set -e
@@ -164,10 +176,12 @@ remote "cd '$REMOTE_DIR' && set -e
   set_kv SITE_ADDRESS '$DOMAIN'
   set_kv SITE_URL 'https://$DOMAIN'
   set_kv COOKIE_SECURE 'true'
-  grep -E '^(SITE_ADDRESS|SITE_URL|COOKIE_SECURE)=' .env | sed 's/^/    /'"
+  set_kv LEGACY_HTTP_ADDRESS 'http://$EXPECTED_IP'
+  set_kv LEGACY_REDIRECT_TO 'https://$DOMAIN'
+  grep -E '^(SITE_ADDRESS|SITE_URL|COOKIE_SECURE|LEGACY_HTTP_ADDRESS|LEGACY_REDIRECT_TO)=' .env | sed 's/^/    /'"
 
 echo "==> Recreating web + caddy (no migrate re-run)"
-remote "cd '$REMOTE_DIR' && docker compose up -d --no-deps --force-recreate web caddy"
+remote "cd '$REMOTE_DIR' && $PIN && echo \"    IMAGE_TAG=\$IMAGE_TAG\" && docker compose up -d --no-deps --force-recreate web caddy"
 
 echo "==> Waiting for the certificate and https://$DOMAIN/api/phase"
 DEADLINE=$((SECONDS + 180))
@@ -200,6 +214,12 @@ case "$REDIRECT" in
   30[178]\ https://"$DOMAIN"/*) echo "    HTTP->HTTPS redirect OK" ;;
   *) echo "!! expected a 301/307/308 redirect to https://$DOMAIN, got: $REDIRECT" >&2 ;;
 esac
+LEGACY="$(curl -s -m 20 -o /dev/null -w '%{http_code} %{redirect_url}' "http://$EXPECTED_IP/api/phase" || true)"
+echo "    http://$EXPECTED_IP -> $LEGACY"
+case "$LEGACY" in
+  30[1278]\ https://"$DOMAIN"/*) echo "    old IP links redirect to the domain: OK" ;;
+  *) echo "!! expected http://$EXPECTED_IP to redirect to https://$DOMAIN, got: $LEGACY" >&2 ;;
+esac
 
 cat <<EOF
 
@@ -209,6 +229,7 @@ Next:
   - Health checks: deploy.sh now uses HEALTH_URL (default https://$DOMAIN/api/phase
     once SITE_URL is https). For uptime-check.sh pass the URL explicitly:
         deploy/uptime-check.sh https://$DOMAIN/api/health
+  - Old links to http://$EXPECTED_IP/... now redirect (302) to https://$DOMAIN/...
   - Users who were logged in on http://$HOST_ONLY must log in again
     (cookies are now Secure and scoped to the domain).
   - Push notifications / PWA install become available (they need HTTPS).
