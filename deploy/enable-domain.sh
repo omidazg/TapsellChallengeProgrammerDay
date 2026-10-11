@@ -187,7 +187,9 @@ echo "==> Waiting for the certificate and https://$DOMAIN/api/phase"
 DEADLINE=$((SECONDS + 180))
 SERVER_OK=0
 while [ $SECONDS -lt $DEADLINE ]; do
-  if remote "curl -fsS -m 10 -o /dev/null 'https://$DOMAIN/api/phase'" 2>/dev/null; then
+  # The VPS cannot reach its own public IP (no hairpin NAT), so pin the name to
+  # loopback: SNI and certificate verification still use the real domain.
+  if remote "curl -fsS -m 10 -o /dev/null --resolve '$DOMAIN:443:127.0.0.1' 'https://$DOMAIN/api/phase'" 2>/dev/null; then
     SERVER_OK=1
     break
   fi
