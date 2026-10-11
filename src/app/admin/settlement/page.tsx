@@ -122,7 +122,8 @@ export default async function AdminSettlementPage() {
           {rows.length === 0 ? (
             <Empty title="هنوز تیمی ثبت نشده" />
           ) : (
-            <div className="card overflow-x-auto anim-rise">
+            // ناحیهٔ اسکرول افقی باید با صفحه‌کلید هم قابل فوکوس و پیمایش باشد
+            <div className="card overflow-x-auto anim-rise" tabIndex={0} role="region" aria-label="جدول امتیاز تیم‌ها (اسکرول افقی)">
               <table className="w-full text-sm min-w-[960px]">
                 <caption className="sr-only">امتیاز سه‌معیارهٔ تیم‌ها</caption>
                 <thead>
@@ -136,7 +137,7 @@ export default async function AdminSettlementPage() {
                     {SCORE_CATEGORY_ORDER.map((k) => (
                       <th key={k} scope="col" className="px-3 py-3 font-bold whitespace-nowrap">
                         {SCORE_CATEGORY_LABELS[k].emoji} {SCORE_CATEGORY_LABELS[k].label}
-                        <span className="text-[10px] font-normal"> /{fa(SCORE_WEIGHTS[k])}</span>
+                        <span className="text-xs font-normal"> /{fa(SCORE_WEIGHTS[k])}</span>
                       </th>
                     ))}
                     <th scope="col" className="px-3 py-3 font-bold text-brand-red whitespace-nowrap">کسر تقلب</th>

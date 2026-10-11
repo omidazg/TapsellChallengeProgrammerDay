@@ -77,9 +77,17 @@ export async function saveAwardPickAction(prevState: JuryActionState, formData: 
   const { award, teamId } = parsed.data;
 
   if (teamId) {
-    const team = await prisma.team.findUnique({ where: { id: teamId }, select: { product: { select: { submittedAt: true } } } });
+    const team = await prisma.team.findUnique({
+      where: { id: teamId },
+      select: { product: { select: { submittedAt: true, liveStatus: true } }, _count: { select: { members: true } } },
+    });
     if (!team) return { error: "تیم پیدا نشد" };
     if (!team.product?.submittedAt) return { error: "این تیم محصول ثبت‌شده ندارد" };
+    if (team._count.members === 0) return { error: "این تیم هیچ عضوی ندارد و جایزه‌ای نمی‌گیرد" };
+    // «بهترین محصول لایو» فقط بین محصولاتی است که واقعاً روی بازار استودیو منتشر شده‌اند.
+    if (award === "live" && team.product.liveStatus !== "LIVE") {
+      return { error: "جایزهٔ «بهترین محصول لایو» فقط به محصولی می‌رسد که روی بازار استودیو لایو است" };
+    }
   }
 
   const key = AWARD_PICK_KEYS[award];

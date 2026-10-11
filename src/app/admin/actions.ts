@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { PHASES, type Phase, getPhase } from "@/lib/phase";
 import { transitionTo } from "@/lib/phase-transition";
-import { settleGame, resettleGame, getSettledAt } from "@/lib/settlement";
+import { settleGame, resettleGame, getSettledAt, isFinalSettled } from "@/lib/settlement";
 import { setSetting, getSettingsMap, SETTING_LABELS } from "@/lib/admin";
 import { parseGameSettings, saveSettings } from "@/lib/settings-schema";
 import { lockedSettingChanges, withoutLockedKeys } from "@/lib/settings-lock";
@@ -36,10 +36,11 @@ export async function setPhaseAction(prevState: AdminActionState, formData: Form
     return { error: "زمان پایان گذشته است؛ یک زمان آینده انتخاب کن یا فیلد را خالی بگذار." };
   }
 
-  const [before, settledAt] = await Promise.all([getPhase(), getSettledAt()]);
-  // پس از تسویهٔ نهایی امتیازها در TeamScore قفل شده‌اند؛ بازکردن دوبارهٔ بازار/حراج
+  const [before, finalSettled] = await Promise.all([getPhase(), isFinalSettled()]);
+  // پس از تسویهٔ قطعی (در «پایان بازی») امتیازها در TeamScore قفل شده‌اند؛ بازکردن دوبارهٔ بازار/حراج
   // خرید و حمایت تازه‌ای می‌سازد که در نتایج ثبت‌شده نمی‌آید و جدول با دفتر کل ناهمخوان می‌شود.
-  if (settledAt && parsed.data.phase !== "CLOSED") {
+  // تسویهٔ زودهنگام (پیش از CLOSED) مانع تغییر فاز نیست؛ رسیدن به CLOSED آن را بازمحاسبه می‌کند.
+  if (finalSettled && parsed.data.phase !== "CLOSED") {
     return { error: "بازی تسویهٔ نهایی شده است؛ بازگشت به فازهای قبلی ممکن نیست." };
   }
 
@@ -68,7 +69,11 @@ export type SettleActionState = AdminActionState & {
   settledAt?: string;
 };
 
-/** اجرای دستی تسویهٔ نهایی توسط برگزارکننده (ایدمپوتنت): امتیازهای سه‌معیاره در TeamScore ثبت و قفل می‌شوند. */
+/**
+ * اجرای دستی تسویهٔ نهایی توسط برگزارکننده (ایدمپوتنت): امتیازهای سه‌معیاره در TeamScore ثبت می‌شوند.
+ * اگر پیش از «پایان بازی» اجرا شود، تسویه زودهنگام است و با رسیدن بازی به CLOSED (دستی یا خودکار)
+ * با همهٔ فعالیت‌ها تا آن لحظه بازمحاسبه و جایگزین می‌شود.
+ */
 export async function settleNowAction(): Promise<SettleActionState> {
   const admin = await requireAdmin();
   try {

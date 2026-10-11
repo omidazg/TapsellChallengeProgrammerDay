@@ -2,16 +2,16 @@
 
 import { useState, useTransition } from "react";
 import { Alert } from "@/components/ui";
-import { joinBySlugAction } from "@/app/team/actions";
+import { joinByInviteTokenAction } from "@/app/team/actions";
 
-export function JoinButton({ slug }: { slug: string }) {
+export function JoinButton({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function join() {
     setError(null);
     startTransition(async () => {
-      const res = await joinBySlugAction(slug);
+      const res = await joinByInviteTokenAction(token);
       if (res?.error) setError(res.error);
     });
   }

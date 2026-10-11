@@ -15,16 +15,21 @@ export const ADMIN_PASSWORD = "admin1234";
 const dialogPages = new WeakSet<Page>();
 
 /**
- * Playwright پنجره‌های confirm را به‌طور پیش‌فرض رد (dismiss) می‌کند؛ پس هر فرمی
- * که پیش از ارسال `confirm()` می‌پرسد (شرکت فردی، فرستادن به حراج، تغییر فاز،
- * شروع حراج، تسویه) بی‌صدا ارسال نمی‌شد. این کمک‌تابع همهٔ دیالوگ‌های این صفحه را
- * می‌پذیرد و برای هر صفحه فقط یک‌بار شنونده ثبت می‌کند (پذیرفتن دوباره خطا می‌دهد).
+ * کارهای حساس (شرکت فردی، فرستادن به حراج، تغییر فاز، شروع حراج، تسویه) پیش از
+ * ارسال تأیید می‌گیرند. تأیید حالا پنجرهٔ داخلی سایت است (ConfirmDialog.tsx:
+ * `<dialog data-confirm-dialog>` با دکمهٔ `[data-confirm-accept]`)؛ این کمک‌تابع با
+ * addLocatorHandler هر بار که آن پنجره پیش از یک کنش یا assertion باز باشد دکمهٔ
+ * تأییدش را می‌زند. برای confirm()/alert() بومی باقی‌مانده هم (Playwright به‌طور
+ * پیش‌فرض ردشان می‌کند) شنوندهٔ dialog می‌ماند. برای هر صفحه فقط یک‌بار ثبت می‌شود.
  */
 export function acceptDialogs(page: Page) {
   if (dialogPages.has(page)) return;
   dialogPages.add(page);
   page.on("dialog", (dialog) => {
     void dialog.accept().catch(() => {});
+  });
+  void page.addLocatorHandler(page.locator("dialog[data-confirm-dialog][open]"), async (dialog) => {
+    await dialog.locator("[data-confirm-accept]").click();
   });
 }
 

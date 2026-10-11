@@ -8,6 +8,7 @@ import { spendableBuyCoins } from "@/lib/market";
 import { PageHeader, Container, Locked, Stat, Alert } from "@/components/ui";
 import { coins } from "@/lib/persian";
 import { InvestFloor } from "./InvestFloor";
+import { peopleExample } from "@/lib/people-example";
 
 export const metadata = { title: "حمایت از ایده‌ها" };
 
@@ -31,6 +32,7 @@ export default async function InvestPage({ searchParams }: { searchParams: Promi
           }
         />
         <Container>
+          <h2 className="sr-only">وضعیت حمایت</h2>
           <Locked title="هنوز زود است" desc={`حمایت از ایده‌ها از فاز «${PHASE_LABEL.SEED_ROUND}» باز می‌شود.`} />
         </Container>
       </>
@@ -67,7 +69,7 @@ export default async function InvestPage({ searchParams }: { searchParams: Promi
         )}
         <div className="mb-6">
           <Alert kind="info">
-            <b>تعداد حامی‌ها مهم‌تر از مبلغ است:</b> ۱۰ نفر که هر کدام ۱۰ سکه بدهند، ۱۰ برابرِ یک نفر با ۱۰۰ سکه می‌ارزند.
+            <b>تعداد حامی‌ها مهم‌تر از مبلغ است:</b> {peopleExample(supportCap)}
             از هر نفر حداکثر {coins(supportCap)} برای هر پروژه در امتیاز حساب می‌شود. حمایت از ایدهٔ تیم خودت ممکن نیست.
             {interactive && (
               <>
@@ -80,6 +82,8 @@ export default async function InvestPage({ searchParams }: { searchParams: Promi
             )}
           </Alert>
         </div>
+        {/* کارت هر ایده h3 دارد؛ این h2 پنهان ترتیب سرتیترها را درست نگه می‌دارد */}
+        <h2 className="sr-only">فهرست ایده‌ها</h2>
         <InvestFloor ideas={ideas} ownTeamId={user.teamId} interactive={interactive} filter={filter} aiOff={aiOff} />
       </Container>
     </>

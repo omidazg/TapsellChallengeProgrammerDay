@@ -9,7 +9,7 @@ import { getPhase, getSetting, getSettingInt } from "./phase";
 import { PHASES, type Phase } from "./phases";
 import { transitionTo } from "./phase-transition";
 import { startNextAuction, settleIfEnded } from "./auction";
-import { sendDuePushSlots } from "./adslots";
+import { recordMarketWindow, sendDuePushSlots } from "./adslots";
 import { log } from "./log";
 import { alert } from "./alert";
 
@@ -35,11 +35,25 @@ function nextPhaseOf(p: Phase): Phase | null {
   return PHASES[idx + 1];
 }
 
+/**
+ * زمان پایان فاز از مدت پیکربندی‌شده (phase_hours_X): مقدار صفر/منفی/نامعتبر یعنی «بدون زمان پایان»
+ * (endsAt = null؛ فاز تا تغییر دستی ادامه دارد)، نه «همین حالا تمام شود».
+ */
+export function phaseEndsAtFromHours(hours: number | null, nowMs: number): Date | null {
+  if (hours == null || !Number.isFinite(hours) || hours <= 0) return null;
+  return new Date(nowMs + hours * 3600 * 1000);
+}
+
 /** قفل در-فرآیندی: اجراهای هم‌پوشان نادیده گرفته می‌شوند. */
 let running = false;
 
-/** زمان آخرین تیک *موفق* (برای /api/health)؛ فقط در حافظهٔ همین پردازش نگه داشته می‌شود. */
-let lastSuccessfulTickAt: number | null = null;
+/**
+ * زمان آخرین تیک *موفق* (برای /api/health)؛ فقط در حافظهٔ همین پردازش نگه داشته می‌شود.
+ * روی globalThis است، نه متغیر ماژول: در production، instrumentation.ts و route سلامت هر کدام
+ * نمونهٔ جدای این ماژول را بارگذاری می‌کنند و متغیر ماژول در route سلامت همیشه null می‌ماند.
+ */
+type TickGlobal = typeof globalThis & { __arenaLastTickAt?: number | null };
+const tickGlobal = globalThis as TickGlobal;
 
 /** لاگ ساختاریافته + هشدار throttle‌شده برای شکست یک بخش از تیک زمان‌بند؛ isolation بین بخش‌ها حفظ می‌شود. */
 function reportTickFailure(task: string, e: unknown) {
@@ -60,10 +74,15 @@ export async function runScheduledTasks(): Promise<void> {
 
     const { phase } = await getPhase();
     if (phase === "MARKET") {
+      // بازهٔ واقعی روز بازار (برای سنجش تحویل جایگاه‌های تبلیغاتی و بازپرداخت در پایان بازی) ثبت می‌شود؛
+      // idempotent است و اگر فاز از مسیری جز transitionTo به MARKET رسیده باشد هم بازه باز می‌شود.
+      await recordMarketWindow("MARKET").catch((e) => reportTickFailure("recordMarketWindow", e));
       await runAuctionTasks().catch((e) => reportTickFailure("runAuctionTasks", e));
+      // اعلان «جایگاه اعلان به همه» فقط در روز بازار فرستاده می‌شود؛ جایگاهی که ساعتش بیرون از روز بازار
+      // گذشت فرستاده نمی‌شود و در پایان بازی بازپرداخت می‌شود (refundUndeliveredAdSlots).
       await sendDuePushSlots().catch((e) => reportTickFailure("sendDuePushSlots", e));
     }
-    lastSuccessfulTickAt = Date.now();
+    tickGlobal.__arenaLastTickAt = Date.now();
   } catch (e) {
     // خطای غیرمنتظره بیرون از بخش‌های جداگانه (مثلاً خود getPhase) — لاگ/هشدار و سپس
     // propagate تا رفتار قبلی (لاگ در فراخوانندهٔ instrumentation.ts) حفظ شود.
@@ -76,7 +95,7 @@ export async function runScheduledTasks(): Promise<void> {
 
 /** زمان آخرین تیک موفق زمان‌بند (ms epoch)، یا null اگر هنوز هیچ تیکی موفق نشده. */
 export function getLastSchedulerTickAt(): number | null {
-  return lastSuccessfulTickAt;
+  return tickGlobal.__arenaLastTickAt ?? null;
 }
 
 /** ۱.الف: پیشروی خودکار فاز وقتی زمانش تمام شده باشد. */
@@ -92,11 +111,8 @@ async function autoAdvancePhase() {
   if (!next) return;
 
   const defaultHours = DEFAULT_PHASE_HOURS[next] ?? null;
-  let nextEndsAt: Date | null = null;
-  if (defaultHours != null) {
-    const hours = await getSettingInt(`phase_hours_${next}`, defaultHours);
-    nextEndsAt = new Date(Date.now() + hours * 3600 * 1000);
-  }
+  const hours = defaultHours != null ? await getSettingInt(`phase_hours_${next}`, defaultHours) : null;
+  const nextEndsAt = phaseEndsAtFromHours(hours, Date.now());
 
   // محافظت در برابر مسابقه با تغییر دستی فاز از پنل برگزارکننده (یا تمدید زمان همان فاز)
   // بین خواندن بالا و نوشتن: فقط اگر فاز و زمان پایان هنوز همانی است که دیدیم پیش می‌رویم،

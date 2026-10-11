@@ -27,6 +27,8 @@ export default async function ResultsPage() {
       <>
         <PageHeader eyebrow="نتایج" title="نتایج پایانی" desc="نتایج بعد از پایان بازی نمایش داده می‌شود." />
         <Container>
+          {/* عنوان h2 پنهان تا ترتیب سرتیترها (h1 ← h2 ← h3 کارت Locked) نپرد */}
+          <h2 className="sr-only">وضعیت نتایج</h2>
           <Locked title="هنوز بازی تمام نشده" desc="رتبه‌بندی، ریزامتیازها و جوایز فقط در فاز «پایان بازی» قابل مشاهده‌اند." />
         </Container>
       </>
@@ -100,7 +102,10 @@ export default async function ResultsPage() {
             </div>
           </section>
         ) : (
-          <Empty title="عضو هیچ تیمی نبودی" desc="امتیاز تیمی برای تو ثبت نشده است." />
+          <section>
+            <h2 className="sr-only">تیم تو</h2>
+            <Empty title="عضو هیچ تیمی نبودی" desc="امتیاز تیمی برای تو ثبت نشده است." />
+          </section>
         )}
 
         <section className="grid sm:grid-cols-2 gap-4 stagger">
@@ -138,7 +143,7 @@ export default async function ResultsPage() {
                     ) : (
                       <span className="text-brand-slate">{pending}</span>
                     )}
-                    {mine && <span className="chip-red !text-[11px] mr-1.5">تیم تو</span>}
+                    {mine && <span className="chip-red !text-xs mr-1.5">تیم تو</span>}
                   </div>
                 </div>
               );
@@ -154,7 +159,14 @@ export default async function ResultsPage() {
           {ranked.length === 0 ? (
             <Empty title="هیچ تیمی ثبت نشده" />
           ) : (
-            <div className="card overflow-x-auto anim-rise">
+            <>
+            {/* موبایل: فهرست کارتی (مثل جدول امتیازات)؛ جدول پهن فقط از md به بالا */}
+            <ol className="md:hidden space-y-3 stagger">
+              {ranked.map((t) => (
+                <RankCard key={t.teamId} t={t} team={teamMap.get(t.teamId)} own={t.teamId === user.teamId} />
+              ))}
+            </ol>
+            <div className="hidden md:block card overflow-x-auto anim-rise">
               <table className="w-full text-sm min-w-[760px]">
                 <caption className="sr-only">رتبه‌بندی نهایی همهٔ تیم‌ها با ریزامتیاز سه معیار</caption>
                 <thead>
@@ -175,10 +187,69 @@ export default async function ResultsPage() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </section>
       </Container>
     </>
+  );
+}
+
+function RankCard({ t, team, own }: { t: TeamResult; team?: { name: string; logoSeed: string; cheatNote: string }; own: boolean }) {
+  const jury = juryDetail(t);
+  return (
+    <li className={`card p-4 space-y-3 anim-rise ${own ? "ring-2 ring-brand-red" : ""}`}>
+      <div className="flex items-center justify-between gap-2">
+        <Link
+          href={`/results/${t.teamId}/report`}
+          className="flex items-center gap-2 min-w-0 font-bold text-brand-navy hover:text-brand-cyan-dark hover:underline"
+        >
+          <Avatar seed={team?.logoSeed || t.teamId} size={28} />
+          <span className="truncate">{team?.name ?? "—"}</span>
+        </Link>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {own && <span className="chip-red">تیم تو</span>}
+          <span className="chip-navy fa-num">رتبه {fa(t.rank ?? 0)}</span>
+        </div>
+      </div>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-brand-slate">
+        <div>
+          <dt>🧑‍⚖️ داوری انسانی</dt>
+          <dd className="fa-num">
+            <span className="font-bold text-sm text-brand-navy">{fa(Math.round(t.pts.jury))}</span> · {jury ?? "داوری نشده"}
+          </dd>
+        </div>
+        <div>
+          <dt>👥 حمایت مردمی</dt>
+          <dd className="fa-num">
+            <span className="font-bold text-sm text-brand-navy">{fa(Math.round(t.pts.people))}</span> · {fa(t.supporters)} حامی
+          </dd>
+        </div>
+        <div>
+          <dt>🤖 هوش مصنوعی</dt>
+          <dd className="fa-num">
+            <span className="font-bold text-sm text-brand-navy">{fa(Math.round(t.pts.ai))}</span> ·{" "}
+            {t.ai == null ? "ارزیابی نشده" : `${fa(Math.round(t.ai))} از ۱۰۰`}
+          </dd>
+        </div>
+        <div>
+          <dt>کسر تقلب</dt>
+          <dd className={`fa-num font-bold text-sm ${t.cheatPenalty > 0 ? "text-brand-red" : "text-brand-navy"}`}>
+            {t.cheatPenalty > 0 ? `−${fa(t.cheatPenalty)}` : "—"}
+          </dd>
+        </div>
+        {t.cheatPenalty > 0 && team?.cheatNote && (
+          <div className="col-span-2 text-brand-red">
+            <dt className="sr-only">دلیل کسر تقلب</dt>
+            <dd>{team.cheatNote}</dd>
+          </div>
+        )}
+        <div className="col-span-2 flex items-baseline gap-2 border-t border-brand-mist pt-2">
+          <dt>امتیاز کل</dt>
+          <dd className="fa-num font-black text-base text-brand-navy">{fa(Math.round(t.total))}</dd>
+        </div>
+      </dl>
+    </li>
   );
 }
 
@@ -191,7 +262,7 @@ function RankRow({ t, team, own }: { t: TeamResult; team?: { name: string; logoS
         <Link href={`/results/${t.teamId}/report`} className="flex items-center gap-2 font-bold text-brand-navy hover:text-brand-cyan-dark hover:underline">
           <Avatar seed={team?.logoSeed || t.teamId} size={26} />
           <span>{team?.name ?? "—"}</span>
-          {own && <span className="chip-red !text-[11px]">تیم تو</span>}
+          {own && <span className="chip-red !text-xs">تیم تو</span>}
         </Link>
       </td>
       <td className="px-4 py-3 fa-num">

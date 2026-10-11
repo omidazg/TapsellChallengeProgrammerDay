@@ -40,7 +40,8 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
 
   const invites = await prisma.teamInvite.findMany({
     where: { email: user.email, status: "PENDING" },
-    include: { team: true, inviter: true },
+    // فقط فیلدهای لازم: این ردیف‌ها به کامپوننت کلاینت می‌روند (نه توکن دعوت تیم، نه هش رمز دعوت‌کننده)
+    select: { id: true, team: { select: { name: true } }, inviter: { select: { nickname: true } } },
     orderBy: { createdAt: "desc" },
   });
 

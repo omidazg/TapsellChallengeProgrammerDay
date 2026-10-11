@@ -232,7 +232,19 @@ export async function adminMarkOrderPaid(orderId: string, note: string): Promise
   if (order.status === "PAID") return { ok: false, error: "این سفارش قبلاً پرداخت‌شده است" };
   if (order.status !== "PENDING") {
     // سفارش ناموفق/لغوشده‌ای که وجهش واقعاً رسیده: اول به PENDING برمی‌گردد تا مسیر idempotent اعتبار بگیرد.
-    await prisma.coinOrder.updateMany({ where: { id: orderId, status: order.status }, data: { status: "PENDING" } });
+    // سفارش ناموفق/لغوشده در سقف خرید حساب نمی‌شد، پس بازکردنش باید دوباره سقف هر نفر را رعایت کند
+    // (بررسی و بازکردن در یک تراکنش، مثل createCoinOrder، تا سفارش هم‌زمان از همان «جای خالی» رد نشود).
+    const maxPerUser = await getSettingInt("max_bought_coins_per_user", DEFAULTS.maxBoughtCoinsPerUser);
+    const reopenError = await prisma.$transaction(async (tx) => {
+      const { paid, pending } = await boughtOrPendingCoins(order.userId, tx);
+      const room = Math.max(0, maxPerUser - paid - pending);
+      if (order.coins > room) {
+        return `تأیید این سفارش سقف خرید سکهٔ این کاربر (${fa(maxPerUser)} سکه) را رد می‌کند؛ جای خالی فقط ${fa(room)} سکه است. سفارش‌های در انتظار او را رد کن یا وجه را برگردان.`;
+      }
+      const reopened = await tx.coinOrder.updateMany({ where: { id: orderId, status: order.status }, data: { status: "PENDING" } });
+      return reopened.count === 0 ? "سفارش همین حالا تغییر کرد" : null;
+    });
+    if (reopenError) return { ok: false, error: reopenError };
   }
   const credited = await markPaidAndCredit(orderId, order.refId ?? `MANUAL-${Date.now().toString(36)}`, note.slice(0, 300));
   return credited ? { ok: true } : { ok: false, error: "سفارش همین حالا تغییر کرد" };

@@ -116,7 +116,7 @@ function RequestCard({
       </div>
       <p className="mt-6 text-center text-sm text-brand-slate">
         حساب داری؟{" "}
-        <Link href="/login" className="font-bold text-brand-cyan-dark">وارد شو</Link>
+        <Link href="/login" className="inline-flex items-center min-h-11 px-1 font-bold text-brand-cyan-dark underline underline-offset-4">وارد شو</Link>
       </p>
     </form>
   );

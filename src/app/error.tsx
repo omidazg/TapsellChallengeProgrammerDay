@@ -29,7 +29,7 @@ export default function ErrorPage({ error, retry }: { error: Error & { digest?: 
           یک خطای غیرمنتظره پیش آمد
         </h1>
         <p className="text-brand-slate mb-8">
-          نگران نباشید، این مشکل ثبت شد. می‌توانید دوباره تلاش کنید یا به خانه برگردید.
+          نگران نباش، این مشکل ثبت شد. می‌توانی دوباره تلاش کنی یا به خانه برگردی.
         </p>
         <div className="flex flex-wrap justify-center gap-3">
           <button type="button" onClick={() => retry()} className="btn-primary">

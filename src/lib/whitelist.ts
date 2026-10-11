@@ -29,11 +29,16 @@ export async function isWhitelisted(email: string, phone?: string | null) {
   if (phone) or.push({ phone });
   const rows = await prisma.allowedEmail.findMany({ where: { OR: or }, select: { email: true, phone: true } });
   for (const row of rows) {
-    const owners: { email?: string; phone?: string }[] = [{ email: row.email }];
-    if (row.phone) owners.push({ phone: row.phone });
-    if (!(await prisma.user.findFirst({ where: { OR: owners }, select: { id: true } }))) return true;
+    if (!(await isRowConsumed(row))) return true;
   }
   return false;
+}
+
+/** ردیفی که ایمیل یا شماره‌اش از قبل حساب دارد مصرف شده و حساب تازه‌ای نمی‌سازد */
+async function isRowConsumed(row: { email: string; phone: string | null }) {
+  const owners: { email?: string; phone?: string }[] = [{ email: row.email }];
+  if (row.phone) owners.push({ phone: row.phone });
+  return !!(await prisma.user.findFirst({ where: { OR: owners }, select: { id: true } }));
 }
 
 /**
@@ -58,10 +63,14 @@ export async function accessState(email: string): Promise<AccessState> {
   return "NONE";
 }
 
-/** همان وضعیت، برای شماره‌ای که به هیچ حسابی وصل نیست (ورود با پیامک) */
+/**
+ * همان وضعیت، برای شماره‌ای که به هیچ حسابی وصل نیست (ورود با پیامک).
+ * ردیف لیست سفیدی که ایمیلش قبلاً حساب ساخته «مصرف‌شده» است (همان قاعدهٔ isWhitelisted)؛
+ * گفتن ALLOWED برای آن کاربر را به ثبت‌نامی می‌فرستاد که canRegister ردش می‌کرد.
+ */
 export async function accessStateByPhone(phone: string): Promise<AccessState> {
-  const listed = await prisma.allowedEmail.findUnique({ where: { phone }, select: { id: true } });
-  if (listed) return "ALLOWED";
+  const listed = await prisma.allowedEmail.findUnique({ where: { phone }, select: { email: true, phone: true } });
+  if (listed && !(await isRowConsumed(listed))) return "ALLOWED";
   const req = await prisma.accessRequest.findFirst({ where: { phone }, orderBy: { updatedAt: "desc" }, select: { status: true } });
   if (req?.status === "PENDING") return "PENDING";
   if (req?.status === "REJECTED") return "REJECTED";

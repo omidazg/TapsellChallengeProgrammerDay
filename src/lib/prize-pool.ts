@@ -7,10 +7,18 @@ import { cached } from "./ttl-cache";
 import { PRIZE_POOL_CACHE_PREFIX } from "./coins";
 import { prizePoolFrom, type PrizePool } from "./prizes";
 
+/**
+ * آیا پرداخت‌های درگاه آزمایشی (fake) در صندوق جایزه حساب شوند؟ در production هرگز (پول واقعی نیست،
+ * حتی اگر با PAYMENT_FAKE_ALLOWED فعال شده باشد)؛ در توسعه/تست بله تا جریان کامل قابل آزمودن بماند.
+ */
+export function countsFakeGatewaySales(env: string | undefined = process.env.NODE_ENV): boolean {
+  return env !== "production";
+}
+
 /** جمع مبلغ سکه‌های فروخته‌شده (تومان) و تعداد سکه‌ها */
 export async function coinSales(): Promise<{ toman: number; coins: number; orders: number }> {
   const agg = await prisma.coinOrder.aggregate({
-    where: { status: "PAID" },
+    where: { status: "PAID", ...(countsFakeGatewaySales() ? {} : { gateway: { not: "fake" } }) },
     _sum: { amountRial: true, coins: true },
     _count: true,
   });

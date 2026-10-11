@@ -1,10 +1,11 @@
-import { cookies } from "next/headers";
+import { cache } from "react";
+import { cookies, headers } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 import { redirect } from "next/navigation";
-
-const COOKIE = "arena_session";
+import { safeNext } from "@/app/login/next";
+import { REQUEST_PATH_HEADER, SESSION_COOKIE as COOKIE, loginUrlFor } from "./session-cookie";
 
 /**
  * تنبل (lazy) و فقط هنگام امضا/تأیید بررسی می‌شود؛ نه هنگام بارگذاری ماژول.
@@ -50,6 +51,22 @@ export async function destroySession() {
   jar.delete(COOKIE);
 }
 
+/**
+ * خروج: نسخهٔ نشست کاربر یک واحد بالا می‌رود تا همین توکن (و هر کپی دزدیده‌شده‌اش) دیگر
+ * پذیرفته نشود، بعد کوکی پاک می‌شود. نتیجه: خروج از همهٔ دستگاه‌های همان کاربر.
+ * شرط sessionVersion یعنی توکنِ از قبل باطل نمی‌تواند نشست‌های تازه‌تر را باطل کند.
+ */
+export async function revokeCurrentSession() {
+  const session = await readSession();
+  if (session) {
+    await prisma.user.updateMany({
+      where: { id: session.id, sessionVersion: session.v },
+      data: { sessionVersion: { increment: 1 } },
+    });
+  }
+  await destroySession();
+}
+
 /** محتوای توکن معتبر؛ null اگر کوکی نبود یا امضا نامعتبر بود */
 async function readSession(): Promise<{ id: string; v: number } | null> {
   const jar = await cookies();
@@ -80,19 +97,28 @@ export function isSessionValid(
   return payloadVersion === user.sessionVersion;
 }
 
-/** کاربر جاری با تیم؛ null اگر وارد نشده، نشست باطل‌شده یا مسدود باشد */
-export async function getCurrentUser() {
+/**
+ * کاربر جاری با تیم؛ null اگر وارد نشده، نشست باطل‌شده یا مسدود باشد.
+ * با cache() در هر درخواست فقط یک‌بار کوئری می‌زند (layout و صفحه هر دو صدایش می‌کنند).
+ */
+export const getCurrentUser = cache(async () => {
   const session = await readSession();
   if (!session) return null;
   const user = await prisma.user.findUnique({ where: { id: session.id }, include: { team: true } });
   if (!user || !isSessionValid(session.v, user)) return null;
   return user;
-}
+});
 
-/** برای صفحات محافظت‌شده: در نبود کاربر به ورود هدایت می‌کند */
+/**
+ * برای صفحات محافظت‌شده: در نبود کاربر به ورود هدایت می‌کند.
+ * مسیر فعلی را src/proxy.ts در هدر می‌گذارد تا پس از ورود به همان صفحه برگردد.
+ */
 export async function requireUser() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) {
+    const next = safeNext((await headers()).get(REQUEST_PATH_HEADER));
+    redirect(loginUrlFor(next));
+  }
   return user;
 }
 

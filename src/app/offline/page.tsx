@@ -12,7 +12,7 @@ export default function OfflinePage() {
       </div>
       <h1 className="text-2xl font-black text-brand-navy mb-2">اتصال اینترنت برقرار نیست</h1>
       <p className="text-brand-slate mb-8">
-        به‌نظر می‌رسد اتصال شما قطع شده. وقتی دوباره به اینترنت وصل شدید، این صفحه را ببندید و به میدان بنیان‌گذاران برگردید.
+        به‌نظر می‌رسد اتصالت قطع شده. وقتی دوباره به اینترنت وصل شدی، این صفحه را ببند و به میدان بنیان‌گذاران برگرد.
       </p>
       <RetryButton />
     </div>

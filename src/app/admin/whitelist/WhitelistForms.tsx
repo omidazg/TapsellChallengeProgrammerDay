@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Alert } from "@/components/ui";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { DEPARTMENTS } from "@/app/register/departments";
 import {
   setWhitelistEnabledAction,
@@ -90,6 +91,7 @@ function EntryFields({ idPrefix, values }: { idPrefix: string; values?: Partial<
 
 export function WhitelistToggle({ enabled }: { enabled: boolean }) {
   const [state, action, pending] = useActionState<WhitelistActionState, FormData>(setWhitelistEnabledAction, {});
+  const confirmSubmit = useConfirmSubmit();
   return (
     <form
       action={action}
@@ -98,7 +100,7 @@ export function WhitelistToggle({ enabled }: { enabled: boolean }) {
         const msg = enabled
           ? "لیست سفید خاموش شود؟ هر کسی (طبق قاعدهٔ دامنهٔ ایمیل) می‌تواند ثبت‌نام کند."
           : "لیست سفید روشن شود؟ فقط ایمیل‌های این فهرست می‌توانند ثبت‌نام کنند.";
-        if (!confirm(msg)) e.preventDefault();
+        confirmSubmit(e, msg);
       }}
     >
       <input type="hidden" name="enabled" value={enabled ? "0" : "1"} />
@@ -179,6 +181,7 @@ export function EntryRow({ entry }: { entry: EntryData }) {
     return res;
   }, {});
   const [deleteState, deleteAction] = useActionState<WhitelistActionState, FormData>(deleteEntryAction, {});
+  const confirmSubmit = useConfirmSubmit();
 
   const fullName = `${entry.firstName} ${entry.lastName}`.trim();
 
@@ -206,9 +209,9 @@ export function EntryRow({ entry }: { entry: EntryData }) {
         <div className="font-bold text-brand-navy flex flex-wrap items-center gap-2">
           {fullName || <span className="text-brand-slate font-normal">بدون نام</span>}
           {entry.hasAccount ? (
-            <span className="chip chip-navy !py-0.5 !px-2 text-[10px]">حساب ساخته</span>
+            <span className="chip chip-navy !py-0.5 !px-2 text-xs">حساب ساخته</span>
           ) : (
-            <span className="chip !py-0.5 !px-2 text-[10px]">هنوز ثبت‌نام نکرده</span>
+            <span className="chip !py-0.5 !px-2 text-xs">هنوز ثبت‌نام نکرده</span>
           )}
         </div>
         <div className="text-xs text-brand-slate break-words" dir="ltr">
@@ -228,7 +231,7 @@ export function EntryRow({ entry }: { entry: EntryData }) {
         action={deleteAction}
         onSubmit={(e) => {
           const extra = entry.hasAccount ? "\nحساب موجود این فرد حذف نمی‌شود و همچنان می‌تواند وارد شود." : "";
-          if (!confirm(`${entry.email} از لیست سفید حذف شود؟${extra}`)) e.preventDefault();
+          confirmSubmit(e, { title: `${entry.email} از لیست سفید حذف شود؟`, body: extra.trim() || undefined, confirmLabel: "حذف", destructive: true });
         }}
       >
         <input type="hidden" name="id" value={entry.id} />
@@ -244,6 +247,7 @@ export function EntryRow({ entry }: { entry: EntryData }) {
 export function RequestRow({ request }: { request: RequestData }) {
   const [approveState, approveAction, approving] = useActionState<WhitelistActionState, FormData>(approveRequestAction, {});
   const [rejectState, rejectAction, rejecting] = useActionState<WhitelistActionState, FormData>(rejectRequestAction, {});
+  const confirmSubmit = useConfirmSubmit();
   const name = `${request.firstName} ${request.lastName}`;
   const statusChip = request.status === "REJECTED" ? "chip-red" : request.status === "APPROVED" ? "chip-navy" : "";
 
@@ -252,14 +256,14 @@ export function RequestRow({ request }: { request: RequestData }) {
       <div className="min-w-[180px] flex-1 break-words">
         <div className="font-bold text-brand-navy flex flex-wrap items-center gap-2">
           {name}
-          <span className={`chip ${statusChip} !py-0.5 !px-2 text-[10px]`}>{request.statusLabel}</span>
+          <span className={`chip ${statusChip} !py-0.5 !px-2 text-xs`}>{request.statusLabel}</span>
         </div>
         <div className="text-xs text-brand-slate break-words" dir="ltr">
           {request.email}
           {request.phone && <> · {request.phone}</>}
         </div>
         <div className="text-xs text-brand-slate">سمت: {request.position} · واحد سازمانی: {request.unit}</div>
-        <div className="text-[11px] text-brand-slate">{request.createdAt}</div>
+        <div className="text-xs text-brand-slate">{request.createdAt}</div>
       </div>
       {request.status !== "APPROVED" && (
         <form action={approveAction}>
@@ -273,7 +277,7 @@ export function RequestRow({ request }: { request: RequestData }) {
         <form
           action={rejectAction}
           onSubmit={(e) => {
-            if (!confirm(`درخواست ${name} رد شود؟`)) e.preventDefault();
+            confirmSubmit(e, { title: `درخواست ${name} رد شود؟`, confirmLabel: "رد درخواست", destructive: true });
           }}
         >
           <input type="hidden" name="id" value={request.id} />
@@ -283,6 +287,7 @@ export function RequestRow({ request }: { request: RequestData }) {
         </form>
       )}
       {approveState.error && <Alert kind="error">{approveState.error}</Alert>}
+      {approveState.message && <Alert kind="info">{approveState.message}</Alert>}
       {rejectState.error && <Alert kind="error">{rejectState.error}</Alert>}
     </div>
   );

@@ -6,7 +6,6 @@ import { prisma } from "@/lib/db";
 import { verifyPassword, createSession } from "@/lib/auth";
 import {
   rateLimit,
-  rateLimitPeek,
   rateLimitRefund,
   rateLimitMessage,
   clientIp,
@@ -65,7 +64,7 @@ export async function loginAction(input: { email: string; password: string; next
     const state = await accessState(email);
     if (state === "ALLOWED") return { error: "هنوز با این ایمیل حسابی نساخته‌ای؛ ایمیلت مجاز است، ثبت‌نام کن.", access: "NO_ACCOUNT" };
     if (state === "PENDING") return { error: "درخواست دسترسی‌ات ثبت شده و در انتظار تأیید برگزارکننده است.", access: "PENDING" };
-    if (state === "REJECTED") return { error: "درخواست دسترسی‌ات رد شده است؛ اگر فکر می‌کنی اشتباهی رخ داده، دوباره درخواست بده یا با برگزارکننده تماس بگیر.", access: "REJECTED" };
+    if (state === "REJECTED") return { error: "درخواست دسترسی‌ات رد شده است؛ اگر فکر می‌کنی اشتباهی رخ داده، با برگزارکننده تماس بگیر.", access: "REJECTED" };
     return { error: "این ایمیل در لیست سفید رویداد نیست. برای ورود، درخواست دسترسی بده تا برگزارکننده تأیید کند.", access: "NONE" };
   }
   const ok = await verifyPassword(parsed.data.password, user.passwordHash);
@@ -103,7 +102,7 @@ export async function requestLoginOtpAction(rawPhone: string): Promise<OtpReques
       return { error: "این شماره مجاز است ولی هنوز به حسابی وصل نیست؛ ثبت‌نام کن و همین شماره را وارد کن.", access: "NO_ACCOUNT", phone };
     if (state === "PENDING") return { error: "درخواست دسترسی‌ات ثبت شده و در انتظار تأیید برگزارکننده است.", access: "PENDING", phone };
     if (state === "REJECTED")
-      return { error: "درخواست دسترسی‌ات رد شده است؛ اگر فکر می‌کنی اشتباهی رخ داده، دوباره درخواست بده.", access: "REJECTED", phone };
+      return { error: "درخواست دسترسی‌ات رد شده است؛ اگر فکر می‌کنی اشتباهی رخ داده، با برگزارکننده تماس بگیر.", access: "REJECTED", phone };
     return {
       error: "این شماره به هیچ حسابی وصل نیست. اگر حساب داری با ایمیل وارد شو و شماره را در پروفایل ثبت کن؛ وگرنه درخواست دسترسی بده.",
       access: "NONE",
@@ -122,7 +121,9 @@ export async function verifyLoginOtpAction(input: { phone: string; code: string;
   const phone = normalizePhone(input.phone);
   if (!phone) return { error: "شمارهٔ موبایل معتبر نیست." };
 
-  const limit = rateLimitPeek("otp:verify", phone, OTP_VERIFY_PHONE_RULE());
+  // تلاش پیش از بررسی ثبت و فقط در صورت موفقیت پس گرفته می‌شود (مثل ورود با رمز)؛
+  // با peek، درخواست‌های هم‌زمان پیش از ثبت اولین شکست همه از سقف رد می‌شدند
+  const limit = rateLimit("otp:verify", phone, OTP_VERIFY_PHONE_RULE());
   if (!limit.ok) return { error: rateLimitMessage(limit.retryAfterSec) };
 
   const user = await prisma.user.findUnique({ where: { phone } });
@@ -130,11 +131,9 @@ export async function verifyLoginOtpAction(input: { phone: string; code: string;
   if (user.blockedAt) return { error: BLOCKED };
 
   const res = await verifyOtp(phone, "LOGIN", toEnDigitsSafe(input.code));
-  if (!res.ok) {
-    rateLimit("otp:verify", phone, OTP_VERIFY_PHONE_RULE());
-    return { error: res.error };
-  }
+  if (!res.ok) return { error: res.error };
 
+  rateLimitRefund("otp:verify", phone);
   await createSession(user.id, user.sessionVersion);
   redirect(safeNext(input.next) ?? "/");
 }

@@ -101,30 +101,30 @@ export function NotificationBell({ phase, variant = "desktop" }: { phase: Phase;
         aria-expanded={open}
         className={
           variant === "desktop"
-            ? "relative flex items-center justify-center size-10 rounded-full border border-brand-mist text-brand-navy hover:bg-brand-ice shrink-0"
+            ? "relative flex items-center justify-center size-11 rounded-full border border-brand-mist text-brand-navy hover:bg-brand-ice shrink-0"
             : "relative flex items-center gap-2 rounded-2xl bg-brand-ice px-3 py-3 text-sm font-bold text-brand-navy min-h-12 w-full"
         }
       >
         <span aria-hidden className="text-lg leading-none">🔔</span>
         {variant === "mobile" && <span>اعلان‌ها</span>}
         {unread > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-brand-red text-white text-[10px] font-black flex items-center justify-center fa-num">
+          <span className="absolute -top-1 -end-1 min-w-5 h-5 px-1 rounded-full bg-brand-red text-white text-xs leading-none font-black flex items-center justify-center fa-num">
             {fa(unread)}
           </span>
         )}
       </button>
 
       {open && (
-        // زنگ هدر در RTL سمت چپ صفحه است؛ right-0 پنجره را از لبهٔ چپ بیرون می‌برد. در موبایل
+        // زنگ هدر در RTL سمت چپ صفحه است؛ start-0 (راست) پنجره را از لبهٔ چپ بیرون می‌برد، پس end-0. در موبایل
         // تمام‌عرض (fixed نسبت به هدر که backdrop-filter دارد) و از sm به بعد از لبهٔ چپ زنگ باز می‌شود.
         <div
           className={`${
-            variant === "desktop" ? "fixed inset-x-3 top-14 sm:absolute sm:inset-x-auto sm:top-auto sm:left-0 sm:w-80" : "absolute inset-x-0"
+            variant === "desktop" ? "fixed inset-x-3 top-14 sm:absolute sm:inset-x-auto sm:top-auto sm:end-0 sm:w-80" : "absolute inset-x-0"
           } mt-2 card shadow-lift z-50 overflow-hidden anim-pop`}
         >
           <div className="px-4 py-3 border-b border-brand-mist flex items-center justify-between">
             <span className="font-black text-brand-navy text-sm">اعلان‌ها</span>
-            <Link href="/notifications" className="text-xs font-bold text-brand-cyan-dark" onClick={() => setOpen(false)}>
+            <Link href="/notifications" className="inline-flex items-center min-h-11 -my-3 px-2 -mx-2 text-xs font-bold text-brand-cyan-dark underline-offset-4 hover:underline" onClick={() => setOpen(false)}>
               همه
             </Link>
           </div>
@@ -142,7 +142,7 @@ export function NotificationBell({ phase, variant = "desktop" }: { phase: Phase;
                     >
                       <div className="text-sm font-bold text-brand-navy break-words">{n.title}</div>
                       {n.body && <div className="text-xs text-brand-slate mt-0.5 break-words">{n.body}</div>}
-                      <div className="text-[11px] text-brand-slate mt-1">{relativeTime(n.createdAt)}</div>
+                      <div className="text-xs text-brand-slate mt-1">{relativeTime(n.createdAt)}</div>
                     </Link>
                   </li>
                 ))}
@@ -168,7 +168,8 @@ export function NotificationBell({ phase, variant = "desktop" }: { phase: Phase;
 
 function PhaseToast({ message, onRefresh, onClose }: { message: string; onRefresh: () => void; onClose: () => void }) {
   return (
-    <div role="status" className="above-bottom-nav fixed bottom-4 inset-x-4 sm:inset-x-auto sm:left-4 z-[60] anim-rise">
+    // float-above-row (globals.css): بالای ردیف دکمهٔ دستیار/بنر اعلان فوری تا روی آن‌ها نیفتد؛ گوشهٔ «انتها» مثل دستیار
+    <div role="status" className="float-above-row fixed inset-x-4 sm:inset-x-auto sm:end-4 z-[60] anim-rise">
       <div className="card px-4 py-3 shadow-lift flex items-center gap-3 max-w-sm">
         <span className="text-xl" aria-hidden>📣</span>
         <div className="flex-1 min-w-0">
@@ -177,7 +178,7 @@ function PhaseToast({ message, onRefresh, onClose }: { message: string; onRefres
         <button type="button" onClick={onRefresh} className="btn-primary !py-1.5 !px-3 text-xs shrink-0">
           به‌روزرسانی
         </button>
-        <button type="button" onClick={onClose} aria-label="بستن" className="inline-flex items-center justify-center size-8 text-brand-slate text-lg leading-none shrink-0">
+        <button type="button" onClick={onClose} aria-label="بستن" className="inline-flex items-center justify-center size-11 -m-2 rounded-full text-brand-slate text-lg leading-none shrink-0 hover:bg-brand-ice hover:text-brand-navy">
           ✕
         </button>
       </div>

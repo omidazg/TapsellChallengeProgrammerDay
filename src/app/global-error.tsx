@@ -27,7 +27,7 @@ export default function GlobalError({ error, retry }: { error: Error & { digest?
           </div>
           <h1 style={{ fontSize: 22, fontWeight: 900, margin: "0 0 8px" }}>خطای جدی در برنامه</h1>
           <p style={{ color: "#9fb8c9", margin: "0 0 24px" }}>
-            متأسفانه اجرای صفحه با مشکل مواجه شد. لطفاً دوباره تلاش کنید.
+            متأسفانه اجرای صفحه با مشکل روبه‌رو شد. لطفاً دوباره تلاش کن.
           </p>
           <button
             type="button"

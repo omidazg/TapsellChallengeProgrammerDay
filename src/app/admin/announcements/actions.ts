@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createAnnouncement, toggleAnnouncement, deleteAnnouncement } from "@/lib/notifications";
 import { audit } from "@/lib/audit";
+import { invalidate } from "@/lib/ttl-cache";
+import { ACTIVE_ANNOUNCEMENTS_KEY } from "@/components/AnnouncementBar";
 
 export type AnnouncementActionState = { error?: string; ok?: boolean };
 
@@ -19,6 +21,7 @@ export async function createAnnouncementAction(_prev: AnnouncementActionState, f
   if (!["info", "warning", "danger"].includes(level)) return { error: "سطح نامعتبر است" };
   await createAnnouncement(text, level);
   await audit(admin.id, "announcement.create", "", { text, level });
+  invalidate(ACTIVE_ANNOUNCEMENTS_KEY); // نوار اطلاعیهٔ همهٔ صفحات (AnnouncementBar)
   revalidatePath("/admin/announcements");
   return { ok: true };
 }
@@ -34,6 +37,7 @@ export async function toggleAnnouncementAction(_prev: AnnouncementActionState, f
     return { error: "اطلاعیه پیدا نشد؛ صفحه را تازه کن" };
   }
   await audit(admin.id, "announcement.toggle", id, { active });
+  invalidate(ACTIVE_ANNOUNCEMENTS_KEY); // نوار اطلاعیهٔ همهٔ صفحات (AnnouncementBar)
   revalidatePath("/admin/announcements");
   return { ok: true };
 }
@@ -48,6 +52,7 @@ export async function deleteAnnouncementAction(_prev: AnnouncementActionState, f
     return { error: "اطلاعیه پیدا نشد؛ شاید قبلاً حذف شده است" };
   }
   await audit(admin.id, "announcement.delete", id, {});
+  invalidate(ACTIVE_ANNOUNCEMENTS_KEY); // نوار اطلاعیهٔ همهٔ صفحات (AnnouncementBar)
   revalidatePath("/admin/announcements");
   return { ok: true };
 }

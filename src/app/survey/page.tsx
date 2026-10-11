@@ -16,6 +16,7 @@ export default async function SurveyPage() {
       <>
         <PageHeader eyebrow="نظرسنجی" title="نظرسنجی پایان بازی" />
         <Container>
+          <h2 className="sr-only">وضعیت نظرسنجی</h2>
           <Locked title="هنوز زود است" desc="نظرسنجی از فاز «روز بازار» باز می‌شود." />
         </Container>
       </>

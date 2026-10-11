@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { enablePush } from "./PushToggle";
 
@@ -49,6 +49,7 @@ export function PushPrompt({ loggedIn }: { loggedIn: boolean }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [feedback, setFeedback] = useState<string>("");
+  const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -107,14 +108,33 @@ export function PushPrompt({ loggedIn }: { loggedIn: boolean }) {
     setFeedback(result.error ?? "فعال‌سازی انجام نشد؛ بعداً از صفحهٔ اعلان‌ها هم می‌توانی فعالش کنی.");
   }
 
-  if (mode === "none" || !isRelevantPath(pathname)) return null;
+  const visible = mode !== "none" && isRelevantPath(pathname);
+
+  // ارتفاع واقعی بنر در --push-prompt-h (globals.css) منتشر می‌شود تا توست فاز و پنل دستیار
+  // (کلاس float-above-row) بالای آن بنشینند و در موبایل روی هم نیفتند.
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!visible || !el) return;
+    const root = document.documentElement;
+    const update = () => root.style.setProperty("--push-prompt-h", `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    update();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    ro?.observe(el);
+    return () => {
+      ro?.disconnect();
+      root.style.removeProperty("--push-prompt-h");
+    };
+  }, [visible]);
+
+  if (!visible) return null;
 
   return (
     <div
+      ref={boxRef}
       role="region"
       aria-label="پیشنهاد فعال‌سازی اعلان"
-      style={{ bottom: "calc(var(--bottom-nav-h, 0px) + 1rem)" }}
-      className="print:hidden fixed right-4 left-[5.5rem] sm:left-auto sm:w-96 z-40 card p-3 shadow-lift"
+      // float-row: هم‌ردیف دکمهٔ دستیار (که در گوشهٔ «انتها» است)؛ end-[5.5rem] جای آن دکمه را خالی می‌گذارد
+      className="float-row print:hidden fixed start-4 end-[5.5rem] sm:end-auto sm:w-96 z-40 card p-3 shadow-lift"
     >
       <div className="flex items-start gap-2">
         <span aria-hidden className="text-lg leading-6">🔔</span>
@@ -141,7 +161,7 @@ export function PushPrompt({ loggedIn }: { loggedIn: boolean }) {
             type="button"
             onClick={dismiss}
             aria-label="بستن راهنمای اعلان"
-            className="shrink-0 size-8 -m-1 rounded-full flex items-center justify-center text-brand-slate hover:bg-brand-mist hover:text-brand-navy transition"
+            className="shrink-0 size-11 -m-2 rounded-full flex items-center justify-center text-brand-slate hover:bg-brand-mist hover:text-brand-navy transition"
           >
             <span aria-hidden>✕</span>
           </button>

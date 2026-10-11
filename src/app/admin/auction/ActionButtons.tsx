@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { Alert } from "@/components/ui";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import {
   ensureAuctionsAction,
   startNextAuctionAction,
@@ -24,12 +25,13 @@ function ActionButton({
   confirmText?: string;
 }) {
   const [state, formAction, pending] = useActionState<AuctionAdminState, FormData>(async () => action(), {});
+  const confirmSubmit = useConfirmSubmit();
   const cls = tone === "primary" ? "btn-primary" : tone === "cyan" ? "btn-cyan" : "btn-ghost";
   return (
     <form
       action={formAction}
       onSubmit={(e) => {
-        if (confirmText && !confirm(confirmText)) e.preventDefault();
+        if (confirmText) confirmSubmit(e, confirmText);
       }}
       className="space-y-1"
     >
@@ -81,7 +83,7 @@ export function MoveAuctionButtons({ auctionId, label, canUp, canDown }: { aucti
       <button type="submit" name="dir" value="down" disabled={pending || !canDown} className={btn} aria-label={`عقب‌تر بردن «${label}» در صف`} title="عقب‌تر در صف">
         <span aria-hidden>↓</span>
       </button>
-      {state.error && <span className="text-[11px] text-brand-red" role="alert">{state.error}</span>}
+      {state.error && <span className="text-xs text-brand-red" role="alert">{state.error}</span>}
     </form>
   );
 }

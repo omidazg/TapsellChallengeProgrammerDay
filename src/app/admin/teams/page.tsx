@@ -34,8 +34,11 @@ export default async function AdminTeamsPage() {
         desc="اعضا (۱ تا ۳ نفر)، وضعیت ایده و محصول، و کسر امتیاز تقلب هر تیم."
       />
       <Container className="space-y-6">
+        {/* کارت‌های ابزار h3 دارند؛ h2های پنهان ترتیب سرتیترها را درست نگه می‌دارند */}
+        <h2 className="sr-only">ابزارهای تیم‌بندی</h2>
         <TeamTools teams={allTeams} teamlessUsers={teamlessUsers} />
 
+        <h2 className="sr-only">فهرست تیم‌ها</h2>
         <div className="space-y-4">
           {teams.length === 0 ? (
             <Empty title="هنوز تیمی ساخته نشده" />

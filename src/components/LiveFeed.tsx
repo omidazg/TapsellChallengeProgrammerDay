@@ -54,7 +54,7 @@ export function LiveFeed() {
       {events === null ? (
         <div className="px-4 py-6 text-sm text-brand-slate">در حال بارگذاری…</div>
       ) : events.length === 0 ? (
-        <div className="px-4 py-6 text-sm text-brand-slate">هنوز رویدادی ثبت نشده…</div>
+        <div className="px-4 py-6 text-sm text-brand-slate">هنوز رویدادی ثبت نشده است.</div>
       ) : (
         <ul className="divide-y divide-brand-mist max-h-80 overflow-y-auto" aria-label="رویدادهای زنده میدان">
           {events.map((e) => (
@@ -62,7 +62,7 @@ export function LiveFeed() {
               <span className="text-lg shrink-0" aria-hidden>{e.emoji}</span>
               <div className="min-w-0 flex-1">
                 <p className="text-brand-navy font-medium break-words">{e.text}</p>
-                <p className="mt-0.5 text-[11px] text-brand-slate fa-num">{relativeTime(e.at, now)}</p>
+                <p className="mt-0.5 text-xs text-brand-slate fa-num">{relativeTime(e.at, now)}</p>
               </div>
             </li>
           ))}

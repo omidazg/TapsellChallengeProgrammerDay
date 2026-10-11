@@ -7,7 +7,15 @@ import { hashPassword, createSession, getSessionUserId } from "@/lib/auth";
 import { accessState, canRegister, type AccessState } from "@/lib/whitelist";
 import { getPhase, getSettingInt } from "@/lib/phase";
 import { DEFAULTS, ROLES } from "@/lib/constants";
-import { rateLimit, rateLimitMessage, clientIp, REGISTER_IP_RULE, OTP_IP_RULE } from "@/lib/rate-limit";
+import {
+  rateLimit,
+  rateLimitRefund,
+  rateLimitMessage,
+  clientIp,
+  REGISTER_IP_RULE,
+  OTP_IP_RULE,
+  OTP_VERIFY_PHONE_RULE,
+} from "@/lib/rate-limit";
 import { normalizePhone } from "@/lib/phone";
 import { requestOtp, verifyOtp, signPhoneProof, checkPhoneProof } from "@/lib/otp";
 import { toEnDigits } from "@/lib/persian";
@@ -17,9 +25,9 @@ import { safeNext } from "./next";
 
 const FIELD_ERRORS: Record<string, string> = {
   email: "ایمیل نامعتبر است.",
-  password: "رمز عبور باید حداقل ۶ نویسه باشد.",
+  password: "رمز عبور باید حداقل ۸ نویسه باشد.",
   nickname: "نام مستعار باید بین ۲ تا ۳۰ نویسه باشد.",
-  department: "دپارتمان را انتخاب کنید.",
+  department: "دپارتمانت را انتخاب کن.",
   role: "مهارت اصلی‌ات را انتخاب کن.",
   coffee: "میزان قهوه باید بین ۰ تا ۱۰ باشد.",
   bugs: "تعداد باگ باید بین ۰ تا ۱۰۰ باشد.",
@@ -29,7 +37,8 @@ const FIELD_ERRORS: Record<string, string> = {
 
 const registerSchema = z.object({
   email: z.string().trim().toLowerCase().max(120).email(),
-  password: z.string().min(6).max(72),
+  // فقط برای حساب‌های تازه؛ ورود با رمزهای کوتاه‌ترِ قدیمی همچنان کار می‌کند (loginSchema حداقل ندارد)
+  password: z.string().min(8).max(72),
   nickname: z.string().trim().min(2).max(30),
   department: z.enum(DEPARTMENTS),
   role: z.enum(Object.keys(ROLES) as [keyof typeof ROLES, ...(keyof typeof ROLES)[]]),
@@ -91,8 +100,13 @@ export async function requestRegisterOtpAction(rawPhone: string): Promise<{ ok: 
 export async function verifyRegisterOtpAction(rawPhone: string, code: string): Promise<{ ok: true; phone: string; proof: string } | { error: string }> {
   const phone = normalizePhone(rawPhone);
   if (!phone) return { error: "شمارهٔ موبایل معتبر نیست." };
+  // مثل ورود با کد: تلاش پیش از بررسی ثبت و فقط در صورت موفقیت پس گرفته می‌شود،
+  // تا درخواست‌های هم‌زمان پیش از ثبت اولین شکست از سقف رد نشوند
+  const limit = rateLimit("otp:verify:register", phone, OTP_VERIFY_PHONE_RULE());
+  if (!limit.ok) return { error: rateLimitMessage(limit.retryAfterSec) };
   const res = await verifyOtp(phone, "REGISTER", toEnDigits(String(code ?? "")).replace(/\s/g, ""));
   if (!res.ok) return { error: res.error };
+  rateLimitRefund("otp:verify:register", phone);
   return { ok: true, phone, proof: signPhoneProof(phone, "REGISTER") };
 }
 
@@ -127,7 +141,7 @@ export async function checkRegisterEmailAction(
 export async function registerAction(input: RegisterInput): Promise<RegisterFailure | never> {
   // کاربر واردشده نباید بتواند حساب دوم بسازد و نشستش را جابه‌جا کند
   if (await getSessionUserId()) {
-    return { error: "شما از قبل وارد شده‌اید." };
+    return { error: "از قبل وارد شده‌ای." };
   }
 
   const { phase } = await getPhase();

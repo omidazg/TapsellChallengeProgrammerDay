@@ -41,13 +41,13 @@ export function LoginForm({ next, smsEnabled, initialEmail = "" }: { next?: stri
       {mode === "email" ? <EmailLogin next={next} email={email} setEmail={setEmail} /> : <PhoneLogin next={next} />}
       <p className="mt-6 text-center text-sm text-brand-slate">
         هنوز حساب نساخته‌ای؟{" "}
-        <Link href={withEmail("/register", typed, next)} className="font-bold text-brand-cyan-dark">
+        <Link href={withEmail("/register", typed, next)} className="inline-flex items-center min-h-11 px-1 font-bold text-brand-cyan-dark underline underline-offset-4">
           ثبت‌نام کن
         </Link>
       </p>
       <p className="mt-2 text-center text-sm text-brand-slate">
         در لیست سفید نیستی؟{" "}
-        <Link href={withEmail("/access-request", typed)} className="font-bold text-brand-cyan-dark">
+        <Link href={withEmail("/access-request", typed)} className="inline-flex items-center min-h-11 px-1 font-bold text-brand-cyan-dark underline underline-offset-4">
           درخواست دسترسی بده
         </Link>
       </p>

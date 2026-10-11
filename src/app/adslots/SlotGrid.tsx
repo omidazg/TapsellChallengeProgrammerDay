@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/Avatar";
 import { Alert } from "@/components/ui";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { coins, jtime } from "@/lib/persian";
 import { buyAdSlotAction } from "./actions";
 import { AD_SLOT_KINDS } from "@/lib/constants";
@@ -107,6 +108,7 @@ function Cell({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
   const label = `${AD_SLOT_KINDS[cell.kind as Kind].label} ساعت ${jtime(new Date(cell.hourStart))}`;
 
   if (cell.state === "SOLD") {
@@ -116,17 +118,17 @@ function Cell({
           <Avatar seed={cell.winnerTeamId ?? cell.id} size={26} />
           <div className="min-w-0">
             <div className="text-xs font-black text-brand-navy truncate">{cell.winnerTeamName ?? "—"}</div>
-            <div className="text-[11px] fa-num text-brand-slate">{coins(cell.pricePaid ?? cell.price)}</div>
+            <div className="text-xs fa-num text-brand-slate">{coins(cell.pricePaid ?? cell.price)}</div>
           </div>
         </div>
-        <div className={`${cell.mine ? "chip-ok" : "chip-navy"} mt-1 !py-0.5 !px-2 text-[10px]`}>{cell.mine ? "مال تیم تو" : "فروخته شد"}</div>
+        <div className={`${cell.mine ? "chip-ok" : "chip-navy"} mt-1 !py-0.5 !px-2 text-xs`}>{cell.mine ? "مال تیم تو" : "فروخته شد"}</div>
       </div>
     );
   }
 
   if (cell.state === "PAST") {
     return (
-      <div className="card p-3 opacity-60">
+      <div className="card p-3 bg-brand-ice">
         <div className="text-xs text-brand-slate">زمانش گذشت</div>
       </div>
     );
@@ -134,8 +136,8 @@ function Cell({
 
   const short = cell.price > spendable;
 
-  function buy() {
-    if (!confirm(`${label} را به قیمت ${coins(cell.price)} برای تیمت بخرم؟`)) return;
+  async function buy() {
+    if (!(await confirm({ title: `${label} را به قیمت ${coins(cell.price)} برای تیمت بخرم؟`, confirmLabel: "بخر" }))) return;
     setError(null);
     startTransition(async () => {
       try {
@@ -150,7 +152,7 @@ function Cell({
 
   return (
     <div className="card p-3 space-y-1.5">
-      <div className="chip-cyan !py-0.5 !px-2 text-[10px]">آزاد</div>
+      <div className="chip-cyan !py-0.5 !px-2 text-xs">آزاد</div>
       {canBuy ? (
         <button
           type="button"
@@ -164,7 +166,7 @@ function Cell({
       ) : (
         <div className="fa-num text-xs font-bold text-brand-navy">{coins(cell.price)}</div>
       )}
-      {canBuy && short && <div className="text-[11px] text-brand-red">سکهٔ کافی نداری</div>}
+      {canBuy && short && <div className="text-xs text-brand-red">سکهٔ کافی نداری</div>}
       {error && (
         <div className="anim-pop">
           <Alert kind="error">{error}</Alert>

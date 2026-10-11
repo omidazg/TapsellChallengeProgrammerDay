@@ -52,7 +52,7 @@ export function JuryScoreForm({ productId, values }: { productId: string; values
       <div className="flex flex-wrap items-center gap-3">
         <SubmitButton />
         {state.ok && <span className="text-emerald-600 text-xs font-bold" role="status">ذخیره شد</span>}
-        <span className="text-[11px] text-brand-slate">فیلد خالی یعنی هنوز به آن پرسش نمره نداده‌ای.</span>
+        <span className="text-xs text-brand-slate">فیلد خالی یعنی هنوز به آن پرسش نمره نداده‌ای.</span>
       </div>
       {state.error && <Alert kind="error">{state.error}</Alert>}
     </form>

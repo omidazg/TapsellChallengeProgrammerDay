@@ -18,8 +18,12 @@ const SUGGESTED_QUESTIONS = [
   "در این فاز چه کار کنم؟",
 ];
 
-/** `loggedIn`: /api/assistant فقط برای کاربران واردشده پاسخ می‌دهد؛ مهمان به‌جای گفت‌وگو دعوت به ورود می‌بیند. */
-export function AskAgent({ loggedIn = true }: { loggedIn?: boolean }) {
+/**
+ * `loggedIn`: /api/assistant فقط برای کاربران واردشده پاسخ می‌دهد؛ مهمان به‌جای گفت‌وگو دعوت به ورود می‌بیند.
+ * `aiOff`: کلید هوش مصنوعی روی سرور تنظیم نشده (همان شرط صفحه‌های ایده/حمایت)؛ به‌جای گفت‌وگویی که
+ * همیشه خطا می‌دهد فقط یک کارت توضیح و راه جایگزین (راهنمای بازی) نشان داده می‌شود.
+ */
+export function AskAgent({ loggedIn = true, aiOff = false }: { loggedIn?: boolean; aiOff?: boolean }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMsg[]>([GREETING]);
   const [input, setInput] = useState("");
@@ -28,11 +32,14 @@ export function AskAgent({ loggedIn = true }: { loggedIn?: boolean }) {
   const listRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
-  // با باز شدن پنل فوکوس به ورودی می‌رود و Escape پنل را می‌بندد و فوکوس را به دکمه برمی‌گرداند
+  const chat = loggedIn && !aiOff;
+
+  // با باز شدن پنل فوکوس به ورودی (یا اگر ورودی نیست به دکمهٔ بستن) می‌رود و Escape پنل را می‌بندد و فوکوس را به دکمه برمی‌گرداند
   useEffect(() => {
     if (!open) return;
-    inputRef.current?.focus();
+    (inputRef.current ?? closeRef.current)?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setOpen(false);
@@ -90,9 +97,8 @@ export function AskAgent({ loggedIn = true }: { loggedIn?: boolean }) {
         aria-expanded={open}
         aria-controls="ask-agent-panel"
         aria-label={open ? "بستن دستیار هوش مصنوعی" : "باز کردن دستیار هوش مصنوعی"}
-        // فاصله از پایین به ارتفاع نوار پایینی موبایل (اگر باشد) اضافه می‌شود تا روی آن نیفتد
-        style={{ bottom: "calc(var(--bottom-nav-h, 0px) + 1rem)" }}
-        className="print:hidden fixed left-4 z-50 size-14 rounded-full bg-brand-navy text-white shadow-lift flex items-center justify-center text-2xl hover:opacity-90 transition"
+        // float-row (globals.css): ردیف پایین پشتهٔ شناور، بالای نوار پایین موبایل؛ گوشهٔ «انتها» (چپ در RTL)
+        className="float-row print:hidden fixed end-4 z-50 size-14 rounded-full bg-brand-navy text-white shadow-lift flex items-center justify-center text-2xl hover:opacity-90 transition"
       >
         <span aria-hidden>{open ? "✕" : "🤖"}</span>
       </button>
@@ -102,11 +108,13 @@ export function AskAgent({ loggedIn = true }: { loggedIn?: boolean }) {
           id="ask-agent-panel"
           role="dialog"
           aria-label="دستیار سؤال‌وجواب مسابقه"
-          className="print:hidden fixed left-4 z-50 w-[92vw] max-w-sm card p-0 flex flex-col overflow-hidden shadow-lift"
-          style={{
-            bottom: "calc(var(--bottom-nav-h, 0px) + 5rem)",
-            height: "min(70vh, calc(100dvh - var(--bottom-nav-h, 0px) - 6.5rem), 520px)",
-          }}
+          // float-above-row: بالای دکمهٔ دستیار و بنر اعلان فوری (هر کدام بلندتر است)، تا رویشان نیفتد
+          className="float-above-row print:hidden fixed end-4 z-50 w-[92vw] max-w-sm card p-0 flex flex-col overflow-hidden shadow-lift"
+          style={
+            chat
+              ? { height: "min(70vh, calc(100dvh - var(--bottom-nav-h, 0px) - max(var(--fab-size), var(--push-prompt-h)) - 6rem), 520px)" }
+              : undefined
+          }
         >
           <div className="flex items-start justify-between gap-2 px-4 py-3 border-b border-brand-mist bg-brand-ice">
             <div className="min-w-0">
@@ -114,18 +122,31 @@ export function AskAgent({ loggedIn = true }: { loggedIn?: boolean }) {
               <div className="text-xs text-brand-slate">پاسخ‌ها بر اساس قوانین رسمی بازی است.</div>
             </div>
             <button
+              ref={closeRef}
               type="button"
               onClick={() => {
                 setOpen(false);
                 toggleRef.current?.focus();
               }}
               aria-label="بستن دستیار"
-              className="shrink-0 size-8 -m-1 rounded-full flex items-center justify-center text-brand-slate hover:bg-brand-mist hover:text-brand-navy transition"
+              className="shrink-0 size-11 -m-2 rounded-full flex items-center justify-center text-brand-slate hover:bg-brand-mist hover:text-brand-navy transition"
             >
               <span aria-hidden>✕</span>
             </button>
           </div>
 
+          {aiOff ? (
+            <div className="p-4 space-y-3">
+              <div className="rounded-2xl border border-brand-mist bg-brand-ice px-4 py-3 text-sm leading-7 text-brand-navy">
+                <span aria-hidden>🤖</span> دستیار هوش مصنوعی در این دوره فعال نیست. جواب بیشتر سؤال‌ها دربارهٔ قوانین،
+                زمان‌بندی و جوایز در راهنمای بازی هست؛ بقیه را از برگزارکننده بپرس.
+              </div>
+              <Link href="/guide" onClick={() => setOpen(false)} className="btn-ghost w-full min-h-11">
+                راهنمای بازی
+              </Link>
+            </div>
+          ) : (
+          <>
           <div ref={listRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-2" aria-live="polite">
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.role === "user" ? "justify-start" : "justify-end"}`}>
@@ -152,7 +173,7 @@ export function AskAgent({ loggedIn = true }: { loggedIn?: boolean }) {
                 ))}
               </div>
             )}
-            {pending && <div className="text-xs text-brand-slate px-1">در حال نوشتن پاسخ...</div>}
+            {pending && <div className="text-xs text-brand-slate px-1">در حال نوشتن پاسخ…</div>}
             {error && <div role="alert" className="text-xs text-brand-red px-1">{error}</div>}
           </div>
 
@@ -176,15 +197,18 @@ export function AskAgent({ loggedIn = true }: { loggedIn?: boolean }) {
               aria-label="سؤال از دستیار"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="سؤالت را بنویس..."
+              placeholder="سؤالت را بنویس…"
               maxLength={1000}
               disabled={pending}
-              className="flex-1 rounded-pill border border-brand-mist px-3.5 py-2 text-sm outline-none focus:border-brand-cyan-dark"
+              // بدون outline-none: حلقهٔ فوکوس پایه (--focus-ring) دیده می‌شود
+              className="flex-1 min-w-0 rounded-pill border border-brand-mist bg-white px-3.5 py-2 text-sm text-brand-navy focus:border-brand-cyan-dark"
             />
             <button type="submit" disabled={pending || !input.trim()} className="btn-primary !py-2 !px-4 !text-sm disabled:opacity-50">
               ارسال
             </button>
           </form>
+          )}
+          </>
           )}
         </div>
       )}

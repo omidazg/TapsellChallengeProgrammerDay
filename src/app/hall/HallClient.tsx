@@ -24,7 +24,7 @@ export function HallClient() {
   const [now, setNow] = useState<number | null>(null);
   const skewRef = useRef(0);
   const prevPhaseRef = useRef<string | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLElement>(null);
 
   // ساعت محلی برای شمارش معکوس نرم؛ هر ثانیه به‌روز می‌شود.
   useEffect(() => {
@@ -73,10 +73,14 @@ export function HallClient() {
   const remaining = data?.endsAt && now !== null ? new Date(data.endsAt).getTime() - now : null;
 
   return (
-    <div
+    // main#main: هدف لینک «پرش به محتوای اصلی» در layout و لندمارک اصلی صفحه (AppShell برای /hall رندر نمی‌شود).
+    // z-[99] تا لینک پرش (z-100 در globals.css) هنگام فوکوس روی این overlay دیده شود.
+    <main
       ref={rootRef}
+      id="main"
+      tabIndex={-1}
       dir="rtl"
-      className="fixed inset-0 z-[100] flex flex-col overflow-hidden bg-[#031c2e] text-white"
+      className="fixed inset-0 z-[99] flex flex-col overflow-hidden bg-[#031c2e] text-white outline-none"
       style={{ fontFamily: "var(--font-sans)" }}
     >
       <ConnectionBanner failing={failures >= 2} />
@@ -91,18 +95,32 @@ export function HallClient() {
         noDeadline={data !== null && !data.endsAt}
         onToggleFullscreen={toggleFullscreen} isFullscreen={isFullscreen} />
 
-      {data === null ? (
-        <div className="flex-1 flex items-center justify-center text-2xl text-white/60">در حال بارگذاری نمای سالن…</div>
-      ) : (
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1.1fr_1.4fr_1.1fr] gap-4 p-4">
-          <TopTeamsPanel teams={data.topTeams} metricLabel={data.metricLabel} closed={data.phase === "CLOSED"} />
-          <AuctionPanel auction={data.auction} now={now} />
-          <FeedPanel feed={data.feed} />
-        </div>
-      )}
+      {/* ردیف‌های ثابت (موبایل: سه ردیف هم‌اندازه؛ دسکتاپ: یک ردیف) و قاب پنل‌ها از اول رندر می‌شوند
+          تا رسیدن داده فقط محتوای داخل پنل‌ها را عوض کند و چیزی جابه‌جا نشود (CLS). */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 grid-rows-3 lg:grid-cols-[1.1fr_1.4fr_1.1fr] lg:grid-rows-1 gap-4 p-4" aria-busy={data === null}>
+        {data === null ? (
+          <>
+            <Panel title="تیم‌های برتر">
+              <PanelLoading />
+            </Panel>
+            <Panel title="حراج زنده">
+              <PanelLoading />
+            </Panel>
+            <Panel title="رویدادهای زنده">
+              <PanelLoading />
+            </Panel>
+          </>
+        ) : (
+          <>
+            <TopTeamsPanel teams={data.topTeams} metricLabel={data.metricLabel} closed={data.phase === "CLOSED"} />
+            <AuctionPanel auction={data.auction} now={now} />
+            <FeedPanel feed={data.feed} />
+          </>
+        )}
+      </div>
 
       <TickerBar ticker={data?.ticker ?? null} />
-    </div>
+    </main>
   );
 }
 
@@ -126,18 +144,19 @@ function HallHeader({
         <h1 className="text-2xl sm:text-3xl font-black break-words">میدان بنیان‌گذاران</h1>
       </div>
       <div className="flex items-center gap-4 sm:gap-6 shrink-0">
-        {phaseLabel && (
-          <div className="text-left">
-            <div className="text-xs sm:text-sm text-brand-cyan font-bold">{phaseLabel}</div>
+        {/* جای بلوک فاز از اول رزرو می‌شود (حداقل پهنا و ارتفاع ثابت) تا با رسیدن داده سرصفحه جابه‌جا نشود */}
+        <div className="text-left min-w-[8.5rem] sm:min-w-[13rem]">
+          <div className="text-xs sm:text-sm text-brand-cyan font-bold min-h-4 sm:min-h-5">{phaseLabel ?? "\u00a0"}</div>
+          <div className="min-h-9 sm:min-h-12 flex items-center justify-end">
             {noDeadline ? (
-              <div className="text-lg sm:text-2xl font-black text-white/70">بدون زمان‌بندی</div>
+              <span className="text-lg sm:text-2xl font-black text-white/70">بدون زمان‌بندی</span>
             ) : (
-              <div className="fa-num text-3xl sm:text-5xl font-black tabular-nums">
-                {remaining !== null ? duration(remaining) : "…"}
-              </div>
+              <span className="fa-num text-3xl sm:text-5xl font-black tabular-nums">
+                {phaseLabel && remaining !== null ? duration(remaining) : "…"}
+              </span>
             )}
           </div>
-        )}
+        </div>
         <button
           type="button"
           onClick={onToggleFullscreen}
@@ -148,6 +167,10 @@ function HallHeader({
       </div>
     </header>
   );
+}
+
+function PanelLoading() {
+  return <p className="text-white/60 text-lg">در حال بارگذاری…</p>;
 }
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
@@ -232,7 +255,7 @@ function TickerBar({ ticker }: { ticker: HallPayload["ticker"] | null }) {
   return (
     <div className="shrink-0 border-t border-white/10 bg-black/30 h-14 flex items-center overflow-hidden">
       {loop.length === 0 ? (
-        <div className="px-6 text-white/50 text-base">هنوز خریدی ثبت نشده…</div>
+        <div className="px-6 text-white/50 text-base">هنوز خریدی ثبت نشده است.</div>
       ) : (
         <div className="flex w-max shrink-0 items-center gap-10 px-6 whitespace-nowrap animate-[ticker-loop_28s_linear_infinite] text-lg sm:text-xl font-bold">
           {loop.map((it, i) => (

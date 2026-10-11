@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Alert } from "@/components/ui";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { Avatar } from "@/components/Avatar";
 import { coins } from "@/lib/persian";
 import { copyText } from "@/lib/clipboard";
@@ -35,6 +36,7 @@ export function UserRow({ user, isMe }: { user: UserRowData; isMe: boolean }) {
   const [blockState, blockAction] = useActionState<UsersActionState, FormData>(toggleBlockAction, {});
   const [phoneState, phoneAction, phonePending] = useActionState<UsersActionState, FormData>(setUserPhoneAction, {});
   const [copied, setCopied] = useState(false);
+  const confirmSubmit = useConfirmSubmit();
 
   const canBlock = !isMe && !user.isAdmin;
 
@@ -52,7 +54,7 @@ export function UserRow({ user, isMe }: { user: UserRowData; isMe: boolean }) {
       <div className="min-w-[160px] max-w-full break-words">
         <div className="font-bold text-brand-navy break-words flex items-center gap-2">
           {user.nickname}
-          {user.blocked && <span className="chip chip-red !py-0.5 !px-2 text-[10px]">مسدود</span>}
+          {user.blocked && <span className="chip chip-red !py-0.5 !px-2 text-xs">مسدود</span>}
         </div>
         <div className="text-xs text-brand-slate break-words">{user.email}</div>
         {user.phone && <div className="text-xs text-brand-slate" dir="ltr">{user.phone}</div>}
@@ -65,7 +67,7 @@ export function UserRow({ user, isMe }: { user: UserRowData; isMe: boolean }) {
       <form
         action={toggleAction}
         onSubmit={(e) => {
-          if (!confirm(`دسترسی برگزارکنندگی ${user.nickname} تغییر کند؟`)) e.preventDefault();
+          confirmSubmit(e, `دسترسی برگزارکنندگی ${user.nickname} تغییر کند؟`);
         }}
       >
         <input type="hidden" name="userId" value={user.id} />
@@ -87,7 +89,7 @@ export function UserRow({ user, isMe }: { user: UserRowData; isMe: boolean }) {
           const amount = Number(fd.get("amount"));
           if (!Number.isFinite(amount) || amount === 0) return; // خطای اعتبارسنجی را سرور نشان می‌دهد
           const verb = amount > 0 ? `${coins(amount)} به کیف سکهٔ` : `${coins(-amount)} از کیف سکهٔ`;
-          if (!confirm(`${verb} ${user.nickname} ${amount > 0 ? "افزوده" : "کسر"} شود؟ این تغییر در دفتر کل ثبت می‌شود.`)) e.preventDefault();
+          confirmSubmit(e, { title: `${verb} ${user.nickname} ${amount > 0 ? "افزوده" : "کسر"} شود؟`, body: "این تغییر در دفتر کل ثبت می‌شود." });
         }}
       >
         <input type="hidden" name="userId" value={user.id} />
@@ -99,7 +101,7 @@ export function UserRow({ user, isMe }: { user: UserRowData; isMe: boolean }) {
       <form
         action={resetAction}
         onSubmit={(e) => {
-          if (!confirm(`رمز عبور ${user.nickname} بازنشانی شود؟ نشست‌های فعلی او باطل می‌شود.`)) e.preventDefault();
+          confirmSubmit(e, { title: `رمز عبور ${user.nickname} بازنشانی شود؟`, body: "نشست‌های فعلی او باطل می‌شود.", destructive: true });
         }}
       >
         <input type="hidden" name="userId" value={user.id} />
@@ -113,7 +115,7 @@ export function UserRow({ user, isMe }: { user: UserRowData; isMe: boolean }) {
           action={blockAction}
           onSubmit={(e) => {
             const verb = user.blocked ? "رفع مسدودیت" : "مسدودسازی";
-            if (!confirm(`${verb} ${user.nickname} انجام شود؟`)) e.preventDefault();
+            confirmSubmit(e, { title: `${verb} ${user.nickname} انجام شود؟`, destructive: !user.blocked });
           }}
         >
           <input type="hidden" name="userId" value={user.id} />

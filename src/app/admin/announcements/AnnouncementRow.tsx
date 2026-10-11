@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { Alert } from "@/components/ui";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { jdatetime } from "@/lib/persian";
 import { toggleAnnouncementAction, deleteAnnouncementAction, type AnnouncementActionState } from "./actions";
 
@@ -19,6 +20,7 @@ export type AnnouncementRowData = {
 export function AnnouncementRow({ announcement }: { announcement: AnnouncementRowData }) {
   const [toggleState, toggleAction] = useActionState<AnnouncementActionState, FormData>(toggleAnnouncementAction, {});
   const [deleteState, deleteAction] = useActionState<AnnouncementActionState, FormData>(deleteAnnouncementAction, {});
+  const confirmSubmit = useConfirmSubmit();
 
   return (
     <div className="card p-4 sm:p-5 flex flex-wrap items-center gap-3 anim-rise">
@@ -44,7 +46,7 @@ export function AnnouncementRow({ announcement }: { announcement: AnnouncementRo
       <form
         action={deleteAction}
         onSubmit={(e) => {
-          if (!confirm("این اطلاعیه برای همیشه حذف شود؟")) e.preventDefault();
+          confirmSubmit(e, { title: "این اطلاعیه برای همیشه حذف شود؟", confirmLabel: "حذف", destructive: true });
         }}
       >
         <input type="hidden" name="id" value={announcement.id} />

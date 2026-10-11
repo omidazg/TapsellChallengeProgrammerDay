@@ -1,9 +1,12 @@
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import { getPhase, phaseIndex } from "./phase";
 import { ROLES, type RoleKey } from "./constants";
 import { notifyUser } from "./notifications";
 import { fa } from "./persian";
+import { invalidate } from "./ttl-cache";
 
 /** ظرفیت هر تیم (۱ تا ۳ نفر؛ تیم یک‌نفره = شرکت فردی) */
 export const TEAM_FULL = 3;
@@ -15,8 +18,8 @@ const ERR = {
   noUser: "کاربر یافت نشد.",
   phase: "این کار فقط تا پایان فاز «اتاق ایده» ممکن است.",
   leavePhase: "خروج از تیم فقط در فاز ثبت‌نام و تیم امکان‌پذیر است.",
-  alreadyInTeam: "شما قبلاً عضو یک تیم هستید.",
-  notInTeam: "شما عضو هیچ تیمی نیستید.",
+  alreadyInTeam: "تو قبلاً عضو یک تیم هستی.",
+  notInTeam: "تو عضو هیچ تیمی نیستی.",
   teamFull: "تیم پر است؛ ظرفیت هر تیم سه نفر است.",
   targetFull: "این تیم پر شده است.",
   nameTaken: "این نام تیم قبلاً استفاده شده است.",
@@ -24,24 +27,47 @@ const ERR = {
   inviteeHasTeam: "این کاربر قبلاً عضو یک تیم است.",
   inviteDuplicate: "این ایمیل قبلاً دعوت شده است.",
   inviteInvalid: "این دعوت‌نامه دیگر معتبر نیست.",
-  leaveHasIdea: "تیم شما ایده یا محصول ثبت کرده؛ برای ترک تیم با برگزارکننده هماهنگ کن.",
+  leaveHasIdea: "تیمت ایده یا محصول ثبت کرده؛ برای ترک تیم با برگزارکننده هماهنگ کن.",
   raced: "وضعیت تیم تغییر کرده است؛ صفحه را تازه کن و دوباره تلاش کن.",
   teamNotFound: "تیمی با این لینک پیدا نشد.",
+  inviteLinkSolo: "تیم فردی لینک دعوت ندارد؛ اول تیمت را برای هم‌تیمی باز کن.",
   soloClosed: "این شرکت‌کننده فردی بازی می‌کند و هم‌تیمی نمی‌پذیرد.",
   soloHasMates: "تیمت عضو دیگری دارد؛ شرکت فردی فقط برای تیم یک‌نفره است.",
 } as const;
 
-/** تیم به‌همراه اعضا، ایده، محصول و دعوت‌های در انتظار */
+/** توکن تصادفی ۱۲۸ بیتی برای لینک دعوت؛ برخلاف اسلاگ، از روی نام یا بازار قابل حدس نیست */
+export function newInviteToken() {
+  return randomBytes(16).toString("hex");
+}
+
+/** فیلدهای عمومی عضو تیم؛ این داده به کامپوننت کلاینت می‌رود، پس هش رمز/ایمیل/شماره نباید در آن باشد */
+const PUBLIC_MEMBER = { id: true, nickname: true, role: true, avatarSeed: true, createdAt: true } as const;
+
+/**
+ * تیم به‌همراه اعضا، ایده، محصول و دعوت‌های در انتظار.
+ * شامل inviteToken است؛ فقط برای نمایش به اعضای همان تیم (اتاق تیم).
+ */
 export async function getTeamWithMembers(teamId: string) {
-  return prisma.team.findUnique({
+  const team = await prisma.team.findUnique({
     where: { id: teamId },
     include: {
-      members: { orderBy: { createdAt: "asc" } },
+      members: { orderBy: { createdAt: "asc" }, select: PUBLIC_MEMBER },
       idea: true,
       product: true,
-      invites: { where: { status: "PENDING" }, include: { inviter: true }, orderBy: { createdAt: "desc" } },
+      invites: {
+        where: { status: "PENDING" },
+        include: { inviter: { select: PUBLIC_MEMBER } },
+        orderBy: { createdAt: "desc" },
+      },
     },
   });
+  // ستون nullable است (مهاجرت بدون بازسازی جدول)؛ تیمی که به هر دلیل توکن ندارد همین‌جا می‌گیرد
+  if (team && !team.inviteToken) {
+    await prisma.team.updateMany({ where: { id: team.id, inviteToken: null }, data: { inviteToken: newInviteToken() } });
+    const fresh = await prisma.team.findUnique({ where: { id: team.id }, select: { inviteToken: true } });
+    team.inviteToken = fresh?.inviteToken ?? null;
+  }
+  return team;
 }
 
 export type TeamWithMembers = NonNullable<Awaited<ReturnType<typeof getTeamWithMembers>>>;
@@ -141,6 +167,40 @@ async function notifyTeamOfNewMember(teamId: string, joinedUserId: string, joine
   }
 }
 
+/**
+ * داخل تراکنش: آیا تیم هنوز عضو تازه می‌پذیرد؟ ظرفیت و «شرکت فردی» دوباره خوانده می‌شوند
+ * تا پیوستنِ هم‌زمان با goSolo یا با پیوستنی دیگر از قاعده عبور نکند.
+ */
+async function assertJoinableTx(tx: Prisma.TransactionClient, teamId: string) {
+  const team = await tx.team.findUnique({ where: { id: teamId }, select: { solo: true } });
+  if (!team) throw new Error("GONE");
+  if (team.solo) throw new Error("SOLO");
+  const memberCount = await tx.user.count({ where: { teamId } });
+  if (memberCount >= TEAM_FULL) throw new Error("FULL");
+}
+
+/**
+ * داخل تراکنش: تیم بی‌عضو را همراه وابسته‌هایش حذف می‌کند.
+ * در schema.prisma هیچ onDelete: Cascade تعریف نشده، پس رکوردهای وابسته
+ * باید صریح پاک شوند وگرنه حذف تیم با خطای کلید خارجی شکست می‌خورد.
+ * تیمی که هنوز عضو یا ایده/محصول دارد دست نمی‌خورد؛ خروجی true یعنی حذف شد.
+ */
+async function deleteEmptyTeamTx(tx: Prisma.TransactionClient, teamId: string): Promise<boolean> {
+  if ((await tx.user.count({ where: { teamId } })) > 0) return false;
+  const team = await tx.team.findUnique({
+    where: { id: teamId },
+    select: { idea: { select: { id: true } }, product: { select: { id: true } } },
+  });
+  if (!team || team.idea || team.product) return false;
+  await tx.teamInvite.deleteMany({ where: { teamId } });
+  await tx.adSlotBid.deleteMany({ where: { teamId } });
+  await tx.collusionFlag.deleteMany({ where: { OR: [{ teamId }, { otherTeamId: teamId }] } });
+  await tx.teamScore.deleteMany({ where: { teamId } });
+  await tx.teamLeaderVote.deleteMany({ where: { teamId } });
+  await tx.team.delete({ where: { id: teamId } });
+  return true;
+}
+
 /** تیم تازه می‌سازد و کاربر را در همان تراکنش عضو آن می‌کند */
 const createTeamSchema = z.object({
   name: z.string().trim().min(2, "نام تیم خیلی کوتاه است").max(40, "نام تیم خیلی بلند است"),
@@ -184,12 +244,23 @@ export async function goSolo(userId: string): Promise<TeamResult> {
   if (!(await isTeamFormingPhase())) return { error: ERR.phase };
 
   if (user.teamId) {
-    const count = await prisma.user.count({ where: { teamId: user.teamId } });
-    if (count > 1) return { error: ERR.soloHasMates };
-    await prisma.$transaction([
-      prisma.team.update({ where: { id: user.teamId }, data: { solo: true } }),
-      prisma.teamInvite.updateMany({ where: { teamId: user.teamId, status: "PENDING" }, data: { status: "DECLINED" } }),
-    ]);
+    const teamId = user.teamId;
+    // شمارش اعضا و بستن تیم در یک تراکنش: پیوستنِ هم‌زمان (که solo را داخل تراکنش خودش
+    // دوباره می‌خواند) یا پیش از این تراکنش ثبت شده و این‌جا دیده می‌شود، یا بعد از آن و رد می‌شود.
+    try {
+      await prisma.$transaction(async (tx) => {
+        const members = await tx.user.findMany({ where: { teamId }, select: { id: true } });
+        if (!members.some((m) => m.id === userId)) throw new Error("RACED");
+        if (members.length > 1) throw new Error("HAS_MATES");
+        await tx.team.update({ where: { id: teamId }, data: { solo: true } });
+        await tx.teamInvite.updateMany({ where: { teamId, status: "PENDING" }, data: { status: "DECLINED" } });
+      });
+    } catch (e) {
+      const m = e instanceof Error ? e.message : "";
+      if (m === "HAS_MATES") return { error: ERR.soloHasMates };
+      if (m !== "RACED") console.error("goSolo failed", e);
+      return { error: ERR.raced };
+    }
     return { ok: true };
   }
 
@@ -246,8 +317,7 @@ export async function joinMatchmaking(userId: string): Promise<TeamResult> {
     // ظرفیت دوباره داخل تراکنش بررسی می‌شود تا دو درخواست هم‌زمان تیم را از سه نفر بیشتر نکنند
     try {
       await prisma.$transaction(async (tx) => {
-        const memberCount = await tx.user.count({ where: { teamId: target.id } });
-        if (memberCount >= TEAM_FULL) throw new Error("FULL");
+        await assertJoinableTx(tx, target.id);
         const moved = await tx.user.updateMany({ where: { id: userId, teamId: null }, data: { teamId: target.id } });
         if (moved.count === 0) throw new Error("RACED");
         await tx.teamInvite.updateMany({
@@ -306,7 +376,8 @@ export async function inviteToTeam(userId: string, email: string): Promise<TeamR
         kind: "team_invite",
         title: "دعوت به تیم",
         body: `${user.nickname} تو را به تیم «${team?.name ?? ""}» دعوت کرد.`,
-        href: team ? `/join/${team.slug}` : "/team",
+        // دعوت ایمیلی در «اتاق تیم» پذیرفته می‌شود؛ لینک توکن‌دار پیوستن فقط دست اعضای تیم است
+        href: "/team",
       });
     } catch (e) {
       console.error("invite notification failed", e);
@@ -332,8 +403,7 @@ export async function acceptInvite(userId: string, inviteId: string): Promise<Te
 
   try {
     await prisma.$transaction(async (tx) => {
-      const memberCount = await tx.user.count({ where: { teamId: invite.teamId } });
-      if (memberCount >= TEAM_FULL) throw new Error("FULL");
+      await assertJoinableTx(tx, invite.teamId);
       const moved = await tx.user.updateMany({ where: { id: userId, teamId: null }, data: { teamId: invite.teamId } });
       if (moved.count === 0) throw new Error("RACED");
       const claimed = await tx.teamInvite.updateMany({
@@ -345,32 +415,42 @@ export async function acceptInvite(userId: string, inviteId: string): Promise<Te
   } catch (e) {
     const m = e instanceof Error ? e.message : "";
     if (m === "FULL") return { error: ERR.targetFull };
+    if (m === "SOLO") return { error: ERR.soloClosed };
     if (m === "RACED") return { error: ERR.alreadyInTeam };
-    if (m === "INVALID") return { error: ERR.inviteInvalid };
+    if (m === "INVALID" || m === "GONE") return { error: ERR.inviteInvalid };
     return { error: ERR.raced };
   }
   await notifyTeamOfNewMember(invite.teamId, userId, user.nickname);
   return { ok: true };
 }
 
+/** شکل مجاز توکن در URL (hex تصادفی یا uuid پیش‌فرض Prisma) */
+function validTokenShape(token: unknown): token is string {
+  return typeof token === "string" && token.length >= 16 && token.length <= 64 && /^[A-Za-z0-9-]+$/.test(token);
+}
+
 /**
- * پیوستن به تیم از طریق لینک دعوت (اسلاگ تیم). تکرار نقش مجاز است؛ هشدار در UI نشان داده می‌شود.
+ * پیوستن به تیم از طریق لینک دعوت (/join/<inviteToken>). اسلاگ تیم عمومی است (بازار، جدول امتیاز)،
+ * پس پیوستن فقط با توکن تصادفی‌ای ممکن است که اعضای تیم پخش می‌کنند.
+ * تکرار نقش مجاز است؛ هشدار در UI نشان داده می‌شود.
  */
-export async function joinBySlug(userId: string, slug: string): Promise<TeamResult> {
+export async function joinByInviteToken(userId: string, token: string): Promise<TeamResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return { error: ERR.noUser };
   if (!(await isTeamFormingPhase())) return { error: ERR.phase };
   if (user.teamId) return { error: ERR.alreadyInTeam };
 
-  if (typeof slug !== "string" || !slug) return { error: ERR.teamNotFound };
-  const team = await prisma.team.findUnique({ where: { slug } });
+  if (!validTokenShape(token)) return { error: ERR.teamNotFound };
+  const team = await prisma.team.findUnique({ where: { inviteToken: token }, select: { id: true, solo: true } });
   if (!team) return { error: ERR.teamNotFound };
   if (team.solo) return { error: ERR.soloClosed };
 
   try {
     await prisma.$transaction(async (tx) => {
-      const memberCount = await tx.user.count({ where: { teamId: team.id } });
-      if (memberCount >= TEAM_FULL) throw new Error("FULL");
+      // ممکن است عضوی همین حالا لینک را عوض کرده باشد؛ داخل تراکنش دوباره بررسی می‌شود
+      const still = await tx.team.count({ where: { id: team.id, inviteToken: token } });
+      if (still === 0) throw new Error("GONE");
+      await assertJoinableTx(tx, team.id);
       const moved = await tx.user.updateMany({ where: { id: userId, teamId: null }, data: { teamId: team.id } });
       if (moved.count === 0) throw new Error("RACED");
       // دعوت‌نامهٔ در انتظارِ همین تیم برای این کاربر دیگر «در انتظار» نیست
@@ -382,10 +462,26 @@ export async function joinBySlug(userId: string, slug: string): Promise<TeamResu
   } catch (e) {
     const m = e instanceof Error ? e.message : "";
     if (m === "FULL") return { error: ERR.targetFull };
+    if (m === "SOLO") return { error: ERR.soloClosed };
+    if (m === "GONE") return { error: ERR.teamNotFound };
     if (m === "RACED") return { error: ERR.alreadyInTeam };
     return { error: ERR.raced };
   }
   await notifyTeamOfNewMember(team.id, userId, user.nickname);
+  return { ok: true };
+}
+
+/**
+ * لینک دعوت تازه برای تیمِ کاربر؛ لینک قبلی بی‌درنگ از کار می‌افتد
+ * (مثلاً اگر لینک جایی پخش شده که نباید). هر عضو تیم می‌تواند این کار را بکند.
+ */
+export async function regenerateInviteToken(userId: string): Promise<TeamResult> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { team: { select: { solo: true } } } });
+  if (!user) return { error: ERR.noUser };
+  if (!(await isTeamFormingPhase())) return { error: ERR.phase };
+  if (!user.teamId || !user.team) return { error: ERR.notInTeam };
+  if (user.team.solo) return { error: ERR.inviteLinkSolo };
+  await prisma.team.update({ where: { id: user.teamId }, data: { inviteToken: newInviteToken() } });
   return { ok: true };
 }
 
@@ -400,10 +496,11 @@ export type TeamPreview = {
   coverage: RoleCoverage[];
 };
 
-/** پیش‌نمایش تیم از روی اسلاگ — برای صفحهٔ لینک دعوت، بدون نیاز به عضویت */
-export async function getTeamPreviewBySlug(slug: string): Promise<TeamPreview | null> {
+/** پیش‌نمایش تیم از روی توکن دعوت — برای صفحهٔ لینک دعوت، بدون نیاز به عضویت */
+export async function getTeamPreviewByInviteToken(token: string): Promise<TeamPreview | null> {
+  if (!validTokenShape(token)) return null;
   const team = await prisma.team.findUnique({
-    where: { slug },
+    where: { inviteToken: token },
     select: {
       id: true,
       name: true,
@@ -444,11 +541,7 @@ export async function declineInvite(userId: string, inviteId: string): Promise<T
   return { ok: true };
 }
 
-/**
- * ترک تیم؛ اگر تیم خالی شود همراه وابسته‌هایش حذف می‌شود.
- * در schema.prisma هیچ onDelete: Cascade تعریف نشده، پس رکوردهای وابسته
- * باید صریح پاک شوند وگرنه حذف تیم با خطای کلید خارجی شکست می‌خورد.
- */
+/** ترک تیم؛ اگر تیم خالی شود همراه وابسته‌هایش حذف می‌شود (deleteEmptyTeamTx). */
 export async function leaveTeam(userId: string): Promise<TeamResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return { error: ERR.noUser };
@@ -461,15 +554,8 @@ export async function leaveTeam(userId: string): Promise<TeamResult> {
 
   await prisma.$transaction(async (tx) => {
     await tx.user.update({ where: { id: userId }, data: { teamId: null } });
-    const remaining = await tx.user.count({ where: { teamId } });
-    if (remaining > 0) return;
-    // تیم خالی شد: وابسته‌ها را صریح پاک کن، بعد خود تیم را
-    await tx.teamInvite.deleteMany({ where: { teamId } });
-    await tx.adSlotBid.deleteMany({ where: { teamId } });
-    await tx.collusionFlag.deleteMany({ where: { OR: [{ teamId }, { otherTeamId: teamId }] } });
-    await tx.teamScore.deleteMany({ where: { teamId } });
-    await tx.teamLeaderVote.deleteMany({ where: { teamId } });
-    await tx.team.delete({ where: { id: teamId } });
+    // اگر تیم خالی شد: وابسته‌ها و خود تیم پاک می‌شوند
+    await deleteEmptyTeamTx(tx, teamId);
   });
 
   return { ok: true };
@@ -477,26 +563,36 @@ export async function leaveTeam(userId: string): Promise<TeamResult> {
 
 // ---------- ابزارهای برگزارکننده (بدون قفل فاز) ----------
 
-/** انتقال کاربر به تیم دیگر؛ سقف سه‌نفره رعایت می‌شود */
+/**
+ * انتقال کاربر به تیم دیگر؛ سقف سه‌نفره رعایت می‌شود.
+ * اگر تیم مبدأ خالی شود و ایده/محصولی نداشته باشد حذف می‌شود تا تیم بی‌عضو در جدول امتیاز نماند
+ * (تیم خالیِ دارای ایده/محصول می‌ماند؛ scoring.ts تیم بی‌عضو را از جایزه کنار می‌گذارد).
+ */
 export async function adminMoveUserToTeam(userId: string, targetTeamId: string): Promise<TeamResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return { error: ERR.noUser };
   const target = await prisma.team.findUnique({ where: { id: targetTeamId } });
   if (!target) return { error: "تیم مقصد پیدا نشد." };
   if (user.teamId === targetTeamId) return { error: "کاربر همین حالا عضو این تیم است." };
+  const sourceTeamId = user.teamId;
 
   try {
     await prisma.$transaction(async (tx) => {
       const count = await tx.user.count({ where: { teamId: targetTeamId } });
       if (count >= TEAM_FULL) throw new Error("FULL");
-      await tx.user.update({ where: { id: userId }, data: { teamId: targetTeamId } });
+      // شرط teamId: اگر تیم کاربر در همین فاصله عوض شده، انتقال بر پایهٔ دادهٔ کهنه انجام نشود
+      const moved = await tx.user.updateMany({ where: { id: userId, teamId: sourceTeamId }, data: { teamId: targetTeamId } });
+      if (moved.count === 0) throw new Error("RACED");
       // تیم مقصد دیگر یک‌نفره نیست
       await tx.team.update({ where: { id: targetTeamId }, data: { solo: false } });
+      if (sourceTeamId) await deleteEmptyTeamTx(tx, sourceTeamId);
     });
   } catch (e) {
     if (e instanceof Error && e.message === "FULL") return { error: ERR.targetFull };
     return { error: ERR.raced };
   }
+  // ترکیب تیم‌ها (و شاید خود فهرست تیم‌ها) عوض شده؛ امتیازهای کش‌شده دیگر معتبر نیستند
+  invalidate("scores:");
   return { ok: true };
 }
 
@@ -524,16 +620,13 @@ export async function adminMergeTeams(teamAId: string, teamBId: string): Promise
     await prisma.$transaction(async (tx) => {
       await tx.user.updateMany({ where: { teamId: teamBId }, data: { teamId: teamAId } });
       await tx.team.update({ where: { id: teamAId }, data: { solo: false } });
-      await tx.teamInvite.deleteMany({ where: { teamId: teamBId } });
-      await tx.adSlotBid.deleteMany({ where: { teamId: teamBId } });
-      await tx.collusionFlag.deleteMany({ where: { OR: [{ teamId: teamBId }, { otherTeamId: teamBId }] } });
-      await tx.teamScore.deleteMany({ where: { teamId: teamBId } });
-      await tx.teamLeaderVote.deleteMany({ where: { teamId: teamBId } });
-      await tx.team.delete({ where: { id: teamBId } });
+      // اگر تیم B در همین فاصله ایده/محصول ثبت کرده باشد حذف نمی‌شود و ادغام لغو می‌شود
+      if (!(await deleteEmptyTeamTx(tx, teamBId))) throw new Error("RACED");
     });
   } catch {
     return { error: ERR.raced };
   }
+  invalidate("scores:");
   return { ok: true };
 }
 

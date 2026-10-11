@@ -19,6 +19,7 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
       <>
         <PageHeader eyebrow="ثبت‌نام" title="خودت را کد بزن" desc="شخصیت بازی‌ات را بساز و وارد میدان شو." />
         <Container>
+          <h2 className="sr-only">وضعیت ثبت‌نام</h2>
           <Locked title="ثبت‌نام بسته است" desc="فاز ثبت‌نام به پایان رسیده؛ دیگر امکان ساخت شخصیت جدید نیست." />
         </Container>
       </>

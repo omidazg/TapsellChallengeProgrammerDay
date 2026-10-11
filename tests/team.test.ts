@@ -58,7 +58,7 @@ async function hostTeam(name: string) {
   const res = await team.createTeamForUser(host.id, name);
   expect(res.ok).toBe(true);
   const after = await reload(host.id);
-  return { host, teamId: after.teamId!, slug: after.team!.slug };
+  return { host, teamId: after.teamId!, slug: after.team!.slug, token: after.team!.inviteToken! };
 }
 
 /** با فاز موقت اجرا می‌کند و در پایان به IDEATION برمی‌گرداند */
@@ -105,34 +105,34 @@ describe("team.ts: createTeamForUser", () => {
   });
 });
 
-describe("team.ts: joinBySlug (invite limits)", () => {
+describe("team.ts: joinByInviteToken (invite limits)", () => {
   it("lets members join up to the team cap (3)", async () => {
-    const { teamId, slug } = await hostTeam("تیم پیوستن");
-    expect((await team.joinBySlug((await makeUser("STORYTELLER")).id, slug)).ok).toBe(true);
-    expect((await team.joinBySlug((await makeUser("DEALMAKER")).id, slug)).ok).toBe(true);
+    const { teamId, token } = await hostTeam("تیم پیوستن");
+    expect((await team.joinByInviteToken((await makeUser("STORYTELLER")).id, token)).ok).toBe(true);
+    expect((await team.joinByInviteToken((await makeUser("DEALMAKER")).id, token)).ok).toBe(true);
     expect(await prisma.user.count({ where: { teamId } })).toBe(team.TEAM_FULL);
     expect(team.TEAM_FULL).toBe(3);
   });
 
   it("rejects joining once the team is full", async () => {
-    const { slug } = await hostTeam("تیم پر می‌شود");
-    await team.joinBySlug((await makeUser("STORYTELLER")).id, slug);
-    await team.joinBySlug((await makeUser("DEALMAKER")).id, slug);
-    const r4 = await team.joinBySlug((await makeUser()).id, slug);
+    const { token } = await hostTeam("تیم پر می‌شود");
+    await team.joinByInviteToken((await makeUser("STORYTELLER")).id, token);
+    await team.joinByInviteToken((await makeUser("DEALMAKER")).id, token);
+    const r4 = await team.joinByInviteToken((await makeUser()).id, token);
     expect(r4.ok).toBeUndefined();
     expect(r4.error).toBe("این تیم پر شده است.");
   });
 
   it("a team of two is a valid team (members may share the same skill)", async () => {
-    const { teamId, slug } = await hostTeam("تیم دونفره");
-    const r = await team.joinBySlug((await makeUser("BUILDER")).id, slug);
+    const { teamId, token } = await hostTeam("تیم دونفره");
+    const r = await team.joinByInviteToken((await makeUser("BUILDER")).id, token);
     expect(r.ok).toBe(true);
     expect(await prisma.user.count({ where: { teamId } })).toBe(2);
   });
 
-  it("rejects joining a non-existent slug", async () => {
+  it("rejects joining with an unknown invite token", async () => {
     const u = await makeUser();
-    const res = await team.joinBySlug(u.id, "no-such-team-slug-ever");
+    const res = await team.joinByInviteToken(u.id, "no-such-team-slug-ever");
     expect(res.ok).toBeUndefined();
     expect(res.error).toBeTruthy();
   });
@@ -156,17 +156,17 @@ describe("team.ts: inviteToTeam limits", () => {
   });
 
   it("rejects inviting once the team is at capacity", async () => {
-    const { host, slug } = await hostTeam("تیم دعوت پر");
-    await team.joinBySlug((await makeUser("STORYTELLER")).id, slug);
-    await team.joinBySlug((await makeUser("DEALMAKER")).id, slug);
+    const { host, token } = await hostTeam("تیم دعوت پر");
+    await team.joinByInviteToken((await makeUser("STORYTELLER")).id, token);
+    await team.joinByInviteToken((await makeUser("DEALMAKER")).id, token);
     const res = await team.inviteToTeam(host.id, "someone-else@example.test");
     expect(res.error).toBe("تیم پر است؛ ظرفیت هر تیم سه نفر است.");
   });
 
   it("any member (not only the creator) can invite", async () => {
-    const { slug, teamId } = await hostTeam("تیم دعوت عضو دوم");
+    const { token, teamId } = await hostTeam("تیم دعوت عضو دوم");
     const second = await makeUser("STORYTELLER");
-    await team.joinBySlug(second.id, slug);
+    await team.joinByInviteToken(second.id, token);
     const res = await team.inviteToTeam(second.id, "invited-by-second@example.test");
     expect(res.ok).toBe(true);
     expect(await prisma.teamInvite.count({ where: { teamId, inviterId: second.id, status: "PENDING" } })).toBe(1);
@@ -207,8 +207,8 @@ describe("team.ts: goSolo (شرکت فردی)", () => {
   });
 
   it("تیمی که بیش از یک عضو دارد نمی‌تواند فردی شود", async () => {
-    const { host, slug, teamId } = await hostTeam("تیم دونفره نه‌فردی");
-    await team.joinBySlug((await makeUser()).id, slug);
+    const { host, token, teamId } = await hostTeam("تیم دونفره نه‌فردی");
+    await team.joinByInviteToken((await makeUser()).id, token);
     const res = await team.goSolo(host.id);
     expect(res.error).toBe("تیمت عضو دیگری دارد؛ شرکت فردی فقط برای تیم یک‌نفره است.");
     expect((await prisma.team.findUniqueOrThrow({ where: { id: teamId } })).solo).toBe(false);
@@ -227,13 +227,13 @@ describe("team.ts: تیم فردی عضو تازه نمی‌پذیرد", () => {
     const u = await makeUser("BUILDER");
     expect((await team.goSolo(u.id)).ok).toBe(true);
     const after = await reload(u.id);
-    return { user: u, teamId: after.teamId!, slug: after.team!.slug };
+    return { user: u, teamId: after.teamId!, slug: after.team!.slug, token: after.team!.inviteToken! };
   }
 
   it("پیوستن با لینک دعوت رد می‌شود", async () => {
-    const { slug, teamId } = await soloUser();
+    const { token, teamId } = await soloUser();
     const joiner = await makeUser();
-    const res = await team.joinBySlug(joiner.id, slug);
+    const res = await team.joinByInviteToken(joiner.id, token);
     expect(res.error).toBe(SOLO_CLOSED);
     expect((await reload(joiner.id)).teamId).toBeNull();
     expect(await prisma.user.count({ where: { teamId } })).toBe(1);
@@ -276,8 +276,8 @@ describe("team.ts: تیم فردی عضو تازه نمی‌پذیرد", () => {
   });
 
   it("پیش‌نمایش لینک دعوت تیم فردی را پر نشان می‌دهد", async () => {
-    const { slug } = await soloUser();
-    const preview = await team.getTeamPreviewBySlug(slug);
+    const { token } = await soloUser();
+    const preview = await team.getTeamPreviewByInviteToken(token);
     expect(preview).toMatchObject({ solo: true, full: true, memberCount: 1 });
   });
 });
@@ -294,13 +294,13 @@ describe("team.ts: openSoloTeam", () => {
     expect((await prisma.team.findUniqueOrThrow({ where: { id: teamId! } })).solo).toBe(false);
 
     const joiner = await makeUser();
-    expect((await team.joinBySlug(joiner.id, t!.slug)).ok).toBe(true);
+    expect((await team.joinByInviteToken(joiner.id, t!.inviteToken!)).ok).toBe(true);
     expect((await reload(joiner.id)).teamId).toBe(teamId);
   });
 
   it("بدون تیم یا بیرون از بازهٔ تشکیل تیم رد می‌شود", async () => {
     const noTeam = await makeUser();
-    expect((await team.openSoloTeam(noTeam.id)).error).toBe("شما عضو هیچ تیمی نیستید.");
+    expect((await team.openSoloTeam(noTeam.id)).error).toBe("تو عضو هیچ تیمی نیستی.");
 
     const u = await makeUser();
     await team.goSolo(u.id);
@@ -328,11 +328,11 @@ describe("team-access: بدون سرپرست، هر عضو کارهای تیم �
   });
 
   it("همهٔ اعضای تیم (نه فقط سازنده) و شرکت‌کنندهٔ فردی اجازه دارند", async () => {
-    const { host, slug, teamId } = await hostTeam("تیم بدون سرپرست");
+    const { host, token, teamId } = await hostTeam("تیم بدون سرپرست");
     const second = await makeUser("STORYTELLER");
     const third = await makeUser("DEALMAKER");
-    await team.joinBySlug(second.id, slug);
-    await team.joinBySlug(third.id, slug);
+    await team.joinByInviteToken(second.id, token);
+    await team.joinByInviteToken(third.id, token);
     for (const m of [host, second, third]) {
       expect(await access.teamManageError({ id: m.id, teamId })).toBeNull();
       expect(await access.teamAccess({ id: m.id, teamId })).toEqual({ canManage: true, reason: null });
@@ -345,15 +345,16 @@ describe("team-access: بدون سرپرست، هر عضو کارهای تیم �
   });
 
   it("هر عضو می‌تواند نام تیم را تا پایان اتاق ایده عوض کند", async () => {
-    const { slug, teamId } = await hostTeam("تیم تغییر نام");
+    const { slug, token, teamId } = await hostTeam("تیم تغییر نام");
     const second = await makeUser("STORYTELLER");
-    await team.joinBySlug(second.id, slug);
+    await team.joinByInviteToken(second.id, token);
 
     const res = await teamSettings.updateTeamSettings(second.id, { name: "تیم نام تازه" });
     expect(res.ok).toBe(true);
     const t = await prisma.team.findUniqueOrThrow({ where: { id: teamId } });
     expect(t.name).toBe("تیم نام تازه");
-    expect(t.slug).toBe(slug); // لینک دعوت نمی‌شکند
+    expect(t.slug).toBe(slug); // لینک بازار نمی‌شکند
+    expect(t.inviteToken).toBe(token); // لینک دعوت هم نمی‌شکند
 
     const late = await inPhase("SEED_ROUND", () => teamSettings.updateTeamSettings(second.id, { name: "تیم خیلی دیر" }));
     expect(late.error).toBeTruthy();
@@ -378,5 +379,102 @@ describe("team.ts: leaveTeam", () => {
     expect(res.ok).toBe(true);
     expect((await reload(host.id)).teamId).toBeNull();
     expect(await prisma.team.findUnique({ where: { id: teamId } })).toBeNull();
+  });
+});
+
+describe("team.ts: لینک دعوت با توکن تصادفی", () => {
+  it("هر تیم تازه توکن دعوت یکتا و غیرقابل‌حدس دارد که با اسلاگ فرق می‌کند", async () => {
+    const a = await hostTeam("تیم توکن الف");
+    const b = await hostTeam("تیم توکن ب");
+    expect(a.token).toBeTruthy();
+    expect(a.token.length).toBeGreaterThanOrEqual(32);
+    expect(a.token).not.toBe(a.slug);
+    expect(a.token).not.toBe(b.token);
+  });
+
+  it("اسلاگ عمومی تیم برای پیوستن کافی نیست", async () => {
+    const { teamId, slug } = await hostTeam("تیم اسلاگ عمومی");
+    const joiner = await makeUser();
+    const res = await team.joinByInviteToken(joiner.id, slug);
+    expect(res.error).toBe("تیمی با این لینک پیدا نشد.");
+    expect((await reload(joiner.id)).teamId).toBeNull();
+    expect(await team.getTeamPreviewByInviteToken(slug)).toBeNull();
+    expect(await prisma.user.count({ where: { teamId } })).toBe(1);
+  });
+
+  it("پیش‌نمایش لینک دعوت خود توکن را برنمی‌گرداند", async () => {
+    const { token } = await hostTeam("تیم پیش‌نمایش");
+    const preview = await team.getTeamPreviewByInviteToken(token);
+    expect(preview?.name).toBe("تیم پیش‌نمایش");
+    expect(JSON.stringify(preview)).not.toContain(token);
+  });
+
+  it("ساخت لینک تازه لینک قبلی را باطل می‌کند", async () => {
+    const { host, teamId, token } = await hostTeam("تیم لینک تازه");
+    expect((await team.regenerateInviteToken(host.id)).ok).toBe(true);
+    const fresh = (await prisma.team.findUniqueOrThrow({ where: { id: teamId } })).inviteToken!;
+    expect(fresh).not.toBe(token);
+
+    const old = await team.joinByInviteToken((await makeUser()).id, token);
+    expect(old.error).toBe("تیمی با این لینک پیدا نشد.");
+    const ok = await team.joinByInviteToken((await makeUser()).id, fresh);
+    expect(ok.ok).toBe(true);
+  });
+
+  it("کاربر بی‌تیم نمی‌تواند لینک تازه بسازد", async () => {
+    const u = await makeUser();
+    expect((await team.regenerateInviteToken(u.id)).error).toBe("تو عضو هیچ تیمی نیستی.");
+  });
+
+  it("getTeamWithMembers هش رمز و ایمیل اعضا را برنمی‌گرداند ولی توکن را دارد", async () => {
+    const { teamId, token } = await hostTeam("تیم دادهٔ امن");
+    const t = await team.getTeamWithMembers(teamId);
+    expect(t?.inviteToken).toBe(token);
+    const member = t!.members[0] as Record<string, unknown>;
+    expect(member.passwordHash).toBeUndefined();
+    expect(member.email).toBeUndefined();
+    expect(member.phone).toBeUndefined();
+  });
+
+  it("تیم قدیمی بدون توکن هنگام باز شدن اتاق تیم توکن می‌گیرد", async () => {
+    const { teamId } = await hostTeam("تیم بی‌توکن");
+    await prisma.team.update({ where: { id: teamId }, data: { inviteToken: null } });
+    const t = await team.getTeamWithMembers(teamId);
+    expect(t?.inviteToken).toBeTruthy();
+    expect((await prisma.team.findUniqueOrThrow({ where: { id: teamId } })).inviteToken).toBe(t?.inviteToken);
+  });
+});
+
+describe("team.ts: adminMoveUserToTeam", () => {
+  it("تیم مبدأ خالیِ بی‌ایده پس از انتقال حذف می‌شود", async () => {
+    const { host: mover, teamId: sourceId } = await hostTeam("تیم مبدأ خالی‌شونده");
+    const { teamId: targetId } = await hostTeam("تیم مقصد انتقال");
+    const res = await team.adminMoveUserToTeam(mover.id, targetId);
+    expect(res.ok).toBe(true);
+    expect((await reload(mover.id)).teamId).toBe(targetId);
+    expect(await prisma.team.findUnique({ where: { id: sourceId } })).toBeNull();
+  });
+
+  it("تیم مبدأ که هنوز عضو دارد می‌ماند", async () => {
+    const { host, teamId: sourceId, token } = await hostTeam("تیم مبدأ پرجمعیت");
+    const mate = await makeUser("STORYTELLER");
+    await team.joinByInviteToken(mate.id, token);
+    const { teamId: targetId } = await hostTeam("تیم مقصد دوم");
+    expect((await team.adminMoveUserToTeam(host.id, targetId)).ok).toBe(true);
+    expect(await prisma.team.findUnique({ where: { id: sourceId } })).not.toBeNull();
+    expect(await prisma.user.count({ where: { teamId: sourceId } })).toBe(1);
+  });
+});
+
+describe("team.ts: goSolo هم‌زمان با پیوستن", () => {
+  it("هرگز تیم فردیِ دونفره نمی‌سازد", async () => {
+    for (let i = 0; i < 5; i++) {
+      const { host, teamId, token } = await hostTeam(`تیم مسابقهٔ فردی ${i}`);
+      const joiner = await makeUser();
+      await Promise.all([team.goSolo(host.id), team.joinByInviteToken(joiner.id, token)]);
+      const t = await prisma.team.findUniqueOrThrow({ where: { id: teamId } });
+      const members = await prisma.user.count({ where: { teamId } });
+      expect(t.solo ? members === 1 : members === 2).toBe(true);
+    }
   });
 });

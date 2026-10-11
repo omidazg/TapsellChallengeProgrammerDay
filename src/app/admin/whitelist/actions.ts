@@ -178,9 +178,16 @@ export async function approveRequestAction(_prev: WhitelistActionState, formData
   const req = id ? await prisma.accessRequest.findUnique({ where: { id } }) : null;
   if (!req) return { error: "درخواست پیدا نشد" };
 
-  // شمارهٔ درخواست هم به لیست سفید می‌رود (اگر ردیف دیگری آن را نگرفته باشد) تا ورود با پیامک ممکن شود
+  // شمارهٔ درخواست هم به لیست سفید می‌رود (اگر ردیف دیگری آن را نگرفته باشد) تا ورود با پیامک ممکن شود.
+  // ولی شمارهٔ دیگری که برگزارکننده از قبل برای همین ایمیل ثبت کرده بی‌صدا عوض نمی‌شود:
+  // فرم درخواست بدون ورود است و شمارهٔ آن ممکن است مال صاحب ایمیل نباشد.
   const phone = normalizePhone(req.phone);
-  const phoneFree = phone && !(await prisma.allowedEmail.findFirst({ where: { phone, NOT: { email: req.email } }, select: { id: true } }));
+  const current = await prisma.allowedEmail.findUnique({ where: { email: req.email }, select: { phone: true } });
+  const phoneConflict = !!(phone && current?.phone && current.phone !== phone);
+  const phoneFree =
+    phone &&
+    !phoneConflict &&
+    !(await prisma.allowedEmail.findFirst({ where: { phone, NOT: { email: req.email } }, select: { id: true } }));
   const profile = {
     firstName: req.firstName,
     lastName: req.lastName,
@@ -199,9 +206,15 @@ export async function approveRequestAction(_prev: WhitelistActionState, formData
       data: { status: "APPROVED", reviewedById: me.id, reviewedAt: new Date() },
     }),
   ]);
-  await audit(me.id, "access.approve", req.email, {});
+  await audit(me.id, "access.approve", req.email, phoneConflict ? { keptPhone: current?.phone, requestedPhone: phone } : {});
   revalidatePath(PATH);
   revalidatePath("/admin");
+  if (phoneConflict) {
+    return {
+      ok: true,
+      message: `تأیید شد، ولی شمارهٔ درخواست (${phone}) با شمارهٔ ثبت‌شدهٔ این ایمیل در لیست سفید (${current?.phone}) فرق داشت و جایگزین نشد؛ اگر لازم است دستی ویرایشش کن.`,
+    };
+  }
   return { ok: true };
 }
 

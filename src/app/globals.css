@@ -59,6 +59,16 @@
   /* ارتفاع نوار زبانه‌های پایین موبایل (NavBottomBar)؛ وقتی نوار نیست صفر است.
      عناصر شناور پایین صفحه با calc(var(--bottom-nav-h) + …) یا کلاس .above-bottom-nav از آن فاصله بگیرند. */
   --bottom-nav-h: 0px;
+
+  /* رنگ حلقهٔ فوکوس کیبورد. brand-cyan (#00b8e0) روی سفید فقط ۲٫۳۵:۱ بود (زیر ۳:۱ لازم برای
+     نشانگر فوکوس)؛ cyan-dark روی سفید ۵٫۱:۱ است. theme.css برای حالت تیره روشنش می‌کند. */
+  --focus-ring: #007895;
+
+  /* پشتهٔ عناصر شناور پایین صفحه، از پایین به بالا: دکمهٔ دستیار (AskAgent) و بنر اعلان فوری
+     (PushPrompt) در یک ردیف کنار هم، توست تغییر فاز (PhaseToast) بالای هر دو.
+     ارتفاع واقعی بنر اعلان را خود PushPrompt در --push-prompt-h می‌نویسد. */
+  --fab-size: 3.5rem;
+  --push-prompt-h: 0px;
 }
 
 /* نوار پایین فقط زیر lg (همان جایی که منوی همبرگری هست) و فقط وقتی در صفحه رندر شده دیده می‌شود */
@@ -81,7 +91,8 @@ body {
 }
 
 /* حلقهٔ فوکوس یکدست برای کیبورد؛ فقط روی :focus-visible تا با کلیک ماوس ظاهر نشود.
-   outline (نه box-shadow) تا در حالت‌های high-contrast هم قابل مشاهده بماند. */
+   outline (نه box-shadow) تا در حالت‌های high-contrast هم قابل مشاهده بماند.
+   رنگ از --focus-ring (≥۳:۱ در هر دو پوسته). */
 @layer base {
   a:focus-visible,
   button:focus-visible,
@@ -90,10 +101,34 @@ body {
   textarea:focus-visible,
   summary:focus-visible,
   [tabindex]:focus-visible {
-    outline: 2px solid var(--color-brand-cyan);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
     border-radius: 4px;
   }
+  /* رادیو/چک‌باکسِ پنهان (sr-only) داخل برچسبی که خودش دکمه/چیپ دیده می‌شود: حلقه روی برچسب */
+  label:has(.sr-only:focus-visible) {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+}
+
+/* حلقه‌های فوکوسی که با utility رنگ brand-cyan ساخته شده‌اند (۲٫۳۵:۱ روی سفید) به توکن فوکوس می‌روند.
+   بیرون از @layer تا بر utilityها غلبه کند؛ فقط رنگ عوض می‌شود و نمایش حلقه همچنان با variant است. */
+.focus-visible\:ring-brand-cyan,
+.has-\[\:focus-visible\]\:ring-brand-cyan {
+  --tw-ring-color: var(--focus-ring);
+}
+
+/* فیلدهای چپ‌به‌راست (نشانی، ایمیل، تلفن، کد): ss01 فونت وزیر ارقام لاتین را فارسی نشان می‌داد */
+[dir="ltr"],
+input[type="url"],
+input[type="email"],
+input[type="tel"],
+code,
+kbd,
+.font-mono,
+.ltr {
+  font-feature-settings: normal;
 }
 
 /* لینک پرش (skip link) که تا فوکوس‌نگرفتن نامرئی است؛ عنصرش را ایجنت لایه‌بندی اضافه می‌کند */
@@ -169,6 +204,11 @@ body {
    روی دسکتاپ یا بدون نوار، --bottom-nav-h صفر است و اثری ندارد. */
 .above-bottom-nav { margin-bottom: var(--bottom-nav-h); }
 
+/* ردیف پایینِ پشتهٔ شناور (دکمهٔ دستیار و بنر اعلان فوری) و ردیف بالای آن (توست فاز).
+   توست همیشه بالای بلندترینِ این دو می‌نشیند تا در هیچ عرضی روی هم نیفتند. */
+.float-row { bottom: calc(var(--bottom-nav-h) + 1rem); }
+.float-above-row { bottom: calc(var(--bottom-nav-h) + 1rem + max(var(--fab-size), var(--push-prompt-h)) + 0.75rem); }
+
 /* نقطهٔ «زنده» کنار آیتم منوی فاز جاری */
 .nav-live-dot {
   display: inline-block;
@@ -211,7 +251,9 @@ body {
   .chip-gold { @apply chip bg-amber-50 text-amber-700; }
   .chip-ok { @apply chip bg-emerald-50 text-emerald-700; }
 
-  .input { @apply w-full rounded-2xl border border-brand-mist bg-white px-4 py-3 text-base text-brand-navy placeholder:text-brand-slate/90 focus:outline-none focus:ring-2 focus:ring-brand-cyan/40 focus:border-brand-cyan transition; }
+  /* فوکوس: حلقهٔ پایهٔ :focus-visible (outline با --focus-ring، ≥۳:۱) دیگر با outline-none حذف نمی‌شود؛
+     حلقهٔ قبلی ring-brand-cyan/40 فقط ~۱٫۵:۱ کنتراست داشت. */
+  .input { @apply w-full rounded-2xl border border-brand-mist bg-white px-4 py-3 text-base text-brand-navy placeholder:text-brand-slate/90 focus:border-brand-cyan-dark transition; }
   .label { @apply block text-sm font-bold text-brand-navy mb-1.5; }
 
   /* اسکرول افقی بدون نوار اسکرول (برای منوها و تب‌ها در موبایل) */
@@ -256,6 +298,10 @@ img, video { max-width: 100%; height: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   html { scroll-behavior: auto; }
 }
+
+/* پس‌زمینهٔ پنجرهٔ تأیید (ConfirmDialog.tsx) */
+.confirm-dialog::backdrop { background: rgb(0 45 71 / 0.45); }
+.confirm-dialog[open] { animation: pop .2s cubic-bezier(.2,.8,.2,1) both; }
 
 /* پس‌زمینهٔ نقطه‌ای تپسل */
 .bg-dots { background-image: radial-gradient(rgba(0,184,224,.18) 1px, transparent 1px); background-size: 22px 22px; }

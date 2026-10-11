@@ -200,7 +200,7 @@ export default async function LeaderboardPage() {
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <TeamLink team={team} teamId={t.teamId} />
-                            {isOwn && <span className="chip-red !text-[11px]">تیم تو</span>}
+                            {isOwn && <span className="chip-red !text-xs">تیم تو</span>}
                           </div>
                         </td>
                         {closed ? (
@@ -261,7 +261,7 @@ function PodiumCard({
       <Avatar seed={team?.logoSeed || rank.toString()} size={56} className="mx-auto mt-2" />
       <div className="mt-2 font-black text-brand-navy text-sm sm:text-base leading-snug wrap-anywhere line-clamp-2">{team?.name ?? "—"}</div>
       <div className="mt-1 text-brand-red font-black fa-num">{fa(Math.round(value))}</div>
-      <div className="text-[11px] text-brand-slate">{metricLabel}</div>
+      <div className="text-xs text-brand-slate">{metricLabel}</div>
     </div>
   );
 }

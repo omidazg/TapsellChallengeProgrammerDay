@@ -14,6 +14,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { AskAgent } from "./AskAgent";
 import { PushPrompt } from "./PushPrompt";
 import { PillarStrip } from "./PillarLogos";
+import { ConfirmProvider } from "./ConfirmDialog";
 import { GROUP_NAME } from "@/lib/pillars";
 
 /** buyWallet همان «کیف سکه» است (تنها کیف بازی) */
@@ -23,10 +24,21 @@ type ShellUser = { id: string; nickname: string; isAdmin: boolean; buyWallet: nu
 const EXTRA_MOBILE: NavItem[] = [...WALLET_ITEMS, { href: "/profile", label: "پروفایل", icon: "🙂" }];
 const ADMIN_ITEM: NavItem = { href: "/admin", label: "برگزارکننده", icon: "🎛️" };
 
-export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUser | null; phase: Phase; phaseEndsAt: string | null; children: React.ReactNode }) {
+/** aiOff: کلید هوش مصنوعی روی سرور نیست (از layout)؛ دستیار به‌جای گفت‌وگو کارت توضیح نشان می‌دهد */
+type ShellProps = { user: ShellUser | null; phase: Phase; phaseEndsAt: string | null; aiOff?: boolean; children: React.ReactNode };
+
+/** پوستهٔ برنامه؛ ConfirmProvider (پنجرهٔ تأیید جایگزین confirm()) یک‌بار همین‌جا برای کل سایت نصب می‌شود. */
+export function AppShell(props: ShellProps) {
+  return (
+    <ConfirmProvider>
+      <Shell {...props} />
+    </ConfirmProvider>
+  );
+}
+
+function Shell({ user, phase, phaseEndsAt, aiOff = false, children }: ShellProps) {
   const path = usePathname();
-  const menuButtonRef = useRef<HTMLButtonElement>(null);
-  // دکمه‌ای که منو را باز کرده (همبرگر هدر یا «بیشتر» نوار پایین) تا فوکوس با Escape به همان برگردد
+  // دکمه‌ای که منو را باز کرده («بیشتر» نوار پایین) تا فوکوس با Escape به همان برگردد
   const menuOpenerRef = useRef<HTMLButtonElement | null>(null);
   // منو فقط در مسیری که باز شده باز می‌ماند؛ با تغییر مسیر خودبه‌خود بسته می‌شود (بدون effect)
   const [openAt, setOpenAt] = useState<string | null>(null);
@@ -45,13 +57,13 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
     };
   }, [open]);
 
-  // با Escape منوی موبایل بسته می‌شود و فوکوس به دکمهٔ همبرگر برمی‌گردد
+  // با Escape منوی موبایل بسته می‌شود و فوکوس به دکمهٔ «بیشتر» برمی‌گردد
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setOpen(false);
-        (menuOpenerRef.current ?? menuButtonRef.current)?.focus();
+        menuOpenerRef.current?.focus();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -89,10 +101,10 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
         {/* ردیف اول: لوگو + وضعیت + کاربر */}
         <div className="mx-auto max-w-7xl px-3 sm:px-4 h-14 sm:h-16 flex items-center gap-2 sm:gap-4">
           <Link href="/" className="flex items-center gap-2 sm:gap-3 shrink-0" aria-label="صفحهٔ اصلی">
-            <Image src="/brand/favicon.svg" alt="" width={32} height={32} priority unoptimized className="size-8 sm:size-9 rounded-xl" />
+            <Image src="/brand/favicon.svg" alt="" width={32} height={32} unoptimized className="size-8 sm:size-9 rounded-xl" />
             <span className="hidden sm:flex flex-col leading-tight">
               <span className="text-sm md:text-base font-black text-brand-navy whitespace-nowrap">میدان بنیان‌گذاران</span>
-              <span className="text-[11px] font-bold text-brand-slate whitespace-nowrap">{GROUP_NAME}</span>
+              <span className="text-xs font-bold text-brand-slate whitespace-nowrap">{GROUP_NAME}</span>
             </span>
           </Link>
 
@@ -114,26 +126,14 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
                 </span>
                 <NotificationBell phase={phase} />
                 <ThemeToggle className="hidden lg:inline-flex" />
-                <Link href="/profile" className="flex items-center shrink-0" aria-label="پروفایل" title={user.nickname}>
+                {/* هدف لمسی ۴۴px دور آواتار ۳۲px */}
+                <Link href="/profile" className="inline-flex items-center justify-center size-11 rounded-full shrink-0" aria-label="پروفایل" title={user.nickname}>
                   <Avatar seed={user.avatarSeed || user.id} size={32} />
                 </Link>
                 <form action="/logout" method="post" className="hidden lg:block">
                   <button type="submit" className="btn-ghost !py-1.5 !px-3 text-xs" title="خروج از حساب">خروج</button>
                 </form>
-                <button
-                  ref={menuButtonRef}
-                  type="button"
-                  className="lg:hidden inline-flex items-center justify-center size-10 rounded-full border border-brand-mist text-brand-navy hover:bg-brand-ice shrink-0"
-                  onClick={() => {
-                    menuOpenerRef.current = menuButtonRef.current;
-                    setOpen((o) => !o);
-                  }}
-                  aria-label={open ? "بستن منو" : "باز کردن منو"}
-                  aria-expanded={open}
-                  aria-controls="mobile-nav"
-                >
-                  <span aria-hidden className="text-lg leading-none">{open ? "✕" : "☰"}</span>
-                </button>
+                {/* همبرگر هدر حذف شد: زیر lg نوار پایین همیشه هست و «بیشتر» آن همین منوی #mobile-nav را باز می‌کند */}
               </>
             ) : (
               <>
@@ -159,7 +159,7 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
                     href={n.href}
                     title={lockHint ?? (live ? "فاز جاری" : undefined)}
                     aria-current={active ? "page" : undefined}
-                    className={`inline-flex items-center gap-1.5 rounded-pill px-3.5 py-1.5 text-sm font-bold whitespace-nowrap transition ${active ? "bg-brand-navy text-white" : "text-brand-navy hover:bg-brand-ice"} ${locked && !active ? "opacity-60 hover:opacity-100" : ""}`}
+                    className={`inline-flex items-center gap-1.5 rounded-pill px-3.5 py-1.5 text-sm font-bold whitespace-nowrap transition ${active ? "bg-brand-navy text-white" : locked ? "text-brand-slate hover:bg-brand-ice hover:text-brand-navy" : "text-brand-navy hover:bg-brand-ice"}`}
                   >
                     {n.label}
                     <NavPhaseMark live={live} lockHint={lockHint} />
@@ -197,7 +197,7 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
                       onClick={() => setOpen(false)}
                       title={lockHint ?? undefined}
                       aria-current={active ? "page" : undefined}
-                      className={`flex items-center gap-2 rounded-2xl px-3 py-3 text-sm font-bold min-h-12 ${active ? "bg-brand-navy text-white" : n.href === "/admin" ? "bg-red-50 text-brand-red" : "bg-brand-ice text-brand-navy"} ${locked && !active ? "opacity-60" : ""}`}
+                      className={`flex items-center gap-2 rounded-2xl px-3 py-3 text-sm font-bold min-h-12 ${active ? "bg-brand-navy text-white" : n.href === "/admin" ? "bg-red-50 text-brand-red" : locked ? "bg-brand-ice text-brand-slate" : "bg-brand-ice text-brand-navy"}`}
                     >
                       <span aria-hidden>{n.icon}</span>
                       <span className="truncate">{n.label}</span>
@@ -210,7 +210,7 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
               </div>
               <div className="md:hidden mt-3 flex items-center justify-between rounded-2xl border border-brand-mist px-4 py-2.5 text-xs font-bold text-brand-navy">
                 <span>🪙 کیف سکه: <span className="fa-num">{fa(user.buyWallet)}</span></span>
-                <Link href="/coins" onClick={() => setOpen(false)} className="text-brand-cyan-dark hover:underline">
+                <Link href="/coins" onClick={() => setOpen(false)} className="inline-flex items-center min-h-11 -my-2 px-2 -mx-2 text-brand-cyan-dark underline-offset-4 hover:underline">
                   + خرید سکه
                 </Link>
               </div>
@@ -259,7 +259,7 @@ export function AppShell({ user, phase, phaseEndsAt, children }: { user: ShellUs
         <div>میدان بنیان‌گذاران {GROUP_NAME} · روز برنامه‌نویس {fa(1405, { sep: false })}</div>
       </footer>
 
-      <AskAgent loggedIn={!!user} />
+      <AskAgent loggedIn={!!user} aiOff={aiOff} />
       <PushPrompt loggedIn={!!user} />
 
       {/* نوار زبانه‌های پایین موبایل — مثل منوی اصلی فقط برای کاربر واردشده */}

@@ -3,28 +3,29 @@ import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getPhase, phaseIndex } from "@/lib/phase";
 import { cache } from "react";
-import { getTeamPreviewBySlug as loadTeamPreview, TEAM_FULL } from "@/lib/team";
+import { getTeamPreviewByInviteToken, TEAM_FULL } from "@/lib/team";
 import { fa } from "@/lib/persian";
 import { PageHeader, Container, Locked, Alert } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { JoinButton } from "./JoinActions";
 
 /** generateMetadata و صفحه در یک درخواست یک کوئری مشترک می‌زنند */
-const getTeamPreviewBySlug = cache(loadTeamPreview);
+const getTeamPreview = cache(getTeamPreviewByInviteToken);
 
-// همان پیام‌های src/lib/team.ts (joinBySlug) تا متن صفحه و خطای اکشن یکی باشد
+// همان پیام‌های src/lib/team.ts (joinByInviteToken) تا متن صفحه و خطای اکشن یکی باشد
 const SOLO_CLOSED = "این شرکت‌کننده فردی بازی می‌کند و هم‌تیمی نمی‌پذیرد.";
 const TEAM_IS_FULL = "این تیم پر شده است.";
 
-export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params;
-  const team = await getTeamPreviewBySlug(slug);
-  return { title: team ? `پیوستن به ${team.name}` : "لینک دعوت" };
+export async function generateMetadata({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  const team = await getTeamPreview(token);
+  // لینک دعوت خصوصی است؛ موتور جست‌وجو نباید آن را نمایه کند
+  return { title: team ? `پیوستن به ${team.name}` : "لینک دعوت", robots: { index: false, follow: false } };
 }
 
-export default async function JoinPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params;
-  const team = await getTeamPreviewBySlug(slug);
+export default async function JoinPage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  const team = await getTeamPreview(token);
 
   if (!team) {
     notFound();
@@ -74,11 +75,11 @@ export default async function JoinPage({ params }: { params: Promise<{ slug: str
                   </p>
                 )}
                 <div className="flex flex-col sm:flex-row gap-3">
-                  <Link href={`/login?next=${encodeURIComponent(`/join/${slug}`)}`} className="btn-primary w-full">
+                  <Link href={`/login?next=${encodeURIComponent(`/join/${token}`)}`} className="btn-primary w-full">
                     ورود
                   </Link>
                   {registrationOpen && (
-                    <Link href={`/register?next=${encodeURIComponent(`/join/${slug}`)}`} className="btn-cyan w-full">
+                    <Link href={`/register?next=${encodeURIComponent(`/join/${token}`)}`} className="btn-cyan w-full">
                       ثبت‌نام
                     </Link>
                   )}
@@ -86,12 +87,12 @@ export default async function JoinPage({ params }: { params: Promise<{ slug: str
               </div>
             ) : user.teamId === team.id ? (
               <div className="card p-6 anim-rise text-center space-y-3">
-                <Alert kind="ok">شما همین حالا عضو این تیم هستید.</Alert>
+                <Alert kind="ok">همین حالا عضو این تیم هستی.</Alert>
                 <Link href="/team" className="btn-primary w-full">رفتن به اتاق تیم</Link>
               </div>
             ) : user.teamId ? (
               <div className="card p-6 anim-rise text-center space-y-3">
-                <Alert kind="error">شما قبلاً عضو یک تیم دیگری هستید؛ برای پیوستن به این تیم، اول باید از تیم فعلی‌ات خارج شوی.</Alert>
+                <Alert kind="error">الان عضو تیم دیگری هستی؛ برای پیوستن به این تیم، اول باید از تیم فعلی‌ات خارج شوی.</Alert>
                 <Link href="/team" className="btn-ghost w-full">رفتن به اتاق تیم</Link>
               </div>
             ) : !formingOpen ? (
@@ -112,7 +113,7 @@ export default async function JoinPage({ params }: { params: Promise<{ slug: str
             ) : (
               <div className="card p-6 anim-rise space-y-4 text-center">
                 <p className="text-sm text-brand-navy">با پیوستن، عضو این تیم می‌شوی. تیم‌ها ۱ تا ۳ نفره‌اند و همهٔ اعضا هم‌اختیارند.</p>
-                <JoinButton slug={slug} />
+                <JoinButton token={token} />
               </div>
             )}
           </div>

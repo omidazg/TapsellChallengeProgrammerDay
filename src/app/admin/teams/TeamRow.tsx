@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Alert } from "@/components/ui";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { Avatar } from "@/components/Avatar";
 import { fa } from "@/lib/persian";
 import { ROLES, type RoleKey } from "@/lib/constants";
@@ -47,6 +48,7 @@ function MemberActions({
 }) {
   const menu = variant === "menu";
   const selectId = `move-${variant}-${member.id}`;
+  const confirmSubmit = useConfirmSubmit();
   return (
     <>
       {otherTeams.length > 0 && (
@@ -56,7 +58,7 @@ function MemberActions({
           onSubmit={(e) => {
             const select = e.currentTarget.elements.namedItem("targetTeamId") as HTMLSelectElement | null;
             const target = select?.selectedOptions[0]?.textContent ?? "";
-            if (!confirm(`${member.nickname} از «${teamName}» به «${target}» منتقل شود؟`)) e.preventDefault();
+            confirmSubmit(e, `${member.nickname} از «${teamName}» به «${target}» منتقل شود؟`);
           }}
         >
           <input type="hidden" name="userId" value={member.id} />
@@ -84,7 +86,7 @@ function MemberActions({
       <form
         action={removeAction}
         onSubmit={(e) => {
-          if (!confirm(`${member.nickname} از تیم «${teamName}» حذف شود؟ او بی‌تیم می‌شود.`)) e.preventDefault();
+          confirmSubmit(e, { title: `${member.nickname} از تیم «${teamName}» حذف شود؟`, body: "او بی‌تیم می‌شود.", confirmLabel: "حذف", destructive: true });
         }}
       >
         <input type="hidden" name="userId" value={member.id} />
@@ -123,6 +125,7 @@ export type TeamRowData = {
 /** فرم کسر امتیاز تقلب: عدد صحیح ≥ ۰ و دلیلی که به تیم نشان داده می‌شود */
 function CheatPenaltyForm({ team }: { team: TeamRowData }) {
   const [state, action, pending] = useActionState<TeamsActionState, FormData>(setCheatPenaltyAction, {});
+  const confirmSubmit = useConfirmSubmit();
   return (
     <details className="rounded-2xl border border-brand-mist px-3 py-2" open={team.cheatPenalty > 0 || undefined}>
       <summary className="cursor-pointer text-sm font-bold text-brand-navy min-h-8 flex items-center gap-2">
@@ -138,7 +141,7 @@ function CheatPenaltyForm({ team }: { team: TeamRowData }) {
         className="mt-2 space-y-2"
         onSubmit={(e) => {
           const n = Number(new FormData(e.currentTarget).get("cheatPenalty") || 0);
-          if (n !== team.cheatPenalty && !confirm(`کسر امتیاز «${team.name}» به ${fa(n)} امتیاز تغییر کند؟`)) e.preventDefault();
+          if (n !== team.cheatPenalty) confirmSubmit(e, `کسر امتیاز «${team.name}» به ${fa(n)} امتیاز تغییر کند؟`);
         }}
       >
         <input type="hidden" name="teamId" value={team.id} />
@@ -171,7 +174,7 @@ function CheatPenaltyForm({ team }: { team: TeamRowData }) {
             {pending ? "…" : "ثبت"}
           </button>
         </div>
-        <p className="text-[11px] text-brand-slate">از امتیاز کل (از ۱۰۰۰) کم می‌شود. صفر یعنی بدون کسر.</p>
+        <p className="text-xs text-brand-slate">از امتیاز کل (از ۱۰۰۰) کم می‌شود. صفر یعنی بدون کسر.</p>
         {state.error && <Alert kind="error">{state.error}</Alert>}
         {state.ok && <span className="text-emerald-600 text-xs font-bold" role="status">ذخیره شد</span>}
       </form>
@@ -189,6 +192,7 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
   const [removeState, removeAction] = useActionState<TeamsActionState, FormData>(removeMemberAction, {});
   const [deleteState, deleteAction] = useActionState<TeamsActionState, FormData>(deleteTeamAction, {});
   const [moveState, moveAction] = useActionState<TeamsActionState, FormData>(moveMemberAction, {});
+  const confirmSubmit = useConfirmSubmit();
   const otherTeams = allTeams.filter((t) => t.id !== team.id);
   const memberCount = team.members.length;
   // پوشش مهارت‌ها فقط اطلاع است؛ شرط شرکت در بازی نیست.
@@ -279,7 +283,7 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
         <form
           action={deleteAction}
           onSubmit={(e) => {
-            if (!confirm(`تیم خالی «${team.name}» حذف شود؟ این کار برگشت‌ناپذیر است.`)) e.preventDefault();
+            confirmSubmit(e, { title: `تیم خالی «${team.name}» حذف شود؟`, body: "این کار برگشت‌ناپذیر است.", confirmLabel: "حذف", destructive: true });
           }}
         >
           <input type="hidden" name="teamId" value={team.id} />
@@ -288,7 +292,7 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
       )}
       {deleteState.error && <Alert kind="error">{deleteState.error}</Alert>}
       {(renameState.ok || removeState.ok || deleteState.ok) && <Alert kind="ok">به‌روزرسانی شد.</Alert>}
-      <div className="text-[10px] text-brand-slate fa-num">/{team.slug}</div>
+      <div className="text-xs text-brand-slate fa-num">/{team.slug}</div>
     </div>
   );
 }

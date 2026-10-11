@@ -108,7 +108,7 @@ export function StudioCard({
               maxLength={400}
               defaultValue={sourceUrl}
               className="input"
-              placeholder="https://github.com/..."
+              placeholder="https://github.com/…"
               dir="ltr"
             />
           </div>

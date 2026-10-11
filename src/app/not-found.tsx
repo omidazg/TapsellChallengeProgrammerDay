@@ -13,7 +13,7 @@ export default function NotFound() {
         </div>
         <h1 className="text-2xl font-black text-brand-navy mb-2">این صفحه پیدا نشد</h1>
         <p className="text-brand-slate mb-8">
-          آدرسی که دنبالش بودید یا اشتباه است یا دیگر وجود ندارد. از اینجا می‌توانید به خانه برگردید یا راهنمای بازی را ببینید.
+          آدرسی که دنبالش بودی یا اشتباه است یا دیگر وجود ندارد. از اینجا می‌توانی به خانه برگردی یا راهنمای بازی را ببینی.
         </p>
         <div className="flex flex-wrap justify-center gap-3">
           <Link href="/" className="btn-primary">

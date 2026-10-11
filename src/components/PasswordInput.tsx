@@ -24,7 +24,7 @@ export function PasswordInput({ className = "", ...props }: Props) {
         onClick={() => setVisible((v) => !v)}
         // فوکوس (و مکان‌نمای) فیلد با کلیک موس از دست نرود
         onMouseDown={(e) => e.preventDefault()}
-        className="absolute end-1 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-xl text-brand-slate transition hover:bg-brand-ice hover:text-brand-navy focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan"
+        className="absolute end-1 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-xl text-brand-slate transition hover:bg-brand-ice hover:text-brand-navy focus:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
       >
         {visible ? <EyeOffIcon /> : <EyeIcon />}
       </button>

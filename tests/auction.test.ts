@@ -508,3 +508,100 @@ describe("auction.ts: اجرای صف (شروع و تسویهٔ خودکار)", 
     expect(await prisma.auction.count()).toBe(count);
   });
 });
+
+// ---------------------------------------------------------------------------
+// برازش مدت با سربار، اعلان صفِ اجرانشده و قفل تسویه پس از پایان بازی
+// ---------------------------------------------------------------------------
+
+describe("auction.ts: clampAuctionDuration با سربار هر حراج", () => {
+  it("سربار (فاصله + تیک + تمدید) از سهم هر حراج کم می‌شود", () => {
+    expect(auction.auctionOverheadSec(60, 30)).toBe(60 + auction.SCHEDULER_TICK_SEC + 30);
+    expect(auction.auctionOverheadSec(-5, -5)).toBe(auction.SCHEDULER_TICK_SEC);
+    // ۱۰۰۰ × ۰٫۸۵ ÷ ۴ = ۲۱۲٫۵ → بدون سربار ۲۱۲؛ با سربار ۱۲۰ → ۹۲
+    expect(auction.clampAuctionDuration(1000, 4, 300)).toBe(212);
+    expect(auction.clampAuctionDuration(1000, 4, 300, 120)).toBe(92);
+    // هیچ‌وقت کمتر از ۶۰ ثانیه و بیشتر از مدت پیکربندی‌شده نیست
+    expect(auction.clampAuctionDuration(100, 4, 300, 120)).toBe(60);
+    expect(auction.clampAuctionDuration(100_000, 2, 300, 120)).toBe(300);
+  });
+});
+
+describe("auction.ts: پایان بازی — سربار، اعلان و قفل تسویه", () => {
+  beforeEach(async () => {
+    await resetQueue();
+    await prisma.notification.deleteMany();
+    await prisma.setting.deleteMany({ where: { key: { in: ["anti_snipe_extend_sec", "settled_at", "settled_final"] } } });
+  });
+
+  async function queueOf(n: number) {
+    const teams = [];
+    for (let i = 0; i < n; i++) {
+      const t = await makeTeamWithProduct();
+      const res = await auction.enqueueAuction(t.members[0].id);
+      if (!res.ok) throw new Error(res.error);
+      teams.push({ ...t, auctionId: res.auctionId });
+    }
+    return teams;
+  }
+
+  it("startNextAuction مدت را با احتساب سربار فاصله/تیک/تمدید برازش می‌کند", async () => {
+    await queueOf(4);
+    await prisma.setting.create({ data: { key: "anti_snipe_extend_sec", value: "30" } });
+    // صف پس از ۲۰ دقیقهٔ پایانی بسته است، ولی حراج‌های صف‌شده می‌مانند؛ ۱۰۰۰ ثانیه تا پایان روز بازار
+    await phase.setPhase("MARKET", new Date(Date.now() + 1000_000));
+    const started = await auction.startNextAuction(300);
+    // floor(1000 × 0.85 / 4 − (60 + 30 + 30)) = 92 (999 ثانیه هم همان 92 می‌دهد)
+    expect(started!.endsAt!.getTime() - started!.startsAt!.getTime()).toBe(92_000);
+  });
+
+  it("closeAuctionsForGameEnd به تیم‌هایی که حراجشان برگزار نشد اعلان می‌دهد", async () => {
+    const [a, b, c] = await queueOf(3);
+    await auction.startNextAuction();
+    await phase.setPhase("CLOSED", null);
+    await auction.closeAuctionsForGameEnd();
+
+    const notified = await prisma.notification.findMany({ where: { kind: "auction_unrun" }, select: { userId: true } });
+    const ids = notified.map((n) => n.userId).sort();
+    expect(ids).toEqual([b.members[0].id, c.members[0].id].sort());
+    expect(ids).not.toContain(a.members[0].id);
+  });
+
+  it("پس از CLOSED تسویهٔ عادی (settleIfEnded/settleAuction) رد می‌شود ولی مسیر پایان بازی تسویه می‌کند", async () => {
+    const [a] = await queueOf(1);
+    await auction.startNextAuction();
+    const bidder = await makeBidder(100);
+    await auction.placeBid(a.auctionId, bidder.id, 21);
+    await prisma.auction.update({ where: { id: a.auctionId }, data: { endsAt: new Date(Date.now() - 1_000) } });
+    await phase.setPhase("CLOSED", null);
+
+    expect(await auction.settleIfEnded(a.auctionId)).toBe(false);
+    expect(await auction.settleAuction(a.auctionId)).toBe(false);
+    expect((await prisma.auction.findUniqueOrThrow({ where: { id: a.auctionId } })).status).toBe("LIVE");
+
+    await auction.closeAuctionsForGameEnd();
+    expect(await prisma.auction.findUniqueOrThrow({ where: { id: a.auctionId } })).toMatchObject({
+      status: "ENDED",
+      winnerId: bidder.id,
+    });
+  });
+
+  it("پس از تسویهٔ قطعی هیچ مسیری (حتی پایان بازی) حراج را تسویه نمی‌کند؛ تسویهٔ زودهنگام مانع نیست", async () => {
+    const [a] = await queueOf(1);
+    await auction.startNextAuction();
+    await prisma.auction.update({ where: { id: a.auctionId }, data: { endsAt: new Date(Date.now() - 1_000) } });
+
+    // تسویهٔ زودهنگام (settled_final = 0) در روز بازار جلوی تسویهٔ حراج را نمی‌گیرد
+    await prisma.setting.create({ data: { key: "settled_at", value: new Date().toISOString() } });
+    await prisma.setting.create({ data: { key: "settled_final", value: "0" } });
+    const [b] = await queueOf(1);
+    expect(await auction.settleIfEnded(a.auctionId)).toBe(true);
+
+    // تسویهٔ قطعی
+    await prisma.setting.update({ where: { key: "settled_final" }, data: { value: "1" } });
+    await prisma.setting.upsert({ where: { key: "last_auction_ended_at" }, update: { value: new Date(0).toISOString() }, create: { key: "last_auction_ended_at", value: new Date(0).toISOString() } });
+    await auction.startNextAuction();
+    await phase.setPhase("CLOSED", null);
+    await auction.closeAuctionsForGameEnd();
+    expect((await prisma.auction.findUniqueOrThrow({ where: { id: b.auctionId } })).status).toBe("LIVE");
+  });
+});

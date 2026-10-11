@@ -11,7 +11,7 @@ export const OTP_TTL_SEC = 120;
 export const OTP_RESEND_SEC = 60;
 /** سقف ارسال به یک شماره در یک ساعت */
 const OTP_MAX_PER_HOUR = 5;
-/** سقف تلاش اشتباه برای هر کد؛ بعد از آن کد باطل است */
+/** سقف تلاش برای هر کد (پیش از مقایسه شمرده می‌شود)؛ بعد از آن کد باطل است */
 const OTP_MAX_ATTEMPTS = 5;
 const CODE_LEN = 6;
 
@@ -79,12 +79,18 @@ export async function verifyOtp(phone: string, purpose: OtpPurpose, rawCode: str
     orderBy: { createdAt: "desc" },
   });
   if (!row || row.expiresAt.getTime() < Date.now()) return { ok: false, error: "کد منقضی شده؛ کد تازه بگیر." };
-  if (row.attempts >= OTP_MAX_ATTEMPTS) return { ok: false, error: "تلاش‌های اشتباه زیاد بود؛ کد تازه بگیر." };
+
+  // هر تلاش پیش از مقایسه و به‌شکل اتمیک شمرده می‌شود: با «بخوان، مقایسه کن، بعد اضافه کن»
+  // ده‌ها درخواست هم‌زمان همه attempts کهنه را می‌دیدند و سقف پنج تلاش دور زده می‌شد.
+  const counted = await prisma.otpCode.updateMany({
+    where: { id: row.id, consumedAt: null, attempts: { lt: OTP_MAX_ATTEMPTS } },
+    data: { attempts: { increment: 1 } },
+  });
+  if (counted.count !== 1) return { ok: false, error: "تلاش‌های اشتباه زیاد بود؛ کد تازه بگیر." };
 
   const expected = Buffer.from(row.codeHash, "hex");
   const actual = Buffer.from(hashCode(phone, purpose, code), "hex");
   if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
-    await prisma.otpCode.update({ where: { id: row.id }, data: { attempts: { increment: 1 } } });
     return { ok: false, error: "کد اشتباه است." };
   }
 

@@ -98,7 +98,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       <PageHeader eyebrow={product.teamName} title={product.name} desc={product.tagline} />
       <Container className="grid lg:grid-cols-[1.4fr_1fr] gap-6 items-start">
         <div className="space-y-6">
-          <Gallery images={product.images} seed={product.teamSlug} />
+          <Gallery images={product.images} seed={product.teamSlug} name={product.name} />
 
           <div className="card p-4 sm:p-6 space-y-4 anim-rise">
             {isLive && (
@@ -124,13 +124,20 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               <p className="text-brand-navy leading-7 whitespace-pre-line break-words">{product.description}</p>
             )}
 
-            {teaser.kind !== "none" && teaser.embedSrc && (
+            {/* ویدیوی مستقیم از میزبان بیرونی را CSP (media-src) پخش نمی‌کند؛ به‌جای پخش‌کنندهٔ خراب، لینک می‌دهیم. */}
+            {teaser.kind === "video" && teaser.embedSrc && (
+              <a
+                href={teaser.embedSrc}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className="btn-ghost inline-flex"
+              >
+                🎬 تماشای تیزر محصول ↗
+              </a>
+            )}
+            {(teaser.kind === "youtube" || teaser.kind === "aparat") && teaser.embedSrc && (
               <div className="relative w-full aspect-video rounded-2xl overflow-hidden border border-brand-mist bg-black">
-                {teaser.kind === "video" ? (
-                  <video src={teaser.embedSrc} controls className="w-full h-full object-contain" />
-                ) : (
-                  <iframe src={teaser.embedSrc} className="w-full h-full" allowFullScreen title="تیزر محصول" />
-                )}
+                <iframe src={teaser.embedSrc} className="w-full h-full" allowFullScreen title="تیزر محصول" />
               </div>
             )}
 
@@ -153,7 +160,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               <div className="rounded-2xl bg-brand-ice px-4 py-3 space-y-1">
                 <div className="text-xs font-bold text-brand-slate">ارزیابی هوش مصنوعی</div>
                 <AiTag tag={aiTag} />
-                <p className="text-[11px] text-brand-slate">این برچسب فقط راهنماست؛ داوری انسانی جداگانه انجام می‌شود.</p>
+                <p className="text-xs text-brand-slate">این برچسب فقط راهنماست؛ داوری انسانی جداگانه انجام می‌شود.</p>
               </div>
             )}
           </div>

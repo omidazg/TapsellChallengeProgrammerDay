@@ -53,12 +53,17 @@ model User {
   auditLogs         AuditLog[]
   surveyResponse    SurveyResponse?
   coinOrders        CoinOrder[]
+
+  @@index([teamId])
 }
 
 model Team {
   id              String          @id @default(cuid())
   name            String          @unique
   slug            String          @unique
+  // توکن تصادفی لینک دعوت (/join/<token>)؛ اسلاگ عمومی است و برای پیوستن کافی نیست.
+  // فقط به اعضای خود تیم نشان داده می‌شود و اعضا می‌توانند آن را عوض کنند.
+  inviteToken     String?         @unique @default(uuid())
   logoSeed        String          @default("")
   treasury        Int             @default(0) // قدیمی (خزانهٔ تیم)؛ دیگر استفاده نمی‌شود
   // قدیمی: رأی‌گیری سرپرست حذف شده و همهٔ اعضا کارهای تیم را انجام می‌دهند
@@ -141,6 +146,8 @@ model DueDiligenceMessage {
   question  String
   answer    String
   createdAt DateTime @default(now())
+
+  @@index([ideaId])
 }
 
 // ---------- محصول و بازار ----------
@@ -195,6 +202,7 @@ model Purchase {
 
   @@index([productId])
   @@index([userId])
+  @@index([createdAt])
 }
 
 model Heart {
@@ -224,7 +232,7 @@ model Auction {
   extensions Int       @default(0)
   bids       Bid[]
 
-  @@index([status])
+  @@index([status, order])
 }
 
 model Bid {
@@ -335,6 +343,8 @@ model CollusionFlag {
   amountBA    Int
   note        String   @default("")
   createdAt   DateTime @default(now())
+
+  @@index([teamId])
 }
 
 // ---------- اعلان‌ها ----------

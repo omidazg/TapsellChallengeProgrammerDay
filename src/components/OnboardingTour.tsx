@@ -180,7 +180,7 @@ export function OnboardingTour({
 
   return (
     <>
-      <button type="button" onClick={openAgain} className="text-xs font-bold text-brand-cyan-deep underline underline-offset-2">
+      <button type="button" onClick={openAgain} className="inline-flex items-center min-h-11 text-xs font-bold text-brand-cyan-deep underline underline-offset-4">
         نمایش دوبارهٔ راهنمای شروع
       </button>
 

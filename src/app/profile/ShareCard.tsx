@@ -155,7 +155,7 @@ export function ShareCard({
   return (
     <div className="card p-6 anim-rise">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-lg font-black text-brand-navy">کارت من</h3>
+        <h2 className="text-lg font-black text-brand-navy">کارت من</h2>
         <button type="button" onClick={onDownload} disabled={busy} className="btn-primary w-full sm:w-auto">
           {busy ? "در حال ساخت…" : "دانلود کارت"}
         </button>
@@ -179,7 +179,7 @@ export function ShareCard({
         </div>
         <div className="absolute bottom-4 left-4 text-left leading-tight">
           <div className="text-xs font-black">میدان بنیان‌گذاران</div>
-          <div className="text-[10px] font-bold text-white/80">گروه پگاه</div>
+          <div className="text-xs font-bold text-white/80">گروه پگاه</div>
         </div>
       </div>
     </div>

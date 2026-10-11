@@ -2,7 +2,7 @@ import { prisma } from "./db";
 import { coverUrl, parseImages } from "./product";
 import { getPhase } from "./phase";
 import { reservedBuyCoins } from "./reservations";
-import { invalidate } from "./ttl-cache";
+import { cached, invalidate } from "./ttl-cache";
 // اعتبارسنجی خرید مستقیماً از موتور اقتصاد می‌آید تا یک منبع حقیقت واحد بماند.
 import { validatePurchase } from "./economy/engine";
 export { validatePurchase } from "./economy/engine";
@@ -27,33 +27,28 @@ export type MarketCard = {
   bought: boolean;
 };
 
-/** فهرست محصولات بازار برای گرید اصلی، با مرتب‌سازی؛ با دادن viewer، خریدهای قبلیِ او هم مشخص می‌شود */
-export async function getMarketProducts(
-  sort: MarketSort = "all",
-  viewer?: { userId: string }
-): Promise<MarketCard[]> {
-  // به‌جای include کردن همهٔ ردیف‌های Purchase (که با رشد بازار سنگین می‌شود)، فقط جمع هر
-  // محصول و — در صورت وجود viewer — جمع خودِ او از یک کوئری تجمیعی خوانده می‌شود.
-  const [products, soldGroups, viewerSpentGroups] = await Promise.all([
-    prisma.product.findMany({
-      where: { submittedAt: { not: null } },
-      include: {
-        team: { select: { id: true, name: true, slug: true, logoSeed: true } },
-        _count: { select: { hearts: true } },
-      },
-    }),
-    prisma.purchase.groupBy({ by: ["productId"], _sum: { amount: true } }),
-    viewer
-      ? prisma.purchase.groupBy({ by: ["productId"], where: { userId: viewer.userId }, _sum: { amount: true } })
-      : Promise.resolve([]),
-  ]);
+/** پیشوند کلید کش بازار؛ هر خرید (و برد حراج) با invalidate("market:") آن را پاک می‌کند. */
+export const MARKET_CACHE_PREFIX = "market:";
+/** TTL کوتاه کش بازار: صفحهٔ بازار در روز بازار پربازدید است و جمع فروش را روی هر بازدید دوباره نمی‌سازیم. */
+const MARKET_CACHE_TTL_MS = 3_000;
 
-  const soldByProduct = new Map(soldGroups.map((g) => [g.productId, g._sum.amount ?? 0]));
-  const viewerSpentByProduct = new Map(viewerSpentGroups.map((g) => [g.productId, g._sum.amount ?? 0]));
-
-  const cards: MarketCard[] = products.map((p) => {
-    const viewerSpent = viewer ? viewerSpentByProduct.get(p.id) ?? 0 : 0;
-    return {
+/** کارت‌های پایهٔ بازار (بدون دادهٔ مخصوص بازدیدکننده) — مشترک بین همه، با کش کوتاه. */
+function getBaseMarketCards(): Promise<Omit<MarketCard, "bought">[]> {
+  return cached(`${MARKET_CACHE_PREFIX}cards`, MARKET_CACHE_TTL_MS, async () => {
+    // به‌جای include کردن همهٔ ردیف‌های Purchase (که با رشد بازار سنگین می‌شود)، فقط جمع هر محصول
+    // از یک کوئری تجمیعی خوانده می‌شود.
+    const [products, soldGroups] = await Promise.all([
+      prisma.product.findMany({
+        where: { submittedAt: { not: null } },
+        include: {
+          team: { select: { id: true, name: true, slug: true, logoSeed: true } },
+          _count: { select: { hearts: true } },
+        },
+      }),
+      prisma.purchase.groupBy({ by: ["productId"], _sum: { amount: true } }),
+    ]);
+    const soldByProduct = new Map(soldGroups.map((g) => [g.productId, g._sum.amount ?? 0]));
+    return products.map((p) => ({
       id: p.id,
       slug: p.team.slug,
       name: p.name,
@@ -66,9 +61,29 @@ export async function getMarketProducts(
       sold: soldByProduct.get(p.id) ?? 0,
       hearts: p._count.hearts,
       live: p.liveStatus === "LIVE",
-      bought: viewerSpent > 0,
-    };
+    }));
   });
+}
+
+/** محصولاتی که بازدیدکننده از آن‌ها خریده (کش کوتاه جدا برای هر کاربر). */
+function getViewerBoughtIds(userId: string): Promise<Set<string>> {
+  return cached(`${MARKET_CACHE_PREFIX}bought:${userId}`, MARKET_CACHE_TTL_MS, async () => {
+    const groups = await prisma.purchase.groupBy({ by: ["productId"], where: { userId }, _sum: { amount: true } });
+    return new Set(groups.filter((g) => (g._sum.amount ?? 0) > 0).map((g) => g.productId));
+  });
+}
+
+/** فهرست محصولات بازار برای گرید اصلی، با مرتب‌سازی؛ با دادن viewer، خریدهای قبلیِ او هم مشخص می‌شود */
+export async function getMarketProducts(
+  sort: MarketSort = "all",
+  viewer?: { userId: string }
+): Promise<MarketCard[]> {
+  const [base, boughtIds] = await Promise.all([
+    getBaseMarketCards(),
+    viewer ? getViewerBoughtIds(viewer.userId) : Promise.resolve(new Set<string>()),
+  ]);
+  // کپی تازه از کارت‌های کش‌شده (مرتب‌سازی زیر درجا است و نباید کش مشترک را تغییر دهد).
+  const cards: MarketCard[] = base.map((c) => ({ ...c, bought: boughtIds.has(c.id) }));
 
   switch (sort) {
     case "top":
@@ -170,6 +185,7 @@ export async function purchaseProduct(userId: string, productId: string): Promis
     throw e;
   } finally {
     invalidate("scores:");
+    invalidate(MARKET_CACHE_PREFIX);
   }
 }
 
@@ -213,22 +229,40 @@ export type AdSlotWinner = {
   cover: string;
 };
 
-/** صاحبان جایگاه تبلیغاتی ساعت جاری (فقط خواندن) */
-export async function getCurrentAdSlotWinners(): Promise<AdSlotWinner[]> {
-  const now = new Date();
-  const hourStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0);
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * صاحبان جایگاه تبلیغاتی ساعت جاری (فقط خواندن).
+ * جایگاه‌ها از market_starts_at ساعت‌به‌ساعت ساخته می‌شوند و لزوماً سرِ ساعت نیستند (مثلاً ۱۲:۳۰)،
+ * پس به‌جای تطبیق دقیق با «ساعت جاری» از بازه استفاده می‌شود: hourStart ≤ now < hourStart + ۱ساعت
+ * (همان قاعدهٔ currentAdWinners در adslots.ts). تیم و محصول در همان کوئری (بدون N+1) خوانده می‌شوند.
+ */
+export async function getCurrentAdSlotWinners(now: Date = new Date()): Promise<AdSlotWinner[]> {
+  // مدل AdSlot رابطهٔ winnerTeam ندارد (فقط winnerTeamId اسکالر)؛ پس تیم‌ها با یک کوئری in خوانده می‌شوند.
   const slots = await prisma.adSlot.findMany({
-    where: { hourStart, kind: { in: ["BANNER", "FEATURED"] }, winnerTeamId: { not: null } },
+    where: {
+      kind: { in: ["BANNER", "FEATURED"] },
+      winnerTeamId: { not: null },
+      status: { not: "REFUNDED" },
+      hourStart: { lte: now, gt: new Date(now.getTime() - HOUR_MS) },
+    },
+    orderBy: { hourStart: "desc" },
   });
+  if (slots.length === 0) return [];
+  const teams = await prisma.team.findMany({
+    where: { id: { in: [...new Set(slots.map((s) => s.winnerTeamId!))] } },
+    select: { id: true, name: true, slug: true, logoSeed: true, product: { select: { name: true, images: true, submittedAt: true } } },
+  });
+  const teamById = new Map(teams.map((t) => [t.id, t]));
   const winners: AdSlotWinner[] = [];
+  const seenKinds = new Set<string>();
   for (const slot of slots) {
-    if (!slot.winnerTeamId) continue;
-    const team = await prisma.team.findUnique({
-      where: { id: slot.winnerTeamId },
-      include: { product: true },
-    });
+    // در هر نوع، جدیدترین جایگاه فعال (در صورت هم‌پوشانی بازه‌ها) برنده است.
+    if (seenKinds.has(slot.kind)) continue;
+    const team = teamById.get(slot.winnerTeamId!);
     // محصول ثبت‌نهایی‌نشده در بازار نمایش داده نمی‌شود (صفحه‌اش هم 404 است)، پس تبلیغش هم نه.
     if (!team || !team.product || !team.product.submittedAt) continue;
+    seenKinds.add(slot.kind);
     winners.push({
       kind: slot.kind as "BANNER" | "FEATURED",
       teamId: team.id,

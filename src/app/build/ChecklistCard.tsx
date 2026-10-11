@@ -93,7 +93,7 @@ export function ChecklistCard({
           </div>
           {aiQuality !== null && <div className="text-2xl font-black text-brand-navy fa-num">{fa(aiQuality)} / ۱۰۰</div>}
           {aiNotes && <p className="text-xs text-brand-slate leading-6 whitespace-pre-line break-words">{aiNotes}</p>}
-          <p className="text-[11px] text-brand-slate">این نمره جدا از داوری انسانی است.</p>
+          <p className="text-xs text-brand-slate">این نمره جدا از داوری انسانی است.</p>
         </div>
       )}
 

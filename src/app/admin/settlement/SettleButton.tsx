@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { Alert } from "@/components/ui";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { resettleAction, settleNowAction, type SettleActionState } from "../actions";
 import { fa, jdatetime } from "@/lib/persian";
 
@@ -18,6 +19,7 @@ export function SettleButton({ settled, phaseClosed }: { settled: boolean; phase
     async () => resettleAction(),
     {}
   );
+  const confirmSubmit = useConfirmSubmit();
 
   return (
     <div className="space-y-3">
@@ -27,8 +29,8 @@ export function SettleButton({ settled, phaseClosed }: { settled: boolean; phase
           onSubmit={(e) => {
             const warn = phaseClosed
               ? ""
-              : "\n\nهشدار: بازی هنوز در فاز «پایان بازی» نیست؛ امتیازها همین حالا قفل می‌شوند و حمایت‌ها، خریدها و نمره‌های بعدی در نتیجه حساب نمی‌شوند.";
-            if (!confirm(`تسویهٔ نهایی اجرا شود؟ این کار برگشت‌ناپذیر است.${warn}`)) e.preventDefault();
+              : "\n\nهشدار: بازی هنوز در فاز «پایان بازی» نیست؛ این تسویهٔ زودهنگام است. نتیجه همین حالا ثبت می‌شود، ولی با رفتن بازی به «پایان بازی» با همهٔ حمایت‌ها، خریدها و نمره‌ها تا آن لحظه دوباره محاسبه و جایگزین می‌شود.";
+            confirmSubmit(e, { title: "تسویهٔ نهایی اجرا شود؟", body: phaseClosed ? "این کار برگشت‌ناپذیر است." : `تسویهٔ زودهنگام.${warn}`, destructive: true });
           }}
         >
           <button type="submit" disabled={pending || settled} className="btn-primary disabled:opacity-50">
@@ -51,7 +53,7 @@ export function SettleButton({ settled, phaseClosed }: { settled: boolean; phase
         <form
           action={reAction}
           onSubmit={(e) => {
-            if (!confirm("امتیازها با نمره‌های فعلی داوران و کسرهای تقلب دوباره محاسبه و جایگزین نتیجهٔ ثبت‌شده شوند؟")) e.preventDefault();
+            confirmSubmit(e, "امتیازها با نمره‌های فعلی داوران و کسرهای تقلب دوباره محاسبه و جایگزین نتیجهٔ ثبت‌شده شوند؟");
           }}
           className="space-y-2"
         >

@@ -19,9 +19,10 @@ import { LiveFeed } from "@/components/LiveFeed";
 import { PillarGrid } from "@/components/PillarLogos";
 import { GROUP_NAME } from "@/lib/pillars";
 import { getEffectiveGameValues, type GameValues } from "@/lib/game-values";
+import { peopleExample } from "@/lib/people-example";
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
-  // مقادیر مؤثر بازی (تنظیم برگزارکننده یا پیش‌فرض) برای متن‌های راهنما/سؤالات پرتکرار
+  // مقادیر مؤثر بازی (تنظیم برگزارکننده یا پیش‌فرض) برای متن‌های راهنما/سؤال‌های پرتکرار
   const [{ welcome }, user, { phase, endsAt }, values, pool] = await Promise.all([
     searchParams,
     getCurrentUser(),
@@ -127,6 +128,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ w
           </Link>
         </div>
 
+        {/* «مسیر بازی» داخل PhaseTimeline یک h3 است؛ h2 پنهان ترتیب سرتیترها را درست نگه می‌دارد */}
+        <h2 className="sr-only">وضعیت میدان</h2>
         <PhaseTimeline phase={phase} endsAt={endsAt ? endsAt.toISOString() : null} />
 
         <LiveFeed />
@@ -276,7 +279,7 @@ const FAQ: { q: string; a: string | ((v: GameValues) => string) }[] = [
   {
     q: "با خرید سکهٔ بیشتر می‌شود برنده شد؟",
     a: (v) =>
-      `نه به این سادگی. اثر هر نفر روی امتیاز مردمی یک پروژه حداکثر ${fa(v.supportCap)} سکه حساب می‌شود و تعداد حامی‌ها از مقدار سکه مهم‌تر است: ۱۰ نفر که هر کدام ۱۰ سکه بدهند، ۱۰ برابرِ یک نفر با ۱۰۰ سکه می‌ارزند.`,
+      `نه به این سادگی. اثر هر نفر روی امتیاز مردمی یک پروژه حداکثر ${fa(v.supportCap)} سکه حساب می‌شود و تعداد حامی‌ها از مقدار سکه مهم‌تر است: ${peopleExample(v.supportCap)}`,
   },
   {
     q: "می‌توانم تنها شرکت کنم؟",
@@ -382,7 +385,7 @@ function LoggedOutLanding({ phase, endsAt, values, pool }: { phase: Phase; endsA
             <div key={p.key} className="card p-5 text-center">
               <div className="text-3xl mb-2" aria-hidden>{p.emoji}</div>
               <div className="font-black text-brand-navy">{p.label}</div>
-              <div className="mt-1 text-sm font-black text-amber-600 fa-num">{million(prizeAmountMillion(pool, p.sharePct))} میلیون تومان</div>
+              <div className="mt-1 text-sm font-black text-amber-700 fa-num">{million(prizeAmountMillion(pool, p.sharePct))} میلیون تومان</div>
               <p className="mt-1 text-xs text-brand-slate">{p.criterion}</p>
             </div>
           ))}
@@ -390,7 +393,7 @@ function LoggedOutLanding({ phase, endsAt, values, pool }: { phase: Phase; endsA
       </Container>
 
       <Container className="py-16 space-y-6">
-        <h2 className="text-2xl font-black text-brand-navy text-center">سوالات پرتکرار</h2>
+        <h2 className="text-2xl font-black text-brand-navy text-center">سؤال‌های پرتکرار</h2>
         <div className="max-w-2xl mx-auto space-y-3 stagger">
           {FAQ.map((f) => (
             <details key={f.q} className="card p-4 group">

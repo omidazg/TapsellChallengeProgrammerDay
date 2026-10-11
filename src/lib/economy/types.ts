@@ -30,6 +30,10 @@ export interface TeamInput {
   aiQuality: number | null; // ۰..۱۰۰
   /** کسر امتیاز تقلب (تأییدشده توسط برگزارکننده) */
   cheatPenalty: number;
+  /**
+   * زمان ثبت نهایی محصول (ms epoch)؛ فقط برای شکستن تساوی رتبه (زودتر جلوتر). null/نبود = بدون محصول (آخر).
+   */
+  productSubmittedAt?: number | null;
 }
 
 export interface TeamResult {

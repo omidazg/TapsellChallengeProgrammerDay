@@ -2,6 +2,7 @@
 
 import { useActionState, useState, useTransition } from "react";
 import { Alert } from "@/components/ui";
+import { useConfirm, useConfirmSubmit } from "@/components/ConfirmDialog";
 import { Avatar } from "@/components/Avatar";
 import { mergeTeamsAction, moveMemberAction, autoComposeAction, type TeamsActionState, type AutoComposeState } from "./actions";
 
@@ -20,6 +21,7 @@ export function TeamTools({ teams, teamlessUsers }: { teams: TeamOption[]; teaml
 
 function MergeTeamsCard({ teams }: { teams: TeamOption[] }) {
   const [state, action] = useActionState<TeamsActionState, FormData>(mergeTeamsAction, {});
+  const confirmSubmit = useConfirmSubmit();
 
   return (
     <form
@@ -30,7 +32,7 @@ function MergeTeamsCard({ teams }: { teams: TeamOption[] }) {
         const b = form.elements.namedItem("teamBId") as HTMLSelectElement | null;
         const nameA = a?.selectedOptions[0]?.textContent ?? "";
         const nameB = b?.selectedOptions[0]?.textContent ?? "";
-        if (!confirm(`اعضای «${nameB}» به «${nameA}» منتقل و تیم «${nameB}» حذف شود؟ این کار برگشت‌ناپذیر است.`)) e.preventDefault();
+        confirmSubmit(e, { title: `اعضای «${nameB}» به «${nameA}» منتقل و تیم «${nameB}» حذف شود؟`, body: "این کار برگشت‌ناپذیر است.", destructive: true });
       }}
       className="card p-5 space-y-3 anim-rise"
     >
@@ -63,9 +65,10 @@ function AutoComposeCard() {
   const [summary, setSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
-  function run() {
-    if (!confirm("همهٔ کاربران بی‌تیم به تیم‌ها تخصیص داده شوند (و در صورت نیاز تیم تازه ساخته شود)؟")) return;
+  async function run() {
+    if (!(await confirm("همهٔ کاربران بی‌تیم به تیم‌ها تخصیص داده شوند (و در صورت نیاز تیم تازه ساخته شود)؟"))) return;
     setError(null);
     setSummary(null);
     startTransition(async () => {

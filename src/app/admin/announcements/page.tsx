@@ -15,6 +15,8 @@ export default async function AdminAnnouncementsPage() {
     <>
       <PageHeader eyebrow="پنل برگزارکننده" title="اطلاعیه‌ها" desc="نوار اطلاعیهٔ فعال در بالای همهٔ صفحات برای همه نمایش داده می‌شود." />
       <Container className="space-y-6">
+        {/* فرم و کارت خالی h3 دارند؛ h2 پنهان ترتیب سرتیترها را درست نگه می‌دارد */}
+        <h2 className="sr-only">مدیریت اطلاعیه‌ها</h2>
         <AnnouncementForm />
 
         {announcements.length === 0 ? (

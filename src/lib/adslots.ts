@@ -2,7 +2,7 @@ import { prisma } from "./db";
 import { getPhase, getSetting, getSettingInt } from "./phase";
 import { AD_SLOT_KINDS, DEFAULTS } from "./constants";
 import { reservedBuyCoins } from "./reservations";
-import { notifyAll } from "./notifications";
+import { notifyAll, notifyTeam } from "./notifications";
 import { fa } from "./persian";
 
 export type AdSlotKind = keyof typeof AD_SLOT_KINDS;
@@ -29,9 +29,13 @@ export async function marketStartFromSettings(): Promise<Date> {
   return d;
 }
 
-/** طول روز بازار (ساعت) از تنظیم زمان‌بند `phase_hours_MARKET`. */
+/**
+ * طول روز بازار (ساعت) از تنظیم زمان‌بند `phase_hours_MARKET`.
+ * صفر یعنی «روز بازار بدون زمان پایان» (نه صفر ساعت)؛ برای ساختن جایگاه‌ها مدت پیش‌فرض ۸ ساعت فرض می‌شود.
+ */
 export async function marketHoursFromSettings(): Promise<number> {
   const hours = await getSettingInt("phase_hours_MARKET", 8);
+  if (hours <= 0) return 8;
   return Math.min(24, Math.max(1, hours));
 }
 
@@ -202,7 +206,11 @@ export async function sendDuePushSlots(): Promise<number> {
       where: { id: slot.winnerTeamId! },
       select: { name: true, slug: true, product: { select: { name: true, tagline: true, submittedAt: true } } },
     });
-    if (!team?.product?.submittedAt) continue;
+    if (!team?.product?.submittedAt) {
+      // اعلانی نرفت: علامت «ارسال‌نشده» تا در پایان بازی بازپرداخت شود (و دوباره هم تلاش نشود).
+      await prisma.setting.update({ where: { key }, data: { value: PUSH_SKIPPED } }).catch(() => {});
+      continue;
+    }
     await notifyAll({
       kind: "adslot_push",
       title: `📣 ${team.product.name}`,
@@ -212,4 +220,132 @@ export async function sendDuePushSlots(): Promise<number> {
     sent++;
   }
   return sent;
+}
+
+// ---------- بازپرداخت جایگاه‌های تحویل‌نشده در پایان بازی ----------
+
+/** مقدار علامت adslot_push_sent وقتی اعلان به دلیلی فرستاده نشد (تحویل‌نشده حساب می‌شود). */
+const PUSH_SKIPPED = "skipped";
+/** کلید Setting بازه‌های واقعی «روز بازار» (JSON: [{start, end|null}] با زمان ISO). */
+export const MARKET_WINDOWS_KEY = "market_windows";
+
+export type MarketWindow = { start: string; end: string | null };
+
+function parseWindows(raw: string | null | undefined): MarketWindow[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(
+      (w): w is MarketWindow =>
+        !!w && typeof w.start === "string" && (w.end === null || typeof w.end === "string") && !Number.isNaN(new Date(w.start).getTime())
+    );
+  } catch {
+    return [];
+  }
+}
+
+export async function getMarketWindows(): Promise<MarketWindow[]> {
+  const row = await prisma.setting.findUnique({ where: { key: MARKET_WINDOWS_KEY } });
+  return parseWindows(row?.value);
+}
+
+/**
+ * ثبت بازه‌های واقعی روز بازار (idempotent): رسیدن به MARKET اگر بازهٔ بازی نباشد یکی باز می‌کند؛
+ * هر فاز دیگری بازهٔ باز را می‌بندد. از transitionTo و (برای اطمینان) از تیک زمان‌بند در روز بازار صدا زده می‌شود.
+ * تحویل بنر/کارت ویژه در پایان بازی از روی همین بازه‌ها سنجیده می‌شود.
+ */
+export async function recordMarketWindow(phase: string, now: Date = new Date()): Promise<void> {
+  const windows = await getMarketWindows();
+  const last = windows[windows.length - 1];
+  const open = !!last && last.end === null;
+  if (phase === "MARKET") {
+    if (open) return;
+    windows.push({ start: now.toISOString(), end: null });
+  } else {
+    if (!open) return;
+    last.end = now.toISOString();
+  }
+  const value = JSON.stringify(windows);
+  await prisma.setting.upsert({ where: { key: MARKET_WINDOWS_KEY }, update: { value }, create: { key: MARKET_WINDOWS_KEY, value } });
+}
+
+/**
+ * آیا جایگاه تحویل شده است؟ (خالص، برای تست)
+ * - PUSH: فقط اگر اعلانش واقعاً فرستاده شده باشد (علامت adslot_push_sent با زمان ارسال).
+ * - BANNER/FEATURED: اگر ساعتش با یکی از بازه‌های واقعی روز بازار هم‌پوشانی داشته باشد
+ *   (حتی بخشی از ساعت؛ بازهٔ باز تا nowMs حساب می‌شود).
+ */
+export function isAdSlotDelivered(
+  slot: { kind: string; hourStart: Date },
+  windows: MarketWindow[],
+  pushSentValue: string | null,
+  nowMs: number
+): boolean {
+  if (slot.kind === "PUSH") return !!pushSentValue && pushSentValue !== PUSH_SKIPPED;
+  const from = slot.hourStart.getTime();
+  const to = from + HOUR_MS;
+  return windows.some((w) => {
+    const ws = new Date(w.start).getTime();
+    const we = w.end ? new Date(w.end).getTime() : nowMs;
+    return ws < to && we > from;
+  });
+}
+
+/** دلیل دفتر کل برای بازپرداخت جایگاه تحویل‌نشده */
+export const ADSLOT_REFUND_REASON = "ADSLOT_REFUND";
+
+/**
+ * پایان بازی: جایگاه‌های فروخته‌شده‌ای که هرگز تحویل نشدند (روز بازار دیرتر از ساعت پیکربندی‌شده شروع شد،
+ * زودتر بسته شد، یا اصلاً به آن ساعت نرسید) به خریدار بازپرداخت می‌شوند. idempotent است: هر جایگاه با
+ * گذر شرطی وضعیت CLOSED→REFUNDED فقط یک‌بار بازپرداخت می‌شود و یک ردیف ADSLOT_REFUND در دفتر کل می‌گیرد.
+ * سکه به همان کسی برمی‌گردد که خرید را انجام داد (ردیف ADSLOT دفتر کل با refId جایگاه).
+ */
+export async function refundUndeliveredAdSlots(now: Date = new Date()): Promise<{ refunded: number; coins: number }> {
+  const windows = await getMarketWindows();
+  const sold = await prisma.adSlot.findMany({ where: { winnerTeamId: { not: null }, status: "CLOSED" } });
+  if (sold.length === 0) return { refunded: 0, coins: 0 };
+
+  const pushMarks = await prisma.setting.findMany({
+    where: { key: { in: sold.filter((s) => s.kind === "PUSH").map((s) => `adslot_push_sent:${s.id}`) } },
+  });
+  const pushSentById = new Map(pushMarks.map((m) => [m.key.slice("adslot_push_sent:".length), m.value]));
+
+  let refunded = 0;
+  let coins = 0;
+  const notifyTeams = new Map<string, number>();
+  for (const slot of sold) {
+    if (isAdSlotDelivered(slot, windows, pushSentById.get(slot.id) ?? null, now.getTime())) continue;
+    const amount = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.adSlot.updateMany({ where: { id: slot.id, status: "CLOSED" }, data: { status: "REFUNDED" } });
+      if (claimed.count === 0) return 0;
+      const purchase = await tx.ledgerEntry.findFirst({
+        where: { reason: "ADSLOT", refId: slot.id, delta: { lt: 0 } },
+        orderBy: { createdAt: "desc" },
+      });
+      const already = await tx.ledgerEntry.count({ where: { reason: ADSLOT_REFUND_REASON, refId: slot.id } });
+      if (!purchase?.userId || already > 0) return 0;
+      const refund = -purchase.delta;
+      await tx.user.update({ where: { id: purchase.userId }, data: { buyWallet: { increment: refund } } });
+      await tx.ledgerEntry.create({
+        data: { userId: purchase.userId, teamId: slot.winnerTeamId, wallet: "BUY", delta: refund, reason: ADSLOT_REFUND_REASON, refId: slot.id },
+      });
+      return refund;
+    });
+    if (amount > 0) {
+      refunded++;
+      coins += amount;
+      notifyTeams.set(slot.winnerTeamId!, (notifyTeams.get(slot.winnerTeamId!) ?? 0) + amount);
+    }
+  }
+  for (const [teamId, amount] of notifyTeams) {
+    await notifyTeam(teamId, {
+      kind: "adslot_refund",
+      title: "بازپرداخت جایگاه تبلیغاتی",
+      body: `جایگاه تبلیغاتی‌ای که خریده بودید چون روز بازار در آن ساعت برگزار نشد نمایش داده نشد؛ ${fa(amount)} سکه به کیف خریدار برگشت.`,
+      href: "/wallet",
+    }).catch(() => {});
+  }
+  if (refunded > 0) console.log(`[adslots] ${refunded} جایگاه تحویل‌نشده بازپرداخت شد (${coins} سکه)`);
+  return { refunded, coins };
 }

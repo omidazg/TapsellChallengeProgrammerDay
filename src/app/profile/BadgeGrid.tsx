@@ -13,7 +13,7 @@ export function BadgeGrid({ badges }: { badges: UserBadge[] }) {
             {b.emoji}
           </span>
           <span className="mt-2 block text-xs font-black text-brand-navy">{b.title}</span>
-          <span className="mt-1 block text-[11px] text-brand-slate">
+          <span className="mt-1 block text-xs text-brand-slate">
             {b.earned ? "✓ گرفته‌شده" : `🔒 ${b.description}`}
           </span>
         </li>

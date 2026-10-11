@@ -10,10 +10,10 @@ import { dueDiligenceAction, type ChatActionState } from "../actions";
 
 type ChatRow = { id: string; userId: string; nickname: string; avatarSeed: string; question: string; answer: string; createdAt: Date };
 
-function AskButton({ disabled = false }: { disabled?: boolean }) {
+function AskButton() {
   const status = useFormStatus();
   return (
-    <button type="submit" disabled={disabled || status.pending} className="btn-cyan w-full sm:w-auto shrink-0 disabled:opacity-50">
+    <button type="submit" disabled={status.pending} className="btn-cyan w-full sm:w-auto shrink-0 disabled:opacity-50">
       {status.pending ? "در حال پرسیدن…" : "پرسیدن"}
     </button>
   );
@@ -66,20 +66,22 @@ export function DueDiligenceChat({
         </ul>
       )}
 
-      <form ref={formRef} action={formAction} className="flex flex-col sm:flex-row gap-2">
-        <input type="hidden" name="ideaId" value={ideaId} />
-        <input
-          name="question"
-          aria-label="سؤال دربارهٔ این ایده"
-          required
-          minLength={3}
-          maxLength={300}
-          disabled={disabled}
-          className="input flex-1 disabled:opacity-50"
-          placeholder="سؤالت را از متن ایده بپرس…"
-        />
-        <AskButton disabled={disabled} />
-      </form>
+      {/* وقتی هوش مصنوعی خاموش است یا دور حمایت تمام شده، فقط توضیح بالا نمایش داده می‌شود؛ فرم غیرفعال بی‌فایده است */}
+      {!disabled && (
+        <form ref={formRef} action={formAction} className="flex flex-col sm:flex-row gap-2">
+          <input type="hidden" name="ideaId" value={ideaId} />
+          <input
+            name="question"
+            aria-label="سؤال دربارهٔ این ایده"
+            required
+            minLength={3}
+            maxLength={300}
+            className="input flex-1"
+            placeholder="سؤالت را از متن ایده بپرس…"
+          />
+          <AskButton />
+        </form>
+      )}
     </div>
   );
 }

@@ -395,3 +395,77 @@ describe("prize-pool.ts: صندوق جایزه با فروش سکه بزرگ م�
     expect(cachedAfter.totalMillion - cachedBefore.totalMillion).toBeCloseTo(0.1, 9);
   });
 });
+
+describe("coins.ts: adminMarkOrderPaid برای سفارش ناموفق سقف هر نفر را دوباره می‌سنجد", () => {
+  beforeAll(async () => {
+    await prisma.setting.upsert({
+      where: { key: "max_bought_coins_per_user" },
+      update: { value: "100" },
+      create: { key: "max_bought_coins_per_user", value: "100" },
+    });
+  });
+  afterAll(async () => {
+    await prisma.setting.deleteMany({ where: { key: "max_bought_coins_per_user" } });
+  });
+
+  it("اگر بازکردن سفارش ردشده سقف را رد کند، خطا می‌دهد و سکه‌ای اضافه نمی‌شود", async () => {
+    vi.stubEnv("PAYMENT_DRIVER", "manual");
+    const u = await makeUser(0);
+    const rejected = await coins.createCoinOrder(u.id, 60, CALLBACK_BASE);
+    if (!rejected.ok) throw new Error(rejected.error);
+    await coins.adminRejectOrder(rejected.orderId, "اشتباه");
+    // پس از رد، کاربر سفارش تازه‌ای می‌دهد و پرداخت می‌شود (۶۰ از ۱۰۰)
+    const second = await coins.createCoinOrder(u.id, 60, CALLBACK_BASE);
+    if (!second.ok) throw new Error(second.error);
+    expect((await coins.adminMarkOrderPaid(second.orderId, "ok")).ok).toBe(true);
+
+    const res = await coins.adminMarkOrderPaid(rejected.orderId, "پیگیری شد");
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("۴۰"); // جای خالی
+    expect((await orderOf(rejected.orderId)).status).toBe("FAILED");
+    expect(await walletOf(u.id)).toBe(60);
+  });
+
+  it("در محدودهٔ سقف، سفارش ردشده پرداخت‌شده می‌شود", async () => {
+    vi.stubEnv("PAYMENT_DRIVER", "manual");
+    const u = await makeUser(0);
+    const rejected = await coins.createCoinOrder(u.id, 40, CALLBACK_BASE);
+    if (!rejected.ok) throw new Error(rejected.error);
+    await coins.adminRejectOrder(rejected.orderId, "اشتباه");
+    const second = await coins.createCoinOrder(u.id, 60, CALLBACK_BASE);
+    if (!second.ok) throw new Error(second.error);
+    expect((await coins.adminMarkOrderPaid(second.orderId, "ok")).ok).toBe(true);
+
+    expect((await coins.adminMarkOrderPaid(rejected.orderId, "پیگیری شد")).ok).toBe(true);
+    expect((await orderOf(rejected.orderId)).status).toBe("PAID");
+    expect(await walletOf(u.id)).toBe(100);
+  });
+});
+
+describe("prize-pool.ts: درگاه آزمایشی در production در صندوق حساب نمی‌شود", () => {
+  it("countsFakeGatewaySales فقط بیرون از production true است", () => {
+    expect(prizePool.countsFakeGatewaySales("production")).toBe(false);
+    expect(prizePool.countsFakeGatewaySales("development")).toBe(true);
+    expect(prizePool.countsFakeGatewaySales("test")).toBe(true);
+    expect(prizePool.countsFakeGatewaySales(undefined)).toBe(true);
+  });
+
+  it("coinSales در production سفارش‌های پرداخت‌شدهٔ fake را کنار می‌گذارد", async () => {
+    const u = await makeUser(0);
+    await prisma.coinOrder.createMany({
+      data: [
+        { userId: u.id, coins: 10, amountRial: 100_000, status: "PAID", gateway: "fake", authority: `prod-fake-${u.id}` },
+        { userId: u.id, coins: 20, amountRial: 200_000, status: "PAID", gateway: "manual", authority: `prod-manual-${u.id}` },
+      ],
+    });
+    const dev = await prizePool.coinSales();
+    vi.stubEnv("NODE_ENV", "production");
+    const prod = await prizePool.coinSales();
+    // تفاوت دقیقاً همهٔ سفارش‌های پرداخت‌شدهٔ fake است (از جمله سفارش‌های تست‌های قبلی)
+    const fakeAgg = await prisma.coinOrder.aggregate({ where: { status: "PAID", gateway: "fake" }, _sum: { amountRial: true, coins: true }, _count: true });
+    expect(dev.toman - prod.toman).toBe((fakeAgg._sum.amountRial ?? 0) / 10);
+    expect(dev.coins - prod.coins).toBe(fakeAgg._sum.coins ?? 0);
+    expect(dev.orders - prod.orders).toBe(fakeAgg._count);
+    expect(fakeAgg._count).toBeGreaterThan(0);
+  });
+});

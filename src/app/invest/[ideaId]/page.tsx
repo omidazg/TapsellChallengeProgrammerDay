@@ -13,6 +13,7 @@ import { AnalystCard } from "@/app/idea/AnalystCard";
 import { Cover } from "@/app/idea/Cover";
 import { InvestPanel } from "./InvestPanel";
 import { InvestorList } from "./InvestorList";
+import { peopleExample } from "@/lib/people-example";
 
 // چت بررسی دقیق سنگین‌تر از بقیهٔ صفحه است (فرم + لیست پیام‌ها)؛ با next/dynamic
 // از باندل اصلی صفحه جدا می‌شود تا بار اولیهٔ صفحهٔ حمایت سبک‌تر بماند.
@@ -35,6 +36,7 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
       <>
         <PageHeader eyebrow="حمایت از ایده‌ها" title="حمایت" />
         <Container>
+          <h2 className="sr-only">وضعیت حمایت</h2>
           <Locked title="هنوز زود است" desc={`حمایت از ایده‌ها از فاز «${PHASE_LABEL.SEED_ROUND}» باز می‌شود.`} />
         </Container>
       </>
@@ -60,9 +62,11 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
       <PageHeader eyebrow="حمایت از ایده‌ها" title={idea.title} desc={idea.oneLiner} />
       <Container className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
+          {/* عنوان بخش برای ترتیب درست سرتیترها (h1 ← h2 ← h3 کارت‌ها)؛ ظاهر صفحه تغییری نمی‌کند */}
+          <h2 className="sr-only">جزئیات ایده</h2>
           {idea.coverUrl && (
             <div className="relative w-full aspect-[8/5] rounded-3xl overflow-hidden border border-brand-mist anim-rise">
-              <Cover src={idea.coverUrl} alt={idea.title} sizes="800px" />
+              <Cover src={idea.coverUrl} alt={idea.title} sizes="(max-width: 1024px) 100vw, 800px" />
             </div>
           )}
 
@@ -104,9 +108,9 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
 
         <div className="space-y-6">
           <div className="card p-6 space-y-4 anim-rise">
-            <h3 className="font-black text-brand-navy">حمایت از این ایده</h3>
+            <h2 className="font-black text-brand-navy">حمایت از این ایده</h2>
             <p className="text-xs text-brand-slate leading-6">
-              تعداد حامی‌ها مهم‌تر از مبلغ است: ۱۰ نفر که هر کدام ۱۰ سکه بدهند، ۱۰ برابرِ یک نفر با ۱۰۰ سکه می‌ارزند.
+              تعداد حامی‌ها مهم‌تر از مبلغ است: {peopleExample(supportCap)}
             </p>
             {idea.viewerInvested > 0 && (
               <Alert kind="ok">تا الان {coins(idea.viewerInvested)} از این ایده حمایت کرده‌ای.</Alert>

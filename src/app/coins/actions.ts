@@ -1,7 +1,6 @@
 "use server";
 
 import { z } from "zod";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
@@ -21,17 +20,26 @@ const buySchema = z.object({
     .max(1_000_000, "تعداد سکه نامعتبر است"),
 });
 
+/** همان پیش‌فرض metadataBase در app/layout.tsx وقتی SITE_URL تنظیم نشده */
+const DEFAULT_SITE_URL = "http://188.121.125.246";
+
 /**
- * آدرس پایهٔ سایت برای بازگشت از درگاه، از روی هدرهای همین درخواست.
- * پشت Caddy هدرهای X-Forwarded-Proto/Host تنظیم می‌شوند؛ بدون پروکسی، Next خودش HTTP ساده سرو می‌کند.
+ * آدرس پایهٔ سایت برای بازگشت از درگاه، از SITE_URL.
+ * از هدرهای Host/X-Forwarded-Host ساخته نمی‌شود: آن‌ها را درخواست‌دهنده تعیین می‌کند و
+ * درگاه کاربر را به همان دامنهٔ دلخواه برمی‌گرداند (همراه authority سفارش).
  */
-async function requestOrigin(): Promise<string> {
-  const h = await headers();
-  const first = (v: string | null) => (v ?? "").split(",")[0].trim();
-  const host = first(h.get("x-forwarded-host")) || first(h.get("host"));
-  if (!host) return (process.env.SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");
-  const proto = first(h.get("x-forwarded-proto")) || "http";
-  return `${proto}://${host}`;
+function siteOrigin(): string {
+  const raw = process.env.SITE_URL?.trim();
+  if (raw) {
+    try {
+      const url = new URL(raw);
+      if (url.protocol === "http:" || url.protocol === "https:") return url.origin;
+    } catch {
+      // نامعتبر؛ پایین‌تر پیش‌فرض
+    }
+    console.error("[coins] SITE_URL نامعتبر است؛ از نشانی پیش‌فرض استفاده می‌شود", raw);
+  }
+  return process.env.NODE_ENV === "production" ? DEFAULT_SITE_URL : "http://localhost:3000";
 }
 
 /** ثبت سفارش خرید سکه و رفتن به درگاه (یا ثبت برای تأیید دستی برگزارکننده) */
@@ -44,7 +52,7 @@ export async function buyCoins(_prev: BuyCoinsState, formData: FormData): Promis
   const parsed = buySchema.safeParse({ coins: toEnDigits(String(formData.get("coins") ?? "")).trim() });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "تعداد سکه نامعتبر است" };
 
-  const result = await createCoinOrder(user.id, parsed.data.coins, await requestOrigin());
+  const result = await createCoinOrder(user.id, parsed.data.coins, siteOrigin());
   if (!result.ok) return { error: result.error };
 
   revalidatePath("/coins");

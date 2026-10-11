@@ -268,3 +268,59 @@ describe("adslots.ts: جایگاه تبلیغاتی با قیمت ثابت", () 
     expect(prebuy).toEqual({ ok: true, price: 80 });
   });
 });
+
+describe("market.ts: getCurrentAdSlotWinners (بازهٔ ساعت، بدون N+1)", () => {
+  // زمانی دور در آینده تا جایگاه‌های بقیهٔ تست‌ها در بازه نیفتند
+  const now = new Date(2030, 0, 1, 10, 0, 0);
+  const ago = (min: number) => new Date(now.getTime() - min * 60_000);
+
+  it("جایگاهی که سرِ ساعت نیست (مثلاً ۹:۳۰) برندهٔ اکنون است؛ جدیدترینِ هر نوع، بدون بازپرداخت‌شده و محصول ثبت‌نشده", async () => {
+    const a = await makeTeamWithProduct();
+    const older = await makeTeamWithProduct();
+    const refunded = await makeTeamWithProduct();
+    const unsubmitted = await makeTeamWithProduct({ submitted: false });
+    const featured = await makeTeamWithProduct();
+    await prisma.adSlot.createMany({
+      data: [
+        { kind: "BANNER", hourStart: ago(30), status: "CLOSED", winnerTeamId: a.team.id, pricePaid: 1 },
+        { kind: "BANNER", hourStart: ago(50), status: "CLOSED", winnerTeamId: older.team.id, pricePaid: 1 },
+        { kind: "BANNER", hourStart: ago(61), status: "CLOSED", winnerTeamId: older.team.id, pricePaid: 1 }, // تمام‌شده
+        { kind: "FEATURED", hourStart: ago(10), status: "CLOSED", winnerTeamId: unsubmitted.team.id, pricePaid: 1 },
+        { kind: "FEATURED", hourStart: ago(20), status: "REFUNDED", winnerTeamId: refunded.team.id, pricePaid: 1 },
+        { kind: "FEATURED", hourStart: ago(40), status: "CLOSED", winnerTeamId: featured.team.id, pricePaid: 1 },
+        { kind: "BANNER", hourStart: new Date(now.getTime() + 60_000), status: "CLOSED", winnerTeamId: older.team.id, pricePaid: 1 }, // هنوز شروع نشده
+      ],
+    });
+
+    const winners = await market.getCurrentAdSlotWinners(now);
+    const byKind = Object.fromEntries(winners.map((w) => [w.kind, w.teamId]));
+    expect(winners).toHaveLength(2);
+    expect(byKind).toEqual({ BANNER: a.team.id, FEATURED: featured.team.id });
+    expect(winners.find((w) => w.kind === "BANNER")).toMatchObject({ productSlug: a.team.slug, productName: a.product.name });
+  });
+
+  it("بدون جایگاه در بازه، فهرست خالی است", async () => {
+    expect(await market.getCurrentAdSlotWinners(new Date(2031, 0, 1, 10, 0, 0))).toEqual([]);
+  });
+});
+
+describe("market.ts: کش کوتاه جمع فروش بازار", () => {
+  it("بازدیدهای پیاپی از کش خوانده می‌شوند و خرید کش را فوراً پاک می‌کند", async () => {
+    const { product } = await makeTeamWithProduct({ price: 10 });
+    const buyer = await makeUser(100);
+    const soldOf = async () => (await market.getMarketProducts("all", { userId: buyer.id })).find((c) => c.id === product.id);
+    // کارت تازه ممکن است هنوز در کش نباشد؛ با یک خرید کش پاک و دوباره ساخته می‌شود
+    const first = await market.purchaseProduct(buyer.id, product.id);
+    expect(first.ok).toBe(true);
+    expect(await soldOf()).toMatchObject({ sold: 10, bought: true });
+
+    // نوشتن مستقیم (بدون purchaseProduct) تا پایان TTL در کش دیده نمی‌شود
+    await prisma.purchase.create({ data: { productId: product.id, userId: buyer.id, amount: 10, discount: 0 } });
+    expect((await soldOf())?.sold).toBe(10);
+
+    // خرید واقعی کش را پاک می‌کند و جمع تازه (۳۰) را نشان می‌دهد
+    const second = await market.purchaseProduct(buyer.id, product.id);
+    expect(second.ok).toBe(true);
+    expect((await soldOf())?.sold).toBe(30);
+  });
+});

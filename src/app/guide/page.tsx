@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
-import { getPhase, PHASES, PHASE_LABEL, PHASE_DESC, type Phase } from "@/lib/phase";
+import { getPhase, getSettingInt, PHASES, PHASE_LABEL, PHASE_DESC, type Phase } from "@/lib/phase";
 import { DEFAULTS, SCORE_WEIGHTS, AD_SLOT_KINDS, COIN_PRICE_TOMAN } from "@/lib/constants";
 import { SCORE_CATEGORY_LABELS } from "@/lib/score-labels";
 import { AI_TAG_LABEL } from "@/lib/ai-tag";
@@ -8,6 +8,8 @@ import { PRIZES, PRIZE_POOL_BASE_MILLION_TOMAN, prizeAmountMillion, formatMillio
 import { getPrizePoolCached } from "@/lib/prize-pool";
 import { CORE_RULES, ANTI_CHEAT_STATEMENT } from "@/lib/rules";
 import { getEffectiveGameValues, type GameValues } from "@/lib/game-values";
+import { effectiveMaxPrice } from "@/lib/product";
+import { peopleExample } from "@/lib/people-example";
 import { fa, coins } from "@/lib/persian";
 import { Container } from "@/components/ui";
 
@@ -24,13 +26,19 @@ const TOC: { id: string; label: string; emoji: string }[] = [
   { id: "awards", label: "جوایز", emoji: "🏆" },
   { id: "rules", label: "قوانین", emoji: "⚖️" },
   { id: "login", label: "ورود", emoji: "🔑" },
-  { id: "faq", label: "سؤالات متداول", emoji: "❓" },
+  { id: "faq", label: "سؤال‌های پرتکرار", emoji: "❓" },
 ];
 
 /** سه پرسش داوری انسانی (هر کدام ۰ تا ۱۰) */
 const JURY_QUESTIONS = ["آیا واقعاً کار می‌کند؟", "ارزش واقعی برای کاربر یا گروه پگاه", "تیزر و ارائه"];
 
-const PEOPLE_SLOGAN = "۱۰ نفر که هر کدام ۱۰ سکه بدهند، ۱۰ برابرِ یک نفر با ۱۰۰ سکه می‌ارزند.";
+/** تنظیم‌های حراج و قیمت که در GameValues نیستند — همان کلیدها و پیش‌فرض‌هایی که موتور بازی می‌خواند */
+type LiveRules = {
+  antiSnipeWindowSec: number;
+  antiSnipeExtendSec: number;
+  auctionEnqueueCutoffMin: number;
+  maxPrice: number;
+};
 
 /** مبلغ میلیونی با رقم فارسی، جداکنندهٔ هزارگان و ممیز فارسی */
 function million(n: number): string {
@@ -39,12 +47,17 @@ function million(n: number): string {
 
 export default async function GuidePage() {
   // مقادیر مؤثر (تنظیم برگزارکننده یا پیش‌فرض) و صندوق جایزهٔ زنده — همان اعدادی که بازی اعمال می‌کند
-  const [user, { phase }, values, pool] = await Promise.all([
+  const [user, { phase }, values, pool, antiSnipeWindowSec, antiSnipeExtendSec, auctionEnqueueCutoffMin, maxPrice] = await Promise.all([
     getCurrentUser(),
     getPhase(),
     getEffectiveGameValues(),
     getPrizePoolCached(),
+    getSettingInt("anti_snipe_window_sec", DEFAULTS.antiSnipeWindowSec),
+    getSettingInt("anti_snipe_extend_sec", DEFAULTS.antiSnipeExtendSec),
+    getSettingInt("auction_enqueue_cutoff_min", DEFAULTS.auctionEnqueueCutoffMin),
+    effectiveMaxPrice(),
   ]);
+  const live: LiveRules = { antiSnipeWindowSec, antiSnipeExtendSec, auctionEnqueueCutoffMin, maxPrice };
 
   return (
     <>
@@ -58,7 +71,7 @@ export default async function GuidePage() {
             <TimelineSection phase={user ? phase : null} />
             <TeamsSection />
             <CoinsSection values={values} />
-            <SpendSection values={values} />
+            <SpendSection values={values} live={live} />
             <ScoringSection values={values} />
             <StudioSection />
             <AwardsSection pool={pool} />
@@ -205,13 +218,17 @@ function TimelineSection({ phase }: { phase: Phase | null }) {
                 <span className="text-lg" aria-hidden>{PHASE_EMOJI[p]}</span>
                 <span className={`font-black ${current ? "text-brand-red" : "text-brand-navy"}`}>{PHASE_LABEL[p]}:</span>
                 <span className="text-sm text-brand-slate">{PHASE_DESC[p]}</span>
-                {current && <span className="chip-red !text-[11px]">مرحلهٔ فعلی</span>}
+                {current && <span className="chip-red !text-xs">مرحلهٔ فعلی</span>}
               </div>
             </li>
           );
         })}
       </ol>
       <p className="text-xs text-brand-slate">حراج زنده مرحلهٔ جدایی نیست؛ در همان «{PHASE_LABEL.MARKET}» برگزار می‌شود.</p>
+      <p className="text-xs text-brand-slate">
+        شمارش معکوس هر مرحله تقریبی است: مرحله وقتی عوض می‌شود که برگزارکننده آن را جلو ببرد (یا خودکار، اگر جلو رفتن خودکار روشن
+        باشد). مرحله‌ای که زمان پایان ثابت ندارد، شمارش معکوس هم ندارد.
+      </p>
       {!phase && <p className="text-xs text-brand-slate">برای دیدن مرحلهٔ فعلی، وارد حساب کاربری‌ات شو.</p>}
     </Section>
   );
@@ -225,7 +242,11 @@ function TeamsSection() {
           <>
             <b>شرکت فردی:</b> اگر دوست داری تنها بازی کنی، از «اتاق تیم» شرکت فردی بساز؛ تیم یک‌نفره‌ای که هم‌تیمی تازه نمی‌پذیرد.
           </>,
-          "یا تیم بساز و یک یا دو هم‌تیمی دعوت کن، یا به تیمی که جای خالی دارد بپیوند.",
+          "یا تیم بساز و یک یا دو هم‌تیمی دعوت کن، یا با دعوت تیمی که جای خالی دارد به آن بپیوند.",
+          <>
+            <b>پیوستن فقط با دعوت:</b> لینک دعوت خصوصی هر تیم فقط به اعضای همان تیم نشان داده می‌شود؛ آن را برای هم‌تیمی‌ات بفرست یا
+            از اتاق تیم با ایمیلش دعوتش کن. آدرس عمومی صفحهٔ تیم برای پیوستن کافی نیست.
+          </>,
           "هر عضو می‌تواند ایده، محصول، حراج، جایگاه تبلیغاتی و درخواست انتشار تیم را ثبت کند.",
           "مهارتی که در پروفایل انتخاب می‌کنی (سازنده، قصه‌گو، معامله‌گر) فقط یک برچسب است و در امتیاز اثری ندارد.",
           <>
@@ -261,32 +282,32 @@ function CoinsSection({ values }: { values: GameValues }) {
   );
 }
 
-function SpendSection({ values }: { values: GameValues }) {
+function SpendSection({ values, live }: { values: GameValues; live: LiveRules }) {
   return (
     <Section id="spend" emoji="🛍️" title="سکه را کجا خرج کنی؟" desc="همه از همان یک کیف سکه؛ حمایت از ایده یا خرید از محصول تیم خودت ممنوع است.">
       <div className="grid sm:grid-cols-2 gap-3">
         <Box id="invest" emoji="🤝" title={`حمایت از ایده‌ها (${PHASE_LABEL.SEED_ROUND})`}>
           <p>از ایده‌های تیم‌های دیگر با هر مقدار سکه که دوست داری حمایت کن؛ حتی اگر تیم نداشته باشی.</p>
-          <Link href="/invest" className="font-bold text-brand-cyan-dark hover:underline">ایده‌ها ←</Link>
+          <Link href="/invest" className="inline-flex items-center min-h-11 font-bold text-brand-cyan-dark hover:underline">ایده‌ها ←</Link>
         </Box>
         <Box id="market" emoji="🛒" title={`خرید محصول (${PHASE_LABEL.MARKET})`}>
           <p>
-            محصول تیم‌های دیگر را با قیمت کامل بخر. قیمت هر محصول را تیمش بین {fa(DEFAULTS.minPrice)} تا {fa(DEFAULTS.maxPrice)} سکه
+            محصول تیم‌های دیگر را با قیمت کامل بخر. قیمت هر محصول را تیمش بین {fa(DEFAULTS.minPrice)} تا {fa(live.maxPrice)} سکه
             تعیین می‌کند.
           </p>
-          <Link href="/market" className="font-bold text-brand-cyan-dark hover:underline">بازار ←</Link>
+          <Link href="/market" className="inline-flex items-center min-h-11 font-bold text-brand-cyan-dark hover:underline">بازار ←</Link>
         </Box>
         <Box id="auction" emoji="🔨" title={`حراج زنده (${PHASE_LABEL.MARKET})`}>
           <p>
-            هر تیم در روز بازار نسخهٔ ویژهٔ محصولش را به صف حراج می‌فرستد (تا {fa(DEFAULTS.auctionEnqueueCutoffMin)} دقیقه پیش از پایان
+            هر تیم در روز بازار نسخهٔ ویژهٔ محصولش را به صف حراج می‌فرستد (تا {fa(live.auctionEnqueueCutoffMin)} دقیقه پیش از پایان
             روز بازار). حراج‌ها یکی‌یکی و به ترتیب صف زنده می‌شوند.
           </p>
           <p>
-            هر پیشنهاد دست‌کم {fa(values.bidIncrement)} سکه بیشتر از بالاترین پیشنهاد است و پیشنهاد در {fa(DEFAULTS.antiSnipeWindowSec)}{" "}
-            ثانیهٔ آخر، حراج را {fa(DEFAULTS.antiSnipeExtendSec)} ثانیه تمدید می‌کند. برنده همان مبلغ پیشنهادش را می‌پردازد و برد حراج
+            هر پیشنهاد دست‌کم {fa(values.bidIncrement)} سکه بیشتر از بالاترین پیشنهاد است و پیشنهاد در {fa(live.antiSnipeWindowSec)}{" "}
+            ثانیهٔ آخر، حراج را {fa(live.antiSnipeExtendSec)} ثانیه تمدید می‌کند. برنده همان مبلغ پیشنهادش را می‌پردازد و برد حراج
             یک خرید حساب می‌شود.
           </p>
-          <Link href="/auction" className="font-bold text-brand-cyan-dark hover:underline">حراج ←</Link>
+          <Link href="/auction" className="inline-flex items-center min-h-11 font-bold text-brand-cyan-dark hover:underline">حراج ←</Link>
         </Box>
         <Box id="adslots" emoji="📣" title={`جایگاه تبلیغاتی (${PHASE_LABEL.BUILD} و ${PHASE_LABEL.MARKET})`}>
           <p>
@@ -298,7 +319,8 @@ function SpendSection({ values }: { values: GameValues }) {
             هر تیم حداکثر {fa(values.adslotMaxPerTeam)} جایگاه، فقط پس از ثبت نهایی محصول. جایگاه فقط دیده‌شدن را بیشتر می‌کند و
             در امتیاز اثری ندارد.
           </p>
-          <Link href="/adslots" className="font-bold text-brand-cyan-dark hover:underline">جایگاه‌ها ←</Link>
+          <p>اگر ساعتی که خریده‌ای اجرا نشود (مثلاً روز بازار دیرتر از برنامه شروع شود)، سکه‌اش هنگام بستن بازی به کیفت برمی‌گردد.</p>
+          <Link href="/adslots" className="inline-flex items-center min-h-11 font-bold text-brand-cyan-dark hover:underline">جایگاه‌ها ←</Link>
         </Box>
       </div>
     </Section>
@@ -326,13 +348,17 @@ function ScoringSection({ values }: { values: GameValues }) {
         </Box>
         <Box emoji={SCORE_CATEGORY_LABELS.people.emoji} title={<ScoreTitle label={SCORE_CATEGORY_LABELS.people.label} weight={SCORE_WEIGHTS.people} />}>
           <p>هر سکه‌ای که دیگران با حمایت از ایده، خرید محصول یا برد حراج به پروژه می‌دهند. حساب درجه‌دو است؛ تعداد حامی از مقدار سکه مهم‌تر است:</p>
-          <p className="rounded-xl bg-brand-ice px-3 py-2 font-bold text-brand-navy">«{PEOPLE_SLOGAN}»</p>
+          <p className="rounded-xl bg-brand-ice px-3 py-2 font-bold text-brand-navy">«{peopleExample(values.supportCap)}»</p>
           <p>
             از هر نفر حداکثر {coins(values.supportCap)} برای هر پروژه حساب می‌شود و سکهٔ اعضای خود تیم حساب نمی‌شود.
           </p>
         </Box>
         <Box emoji={SCORE_CATEGORY_LABELS.ai.emoji} title={<ScoreTitle label={SCORE_CATEGORY_LABELS.ai.label} weight={SCORE_WEIGHTS.ai} />}>
           <p>هوش مصنوعی محصول و صفحهٔ آن را از ۰ تا ۱۰۰ ارزیابی می‌کند. این نمره همیشه جدا از نمرهٔ داوران انسانی نشان داده می‌شود.</p>
+          <p>
+            ارزیابی هوش مصنوعی (تحلیلگر ایده و داور محصول) برای هر ایده یا محصول در هر مرحله حداکثر ۳ بار اجرا می‌شود و بین دو ارسال
+            کمی باید صبر کنی؛ پس از آن، آخرین نمره می‌ماند.
+          </p>
         </Box>
       </div>
       <div className="rounded-2xl bg-brand-ice border border-brand-mist p-4 space-y-2">
@@ -350,6 +376,14 @@ function ScoringSection({ values }: { values: GameValues }) {
         تا پایان بازی امتیازها پنهان‌اند و جدول فقط «تعداد حامی» هر تیم را نشان می‌دهد. «کسر تقلب» (اگر باشد) از جمع سه معیار کم
         می‌شود؛ بخش «قوانین» را ببین.
       </p>
+      <p className="text-xs text-brand-slate">
+        <b>امتیاز مساوی:</b> رتبهٔ بالاتر با امتیاز کل بیشتر است؛ اگر برابر بود با امتیاز مردمی بیشتر، بعد نمرهٔ داوری بیشتر و بعد تیمی
+        که محصول نهایی‌اش را زودتر ثبت کرده است.
+      </p>
+      <p className="text-xs text-brand-slate">
+        اگر برگزارکننده نتیجه را زودتر حساب کند، هنگام بستن بازی دوباره حساب می‌شود؛ پس همهٔ فعالیت‌ها تا لحظهٔ بسته شدن بازی به
+        حساب می‌آیند.
+      </p>
     </Section>
   );
 }
@@ -357,7 +391,7 @@ function ScoringSection({ values }: { values: GameValues }) {
 function ScoreTitle({ label, weight }: { label: string; weight: number }) {
   return (
     <>
-      {label} <span className="chip-navy !text-[11px] fa-num">{fa(weight)} امتیاز</span>
+      {label} <span className="chip-navy !text-xs fa-num">{fa(weight)} امتیاز</span>
     </>
   );
 }
@@ -369,7 +403,7 @@ function StudioSection() {
         items={[
           <>در «{PHASE_LABEL.BUILD}» یا «{PHASE_LABEL.MARKET}» از صفحهٔ ساخت محصول درخواست انتشار بده (لینک کد یا بستهٔ محصول + توضیح کوتاه).</>,
           "برگزارکننده انتشار را پیگیری می‌کند؛ محصول منتشرشده نشان «🚀 لایو» می‌گیرد.",
-          "فقط محصولات لایو نامزد جایزهٔ «بهترین محصول لایو» هستند. انتشار اثر مستقیمی در امتیاز ندارد.",
+          "فقط محصولاتی که روی بازار استودیو منتشر شده‌اند (نشان «لایو») نامزد جایزهٔ «بهترین محصول لایو» هستند. انتشار اثر مستقیمی در امتیاز ندارد.",
         ]}
       />
       <Link href="/build" className="btn-ghost inline-flex">🛠️ ساخت محصول ←</Link>
@@ -415,6 +449,14 @@ function AwardsSection({ pool }: { pool: PrizePool }) {
         </table>
       </div>
       <p className="font-bold">هر پروژه حداکثر یک جایزه می‌برد.</p>
+      <List
+        items={[
+          "در امتیاز مساوی، همان ترتیب جدول رتبه‌بندی تعیین‌کننده است: امتیاز کل، بعد امتیاز مردمی، بعد نمرهٔ داوری و بعد ثبت زودتر محصول نهایی.",
+          "تیمی که کسر تقلب گرفته باشد، جایزه‌های خودکار «انتخاب داوران» و «انتخاب مردم» را نمی‌گیرد؛ تیم بدون عضو هم جایزه نمی‌گیرد.",
+          "«بهترین محصول لایو» فقط به محصولی می‌رسد که روی بازار استودیو منتشر شده باشد.",
+          "اگر جایزه‌ای برندهٔ واجد شرایط نداشته باشد، پرداخت نمی‌شود و سهمش پرداخت‌نشده می‌ماند.",
+        ]}
+      />
       <p className="text-xs text-brand-slate">با هر خرید سکه، صندوق و مبلغ همهٔ جوایز بزرگ‌تر می‌شود.</p>
     </Section>
   );
@@ -475,6 +517,14 @@ const FAQ: { q: string; a: React.ReactNode | ((v: GameValues) => React.ReactNode
     a: "نه. حمایت از ایده و خرید از محصول تیم خودت ممنوع است؛ سکهٔ اعضای خود تیم هم در حمایت مردمی حساب نمی‌شود.",
   },
   {
+    q: "چطور به یک تیم بپیوندم؟",
+    a: "با لینک دعوت خصوصی که یکی از اعضای تیم برایت می‌فرستد، یا با دعوتی که به ایمیلت می‌آید. لینک دعوت فقط به اعضای همان تیم نشان داده می‌شود و آدرس عمومی صفحهٔ تیم برای پیوستن کافی نیست.",
+  },
+  {
+    q: "شمارش معکوس تمام شد ولی مرحله عوض نشد؛ چرا؟",
+    a: "شمارش معکوس تقریبی است. مرحله وقتی عوض می‌شود که برگزارکننده آن را جلو ببرد، یا خودکار اگر جلو رفتن خودکار روشن باشد.",
+  },
+  {
     q: "چرا رتبه تا پایان بازی پنهان است؟",
     a: "تا رقابت تا لحظهٔ آخر باز بماند. تا آن موقع جدول فقط تعداد حامی هر تیم را نشان می‌دهد و امتیاز کل، ریزامتیازها و جوایز در «پایان بازی» اعلام می‌شوند.",
   },
@@ -482,7 +532,7 @@ const FAQ: { q: string; a: React.ReactNode | ((v: GameValues) => React.ReactNode
 
 function FaqSection({ values }: { values: GameValues }) {
   return (
-    <Section id="faq" emoji="❓" title="سؤالات متداول">
+    <Section id="faq" emoji="❓" title="سؤال‌های پرتکرار">
       <div className="space-y-2.5">
         {FAQ.map((f) => (
           <details key={f.q} className="rounded-2xl border border-brand-mist p-4 group">
@@ -501,7 +551,7 @@ function FaqSection({ values }: { values: GameValues }) {
 function BottomCta({ loggedIn }: { loggedIn: boolean }) {
   return (
     <div className="card p-8 text-center bg-brand-navy text-white anim-rise">
-      <h3 className="text-xl md:text-2xl font-black">{loggedIn ? "آماده‌ای ادامه بدهی؟" : "آماده‌ای وارد میدان شوی؟"}</h3>
+      <h2 className="text-xl md:text-2xl font-black">{loggedIn ? "آماده‌ای ادامه بدهی؟" : "آماده‌ای وارد میدان شوی؟"}</h2>
       <p className="mt-1.5 text-sm text-white/80">
         {loggedIn ? "برگرد به اتاق تیمت و قدم بعدی را بردار." : "همین الان ثبت‌نام کن؛ تنها یا با تیمت."}
       </p>

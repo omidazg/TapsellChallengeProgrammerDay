@@ -1,6 +1,6 @@
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { computeAwards, computeScoresCached, getAwardPicks } from "@/lib/scoring";
+import { computeAwards, computeScoresCached, getAwardPicks, getRawAwardPicks } from "@/lib/scoring";
 import { juryRawScore } from "@/lib/economy/engine";
 import { PRIZES } from "@/lib/prizes";
 import { productAiTag } from "@/lib/ai-tag";
@@ -20,13 +20,14 @@ function round1(n: number) {
 
 export default async function AdminJuryPage() {
   await requireAdmin();
-  const [products, picks, output] = await Promise.all([
+  const [products, picks, rawPicks, output] = await Promise.all([
     prisma.product.findMany({
       where: { submittedAt: { not: null } },
       include: { team: { select: { id: true, name: true, slug: true, solo: true, _count: { select: { members: true } } } } },
       orderBy: { submittedAt: "asc" },
     }),
     getAwardPicks(),
+    getRawAwardPicks(),
     computeScoresCached(),
   ]);
 
@@ -41,19 +42,20 @@ export default async function AdminJuryPage() {
   const aiGroups: PickGroup[] = [
     { label: "محصولات ثبت‌شده (به ترتیب نمرهٔ هوش مصنوعی)", options: byAi.map((p) => ({ teamId: p.team.id, label: optionLabel(p) })) },
   ];
+  // فقط محصولات لایو روی بازار استودیو واجد شرایط «بهترین محصول لایو» هستند (سرور هم همین را بررسی می‌کند).
   const liveGroups: PickGroup[] = [
     {
       label: "🚀 لایو روی بازار استودیو",
       options: products.filter((p) => p.liveStatus === "LIVE").map((p) => ({ teamId: p.team.id, label: `🚀 ${p.team.name} — ${p.name}` })),
     },
-    {
-      label: "دیگر محصولات (هنوز لایو نیستند)",
-      options: products.filter((p) => p.liveStatus !== "LIVE").map((p) => ({ teamId: p.team.id, label: `${p.team.name} — ${p.name}` })),
-    },
   ];
 
   /** هشدار وقتی تیم انتخاب‌شده طبق امتیازهای فعلی جایزهٔ بالاتری می‌برد و این جایزه به او نمی‌رسد */
   function pickWarning(key: "ai" | "live"): string | null {
+    // انتخاب ذخیره‌شده‌ای که دیگر واجد شرایط نیست (محصول از LIVE خارج شده) نادیده گرفته می‌شود.
+    if (key === "live" && rawPicks.live && !picks.live) {
+      return `محصول «${teamNames.get(rawPicks.live) ?? "تیم انتخاب‌شده"}» دیگر روی بازار استودیو لایو نیست؛ این انتخاب حساب نمی‌شود. یک محصول لایو انتخاب کن.`;
+    }
     const picked = picks[key];
     if (!picked) return null;
     if (awards.some((a) => a.key === key && a.teamId === picked)) return null;

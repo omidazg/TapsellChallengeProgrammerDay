@@ -40,7 +40,8 @@ export function juryRawScore(jury: JuryScores | null): number | null {
 /**
  * حمایت مردمی یک پروژه به روش تأمین مالی درجه‌دو: سکه‌های هر حامی جمع می‌شود، تا `cap` بریده
  * می‌شود، از آن جذر گرفته می‌شود و جمع جذرها به توان دو می‌رسد.
- * «۱۰ نفر که هر کدام ۱۰ سکه بدهند، ۱۰ برابرِ یک نفر با ۱۰۰ سکه می‌ارزند.»
+ * مثال: ۱۰ حامیِ ۱۰ سکه‌ای (√۱۰ × ۱۰)² = ۱۰۰۰ می‌شوند؛ یک حامیِ ۱۰۰ سکه‌ای با سقف ۵۰ فقط (√۵۰)² = ۵۰،
+ * یعنی ۲۰ برابر (با سقف ۱۰۰ یا بیشتر: ۱۰۰۰ در برابر ۱۰۰، ۱۰ برابر). متن نمایشی: peopleExample در lib/people-example.ts.
  * اعضای خود تیم (excludeUserIds) حساب نمی‌شوند.
  */
 export function peopleSupport(
@@ -101,6 +102,29 @@ export function shouldExtendAuction(nowMs: number, endsAtMs: number, windowSec: 
   return remainingMs <= windowSec * 1000 && remainingMs > 0;
 }
 
+/**
+ * ترتیب قطعی رتبه‌بندی (و شکستن تساوی همهٔ جوایز خودکار):
+ * امتیاز کل بیشتر → حمایت مردمی بیشتر → نمرهٔ داوری بیشتر → ثبت نهایی محصول زودتر (بدون محصول = آخر)
+ * → teamId صعودی. نتیجه مستقل از ترتیب ورودی/پایگاه‌داده است.
+ */
+export function compareRank(
+  a: Pick<TeamResult, "teamId" | "total" | "people" | "juryAdjusted">,
+  b: Pick<TeamResult, "teamId" | "total" | "people" | "juryAdjusted">,
+  submittedAtById: Map<string, number | null> = new Map()
+): number {
+  if (b.total !== a.total) return b.total - a.total;
+  if (b.people !== a.people) return b.people - a.people;
+  if (b.juryAdjusted !== a.juryAdjusted) return b.juryAdjusted - a.juryAdjusted;
+  const sa = submittedAtById.get(a.teamId) ?? null;
+  const sb = submittedAtById.get(b.teamId) ?? null;
+  if (sa !== sb) {
+    if (sa === null) return 1;
+    if (sb === null) return -1;
+    return sa - sb;
+  }
+  return a.teamId < b.teamId ? -1 : a.teamId > b.teamId ? 1 : 0;
+}
+
 /** موتور اصلی امتیازدهی: همهٔ تیم‌ها را می‌گیرد و نتیجهٔ کامل رتبه‌بندی‌شده برمی‌گرداند. */
 export function scoreGame(config: EconomyConfig, teams: TeamInput[]): ScoreOutput {
   const partials = teams.map((team) => {
@@ -138,11 +162,8 @@ export function scoreGame(config: EconomyConfig, teams: TeamInput[]): ScoreOutpu
     return { ...t, pts, total };
   });
 
-  results.sort((a, b) => {
-    if (b.total !== a.total) return b.total - a.total;
-    if (b.people !== a.people) return b.people - a.people;
-    return b.juryAdjusted - a.juryAdjusted;
-  });
+  const submittedAtById = new Map(teams.map((t) => [t.teamId, t.productSubmittedAt ?? null]));
+  results.sort((a, b) => compareRank(a, b, submittedAtById));
   results.forEach((r, i) => {
     r.rank = i + 1;
   });

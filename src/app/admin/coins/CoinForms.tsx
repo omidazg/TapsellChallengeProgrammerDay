@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import { Alert } from "@/components/ui";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { fa } from "@/lib/persian";
 import {
   markOrderPaidAction,
@@ -29,6 +30,7 @@ export function OrderActions({
 }) {
   const [paidState, paidAction, paying] = useActionState<CoinsActionState, FormData>(markOrderPaidAction, {});
   const [rejectState, rejectAction, rejecting] = useActionState<CoinsActionState, FormData>(rejectOrderAction, {});
+  const confirmSubmit = useConfirmSubmit();
   const busy = paying || rejecting;
   const noteId = `order-note-${orderId}`;
 
@@ -41,7 +43,7 @@ export function OrderActions({
         const msg = reject
           ? `سفارش ${fa(coins)} سکه‌ای ${nickname} رد شود؟`
           : `پرداخت ${nickname} تأیید و ${fa(coins)} سکه به کیفش اضافه شود؟ این کار برگشت‌ناپذیر است.`;
-        if (!confirm(msg)) e.preventDefault();
+        confirmSubmit(e, { title: msg, destructive: reject });
       }}
     >
       <input type="hidden" name="orderId" value={orderId} />
@@ -100,7 +102,7 @@ export function ManualInstructionsForm({ value, isDefault }: { value: string; is
         aria-describedby="manual-instructions-hint"
         className="input w-full leading-7"
       />
-      <p id="manual-instructions-hint" className="text-[11px] text-brand-slate">
+      <p id="manual-instructions-hint" className="text-xs text-brand-slate">
         شمارهٔ کارت/حساب، نام صاحب حساب و راه ارسال رسید را بنویس. خالی بگذاری، متن پیش‌فرض نمایش داده می‌شود.
       </p>
       {state.error && <Alert kind="error">{state.error}</Alert>}

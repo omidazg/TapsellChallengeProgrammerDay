@@ -80,7 +80,7 @@ function StatusMessage({ result }: { result: AccessStatusResult & { email: strin
     case "REJECTED":
       return (
         <Alert kind="error">
-          رد شده — اگر فکر می‌کنی اشتباهی رخ داده، فرم بالا را با اطلاعات درست دوباره بفرست یا با برگزارکننده تماس بگیر.
+          رد شده — اگر فکر می‌کنی اشتباهی رخ داده، با برگزارکننده تماس بگیر.
         </Alert>
       );
     case "HAS_ACCOUNT":

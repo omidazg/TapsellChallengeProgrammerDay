@@ -101,7 +101,7 @@ export function ThemeToggle({ className = "inline-flex" }: { className?: string 
       onClick={cycle}
       aria-label={`تغییر پوسته (فعلی: ${LABEL[shown]})`}
       title={`پوسته: ${LABEL[shown]}`}
-      className={`items-center justify-center size-10 rounded-full border border-brand-mist text-brand-navy hover:bg-brand-ice shrink-0 ${className}`}
+      className={`items-center justify-center size-11 rounded-full border border-brand-mist text-brand-navy hover:bg-brand-ice shrink-0 ${className}`}
     >
       <span aria-hidden className="text-lg leading-none">
         {ICON[shown]}

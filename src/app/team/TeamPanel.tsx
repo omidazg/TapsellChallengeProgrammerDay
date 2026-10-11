@@ -4,24 +4,25 @@ import { useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { Avatar } from "@/components/Avatar";
 import { Alert, Locked } from "@/components/ui";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { ROLES, type RoleKey } from "@/lib/constants";
 import { fa, jdatetime } from "@/lib/persian";
 import { copyText } from "@/lib/clipboard";
 import type { TeamWithMembers } from "@/lib/team";
-import { inviteAction, leaveTeamAction, goSoloAction, openSoloTeamAction } from "./actions";
+import { inviteAction, leaveTeamAction, goSoloAction, openSoloTeamAction, regenerateInviteLinkAction } from "./actions";
 
 const TEAM_FULL = 3;
 
 const noopSubscribe = () => () => {};
 
 /** نشانی کامل لینک پیوستن؛ روی سرور و در hydration مسیر نسبی برمی‌گرداند تا ناهمخوانی رندر پیش نیاید */
-function useJoinLink(slug: string) {
+function useJoinLink(inviteToken: string) {
   const origin = useSyncExternalStore(
     noopSubscribe,
     () => window.location.origin,
     () => ""
   );
-  return `${origin}/join/${slug}`;
+  return `${origin}/join/${inviteToken}`;
 }
 
 /** آیا مرورگر اشتراک‌گذاری بومی دارد؟ روی سرور و در hydration false تا رندر یکسان بماند */
@@ -33,25 +34,25 @@ function useCanShare() {
   );
 }
 
-function joinInputId(slug: string) {
-  return `join-link-${slug}`;
+function joinInputId(inviteToken: string) {
+  return `join-link-${inviteToken}`;
 }
 
 /** کپی و اشتراک‌گذاری لینک پیوستن؛ اگر کپی نشد، کادر لینک انتخاب می‌شود تا دستی کپی شود */
-function useInviteLink(slug: string, teamName: string) {
+function useInviteLink(inviteToken: string, teamName: string) {
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
   const canShare = useCanShare();
 
   async function copy() {
-    const ok = await copyText(`${window.location.origin}/join/${slug}`);
+    const ok = await copyText(`${window.location.origin}/join/${inviteToken}`);
     if (ok) {
       setFailed(false);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } else {
       setFailed(true);
-      const el = document.getElementById(joinInputId(slug)) as HTMLInputElement | null;
+      const el = document.getElementById(joinInputId(inviteToken)) as HTMLInputElement | null;
       if (el) {
         el.focus();
         el.select();
@@ -64,7 +65,7 @@ function useInviteLink(slug: string, teamName: string) {
       await navigator.share({
         title: `دعوت به تیم ${teamName}`,
         text: `به تیم «${teamName}» در میدان بنیان‌گذاران بپیوند:`,
-        url: `${window.location.origin}/join/${slug}`,
+        url: `${window.location.origin}/join/${inviteToken}`,
       });
     } catch (e) {
       // بستن پنجرهٔ اشتراک توسط کاربر خطا نیست؛ خطای واقعی → کپی
@@ -111,7 +112,7 @@ export function TeamPanel({
           </div>
         </div>
 
-        <TeamSizeCard size={size} solo={solo} formingOpen={formingOpen} slug={team.slug} teamName={team.name} />
+        <TeamSizeCard size={size} solo={solo} formingOpen={formingOpen} inviteToken={team.inviteToken ?? ""} teamName={team.name} />
 
         <div>
           <h3 className="mb-3 text-lg font-black text-brand-navy">
@@ -137,13 +138,13 @@ export function TeamPanel({
             })}
             {!solo &&
               Array.from({ length: TEAM_FULL - size }).map((_, i) => (
-                <EmptySlot key={`empty-${i}`} slug={team.slug} teamName={team.name} canInvite={formingOpen && !full} />
+                <EmptySlot key={`empty-${i}`} inviteToken={team.inviteToken ?? ""} teamName={team.name} canInvite={formingOpen && !full} />
               ))}
           </div>
         </div>
 
         {formingOpen ? (
-          <InviteForm full={full} solo={solo} pendingInvites={team.invites} slug={team.slug} />
+          <InviteForm full={full} solo={solo} pendingInvites={team.invites} inviteToken={team.inviteToken ?? ""} />
         ) : (
           <Locked
             title="دعوت و پیوستن به تیم بسته است"
@@ -180,21 +181,22 @@ function TeamSizeCard({
   size,
   solo,
   formingOpen,
-  slug,
+  inviteToken,
   teamName,
 }: {
   size: number;
   solo: boolean;
   formingOpen: boolean;
-  slug: string;
+  inviteToken: string;
   teamName: string;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const full = size >= TEAM_FULL;
+  const confirm = useConfirm();
 
-  function run(action: () => Promise<{ error?: string }>, confirmText: string) {
-    if (!window.confirm(confirmText)) return;
+  async function run(action: () => Promise<{ error?: string }>, confirmText: string) {
+    if (!(await confirm(confirmText))) return;
     setError(null);
     startTransition(async () => {
       const res = await action();
@@ -232,7 +234,7 @@ function TeamSizeCard({
 
       {formingOpen && !solo && size === 1 && (
         <div className="space-y-2">
-          <CopyJoinLink slug={slug} teamName={teamName} />
+          <CopyJoinLink inviteToken={inviteToken} teamName={teamName} />
           <button
             type="button"
             disabled={pending}
@@ -244,18 +246,39 @@ function TeamSizeCard({
         </div>
       )}
 
-      {formingOpen && !solo && size === 2 && <CopyJoinLink slug={slug} teamName={teamName} />}
+      {formingOpen && !solo && size === 2 && <CopyJoinLink inviteToken={inviteToken} teamName={teamName} />}
     </div>
   );
 }
 
-function CopyJoinLink({ slug, teamName }: { slug: string; teamName: string }) {
-  const inputId = joinInputId(slug);
-  const url = useJoinLink(slug);
-  const { copied, failed, canShare, copy, share } = useInviteLink(slug, teamName);
+function CopyJoinLink({ inviteToken, teamName }: { inviteToken: string; teamName: string }) {
+  const inputId = joinInputId(inviteToken);
+  const url = useJoinLink(inviteToken);
+  const { copied, failed, canShare, copy, share } = useInviteLink(inviteToken, teamName);
+  const [renewError, setRenewError] = useState<string | null>(null);
+  const [renewing, startRenew] = useTransition();
+  const confirm = useConfirm();
+
+  /** لینک تازه؛ وقتی لینک قبلی جایی پخش شده که نباید */
+  async function renew() {
+    const ok = await confirm({
+      title: "لینک دعوت تازه ساخته شود؟",
+      body: "لینک فعلی دیگر کار نمی‌کند و باید لینک تازه را برای هم‌تیمی‌ها بفرستی.",
+      confirmLabel: "ساخت لینک تازه",
+    });
+    if (!ok) return;
+    setRenewError(null);
+    startRenew(async () => {
+      const res = await regenerateInviteLinkAction();
+      if (res.error) setRenewError(res.error);
+    });
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <p className="w-full text-xs text-brand-slate">
+        این لینک فقط برای کسانی است که می‌خواهی هم‌تیمی‌ات شوند؛ هر کس آن را داشته باشد می‌تواند به تیم بپیوندد.
+      </p>
       <label htmlFor={inputId} className="sr-only">لینک دعوت تیم</label>
       <input
         id={inputId}
@@ -273,16 +296,24 @@ function CopyJoinLink({ slug, teamName }: { slug: string; teamName: string }) {
           <span aria-hidden>📤</span> اشتراک‌گذاری
         </button>
       )}
+      <button type="button" onClick={renew} disabled={renewing} className="btn-ghost !py-1.5 !px-3 text-sm shrink-0">
+        {renewing ? "در حال ساخت…" : "🔄 لینک تازه"}
+      </button>
       {failed && (
-        <p className="w-full text-xs text-brand-navy/70">کپی خودکار ممکن نشد؛ لینک انتخاب شده، با Ctrl+C کپی کنید.</p>
+        <p className="w-full text-xs text-brand-navy/70">کپی خودکار ممکن نشد؛ لینک انتخاب شده، با Ctrl+C کپی کن.</p>
+      )}
+      {renewError && (
+        <div className="w-full">
+          <Alert kind="error">{renewError}</Alert>
+        </div>
       )}
     </div>
   );
 }
 
 /** جای خالی عضو (اختیاری) و دعوت همان‌جا */
-function EmptySlot({ slug, teamName, canInvite }: { slug: string; teamName: string; canInvite: boolean }) {
-  const { copied, canShare, copy, share } = useInviteLink(slug, teamName);
+function EmptySlot({ inviteToken, teamName, canInvite }: { inviteToken: string; teamName: string; canInvite: boolean }) {
+  const { copied, canShare, copy, share } = useInviteLink(inviteToken, teamName);
 
   return (
     <div className="card flex flex-col items-center justify-center gap-2 border-2 border-dashed border-brand-mist p-4 text-center">
@@ -321,11 +352,13 @@ function LeaveButton({ lastMember }: { lastMember: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  function leave() {
+  const confirm = useConfirm();
+
+  async function leave() {
     const msg = lastMember
       ? "تو آخرین عضو این تیمی؛ با خروج، تیم و دعوت‌نامه‌هایش حذف می‌شود. مطمئنی؟"
       : "مطمئنی می‌خواهی تیم را ترک کنی؟";
-    if (!window.confirm(msg)) return;
+    if (!(await confirm({ title: msg, confirmLabel: "ترک تیم", destructive: true }))) return;
     setError(null);
     startTransition(async () => {
       const res = await leaveTeamAction();
@@ -356,18 +389,18 @@ function InviteForm({
   full,
   solo,
   pendingInvites,
-  slug,
+  inviteToken,
 }: {
   full: boolean;
   solo: boolean;
   pendingInvites: TeamWithMembers["invites"];
-  slug: string;
+  inviteToken: string;
 }) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [okEmail, setOkEmail] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const joinLink = useJoinLink(slug);
+  const joinLink = useJoinLink(inviteToken);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();

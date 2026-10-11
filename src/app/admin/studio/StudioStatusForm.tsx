@@ -2,6 +2,7 @@
 
 import { startTransition, useActionState, useState } from "react";
 import { Alert } from "@/components/ui";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { setLiveStatusAction, type StudioActionState } from "./actions";
 
 type AdminStatus = "REQUESTED" | "PUBLISHING" | "LIVE" | "REJECTED";
@@ -40,6 +41,7 @@ export function StudioStatusForm({
 }) {
   const [state, formAction, pending] = useActionState<StudioActionState, FormData>(setLiveStatusAction, {});
   const [status, setStatus] = useState<AdminStatus>(NEXT[current] ?? "PUBLISHING");
+  const confirm = useConfirm();
   const idp = `studio-${productId}`;
 
   return (
@@ -47,11 +49,13 @@ export function StudioStatusForm({
       className="space-y-3"
       // ارسال دستی به‌جای action={formAction}: ری‌ست خودکار فرم (React 19) select کنترل‌شده را در DOM
       // به گزینهٔ اول برمی‌گرداند در حالی که state گزینهٔ دیگری را نشان می‌دهد.
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
+        // currentTarget بعد از await پاک می‌شود
+        const form = e.currentTarget;
         const label = OPTIONS.find((o) => o.value === status)?.label ?? status;
-        if (!confirm(`وضعیت «${productName}» به «${label}» تغییر کند؟ تیم اعلان می‌گیرد.`)) return;
-        const data = new FormData(e.currentTarget);
+        if (!(await confirm({ title: `وضعیت «${productName}» به «${label}» تغییر کند؟`, body: "تیم اعلان می‌گیرد." }))) return;
+        const data = new FormData(form);
         startTransition(() => formAction(data));
       }}
     >

@@ -9,7 +9,7 @@ import { prizeAmountMillion } from "@/lib/prizes";
 import { getPrizePoolCached } from "@/lib/prize-pool";
 import { productAiTag } from "@/lib/ai-tag";
 import { AiTag } from "@/components/AiTag";
-import { Container, Locked } from "@/components/ui";
+import { Container } from "@/components/ui";
 import { fa, jdatetime } from "@/lib/persian";
 import { ScoreBreakdown, millionFa } from "../../ScoreBreakdown";
 import { PrintButton } from "./PrintButton";
@@ -34,7 +34,12 @@ export default async function TeamReportPage({ params }: { params: Promise<{ tea
   if (!isPublic && !user.isAdmin) {
     return (
       <Container className="py-10">
-        <Locked title="گزارش پایانی هنوز آماده نیست" desc="امتیازها و ریزامتیاز تیم در فاز «پایان بازی» اعلام می‌شوند." />
+        {/* همان ظاهر Locked، ولی عنوان اصلی صفحه است و باید h1 باشد */}
+        <div className="card p-10 text-center bg-brand-ice">
+          <div className="text-5xl mb-3" aria-hidden>🔒</div>
+          <h1 className="text-xl font-black">گزارش پایانی هنوز آماده نیست</h1>
+          <p className="mt-2 text-brand-slate">امتیازها و ریزامتیاز تیم در فاز «پایان بازی» اعلام می‌شوند.</p>
+        </div>
       </Container>
     );
   }

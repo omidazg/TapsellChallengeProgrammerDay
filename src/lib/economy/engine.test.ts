@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULTS, SCORE_WEIGHTS } from "@/lib/constants";
 import {
+  compareRank,
   defaultConfig,
   juryRawScore,
   nextMinBid,
@@ -507,5 +508,45 @@ describe("scoreGame: رتبه‌بندی و تساوی", () => {
     const snapshot = structuredClone(input);
     scoreGame(defaultConfig(), input);
     expect(input).toEqual(snapshot);
+  });
+});
+
+describe("scoreGame: شکستن قطعی تساوی (ثبت زودتر، سپس teamId)", () => {
+  it("در تساوی کل، مردم و داوری، محصولی که زودتر ثبت نهایی شده جلوتر است؛ بدون محصول آخر", () => {
+    const out = scoreGame(defaultConfig(), [
+      team({ teamId: "late", aiQuality: 50, productSubmittedAt: 2_000 }),
+      team({ teamId: "none", aiQuality: 50, productSubmittedAt: null }),
+      team({ teamId: "early", aiQuality: 50, productSubmittedAt: 1_000 }),
+    ]);
+    expect(out.teams.map((t) => t.teamId)).toEqual(["early", "late", "none"]);
+    expect(out.teams.map((t) => t.rank)).toEqual([1, 2, 3]);
+  });
+
+  it("در تساوی کامل (حتی زمان ثبت)، teamId صعودی؛ نتیجه مستقل از ترتیب ورودی است", () => {
+    const input = [
+      team({ teamId: "c", aiQuality: 40, productSubmittedAt: 5 }),
+      team({ teamId: "a", aiQuality: 40, productSubmittedAt: 5 }),
+      team({ teamId: "b", aiQuality: 40, productSubmittedAt: 5 }),
+    ];
+    const forward = scoreGame(defaultConfig(), input).teams.map((t) => t.teamId);
+    const backward = scoreGame(defaultConfig(), [...input].reverse()).teams.map((t) => t.teamId);
+    expect(forward).toEqual(["a", "b", "c"]);
+    expect(backward).toEqual(forward);
+  });
+
+  it("compareRank: ترتیب معیارها کل ← مردم ← داوری ← ثبت ← teamId", () => {
+    const base = { teamId: "x", total: 10, people: 5, juryAdjusted: 3 };
+    expect(compareRank({ ...base, total: 11 }, base)).toBeLessThan(0);
+    expect(compareRank({ ...base, people: 6 }, base)).toBeLessThan(0);
+    expect(compareRank({ ...base, juryAdjusted: 4 }, base)).toBeLessThan(0);
+    const sub = new Map<string, number | null>([
+      ["p", 1],
+      ["q", 2],
+      ["r", null],
+    ]);
+    expect(compareRank({ ...base, teamId: "p" }, { ...base, teamId: "q" }, sub)).toBeLessThan(0);
+    expect(compareRank({ ...base, teamId: "r" }, { ...base, teamId: "q" }, sub)).toBeGreaterThan(0);
+    expect(compareRank({ ...base, teamId: "a" }, { ...base, teamId: "b" })).toBeLessThan(0);
+    expect(compareRank(base, base)).toBe(0);
   });
 });

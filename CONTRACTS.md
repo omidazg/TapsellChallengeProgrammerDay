@@ -42,7 +42,7 @@
 - `rules.ts` (کلاینت): `ANTI_CHEAT_STATEMENT`, `CORE_RULES`.
 
 ### تیم
-- `team.ts`: `TEAM_FULL` (= ۳)، `createTeamForUser`, `goSolo(userId)` (شرکت فردی: `Team.solo = true`، بسته به عضو جدید)، `openSoloTeam(userId)` (باز کردن دوباره)، `joinMatchmaking`, `inviteToTeam`, `acceptInvite`, `declineInvite`, `joinBySlug`, `getTeamPreviewBySlug`, `leaveTeam`, `getTeamWithMembers`, `roleCoverage` (فقط نمایش مهارت‌ها)، ابزار ادمین `adminMoveUserToTeam`, `adminMergeTeams`, `autoComposeTeams`. همه `{ ok?, error? }` برمی‌گردانند.
+- `team.ts`: `TEAM_FULL` (= ۳)، `createTeamForUser`, `goSolo(userId)` (شرکت فردی: `Team.solo = true`، بسته به عضو جدید)، `openSoloTeam(userId)` (باز کردن دوباره)، `joinMatchmaking`, `inviteToTeam`, `acceptInvite`, `declineInvite`, `joinByInviteToken` (لینک دعوت با `Team.inviteToken` تصادفی، نه اسلاگ عمومی)، `regenerateInviteToken`, `getTeamPreviewByInviteToken`, `leaveTeam`, `getTeamWithMembers`, `roleCoverage` (فقط نمایش مهارت‌ها)، ابزار ادمین `adminMoveUserToTeam`, `adminMergeTeams`, `autoComposeTeams`. همه `{ ok?, error? }` برمی‌گردانند.
 - `team-access.ts`: `teamAccess(user)` → `{ canManage, reason }`، `teamManageError(user)` → `string | null`.
 - `team-settings.ts`: `updateTeamSettings(actorId, { name, shuffleLogo? })` (هر عضو، تا پایان `IDEATION`)، `isTeamSettingsOpen()`, `teamSettingsPhaseOpen(phase)`, `updateSkill(userId, role)`.
 
@@ -79,7 +79,7 @@
 - توابع حذف‌شده: `activateSecondWind`، مزایدهٔ جایگاه تبلیغاتی (`upsertBid`, `closeSlot`, `closeDueSlots`, `claimHypeSlot`)، `POWERS`/`PowerKey`، `lowestRaisedIdea*`، فیلدهای `fundingCap`/`revenueShare` در داده‌های ایده (ستون‌ها در دیتابیس می‌مانند و هنگام ساخت ۰ نوشته می‌شوند). ستون `User.power` قدیمی است و نمایش داده نمی‌شود.
 
 ## مسیرها (App Router)
-- `/` فرود · `/register` · `/login` · `/access-request` · `/profile` · `/team` (+ `/team/settings`، `/join/[slug]`) · `/idea` · `/invest` (+ `/invest/[ideaId]`؛ صفحهٔ «دور حمایت») · `/build` (محصول + درخواست انتشار استودیو) · `/market` (+ `/market/[slug]`) · `/auction` (حراج زندهٔ روز بازار) · `/adslots` · `/wallet` · `/coins` (خرید سکه؛ `/coins/callback` بازگشت از درگاه، `/coins/fake-gateway` درگاه آزمایشی) · `/leaderboard` · `/results` (+ `/results/[teamId]/report`) · `/hall` (نمای پروژکتور) · `/guide` · `/notifications` · `/survey` · `/admin/*` (از جمله `/admin/coins` سفارش‌های سکه، `/admin/studio` درخواست‌های انتشار، `/admin/jury` داوری و انتخاب جوایز، `/admin/teams` تیم‌ها و کسر امتیاز تقلب، `/admin/auction` صف حراج، `/admin/settlement` تسویه).
+- `/` فرود · `/register` · `/login` · `/access-request` · `/profile` · `/team` (+ `/team/settings`، `/join/[token]`) · `/idea` · `/invest` (+ `/invest/[ideaId]`؛ صفحهٔ «دور حمایت») · `/build` (محصول + درخواست انتشار استودیو) · `/market` (+ `/market/[slug]`) · `/auction` (حراج زندهٔ روز بازار) · `/adslots` · `/wallet` · `/coins` (خرید سکه؛ `/coins/callback` بازگشت از درگاه، `/coins/fake-gateway` درگاه آزمایشی) · `/leaderboard` · `/results` (+ `/results/[teamId]/report`) · `/hall` (نمای پروژکتور) · `/guide` · `/notifications` · `/survey` · `/admin/*` (از جمله `/admin/coins` سفارش‌های سکه، `/admin/studio` درخواست‌های انتشار، `/admin/jury` داوری و انتخاب جوایز، `/admin/teams` تیم‌ها و کسر امتیاز تقلب، `/admin/auction` صف حراج، `/admin/settlement` تسویه).
 - API: `/api/phase`, `/api/health`, `/api/market/ticker`, `/api/auction/[id]/state`, `/api/auction/live`, `/api/auction/stream` (SSE)، `/api/hall`, `/api/feed`, `/api/notifications`, `/api/push/*`, `/api/upload`, `/api/assistant`.
 
 ## کیفیت

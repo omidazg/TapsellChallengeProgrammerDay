@@ -15,11 +15,21 @@ export type SmsProvider = {
   send(phone: string, text: string): Promise<void>;
 };
 
+/**
+ * متن پیامک برای لاگ: در production رشته‌های عددی ۴ رقم به بالا (کد ورود) جز دو رقم آخر
+ * پوشانده می‌شوند تا هر کس به لاگ سرور دسترسی دارد نتواند با کد دیگران وارد شود.
+ * در توسعه متن کامل می‌ماند (راه اصلی گرفتن کد بدون سرویس پیامک).
+ */
+export function redactSmsText(text: string, production = process.env.NODE_ENV === "production") {
+  if (!production) return text;
+  return text.replace(/\d{4,}/g, (d) => `${"*".repeat(d.length - 2)}${d.slice(-2)}`);
+}
+
 const consoleProvider: SmsProvider = {
   name: "console",
   real: false,
   async send(phone, text) {
-    console.log(`[sms:console] to=${phone} text=${JSON.stringify(text)}`);
+    console.log(`[sms:console] to=${phone} text=${JSON.stringify(redactSmsText(text))}`);
   },
 };
 

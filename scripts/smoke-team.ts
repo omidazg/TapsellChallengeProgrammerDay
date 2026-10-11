@@ -31,7 +31,7 @@ async function main() {
   const { DEFAULTS } = await import("../src/lib/constants");
   const {
     createTeamForUser,
-    joinBySlug,
+    joinByInviteToken,
     adminMoveUserToTeam,
     adminMergeTeams,
     autoComposeTeams,
@@ -64,8 +64,8 @@ async function main() {
   const createdTeamIds = new Set<string>();
 
   try {
-    // ---------- joinBySlug: موفق، تا پایان فاز اتاق ایده ----------
-    console.log("\n# ۱ — joinBySlug در فاز اتاق ایده");
+    // ---------- joinByInviteToken: موفق، تا پایان فاز اتاق ایده ----------
+    console.log("\n# ۱ — joinByInviteToken در فاز اتاق ایده");
     await setPhase("IDEATION", original.endsAt);
 
     const h1 = await makeUser("host1", "BUILDER");
@@ -73,42 +73,42 @@ async function main() {
     check("ساخت تیم در فاز اتاق ایده مجاز است", !!created1.ok, JSON.stringify(created1));
     const host1 = await prisma.user.findUniqueOrThrow({ where: { id: h1.id }, include: { team: true } });
     if (host1.teamId) createdTeamIds.add(host1.teamId);
-    const slug1 = host1.team!.slug;
+    const token1 = host1.team!.inviteToken!;
 
     const j2 = await makeUser("joiner2", "STORYTELLER");
-    const joinRes1 = await joinBySlug(j2.id, slug1);
-    check("joinBySlug موفق می‌شود", !!joinRes1.ok, JSON.stringify(joinRes1));
+    const joinRes1 = await joinByInviteToken(j2.id, token1);
+    check("joinByInviteToken موفق می‌شود", !!joinRes1.ok, JSON.stringify(joinRes1));
     const j2after = await prisma.user.findUniqueOrThrow({ where: { id: j2.id } });
     check("کاربر به تیم درست پیوست", j2after.teamId === host1.teamId);
 
     const j3 = await makeUser("joiner3", "DEALMAKER");
-    const joinRes2 = await joinBySlug(j3.id, slug1);
+    const joinRes2 = await joinByInviteToken(j3.id, token1);
     check("نفر سوم هم می‌پیوندد (تیم تکمیل می‌شود)", !!joinRes2.ok, JSON.stringify(joinRes2));
 
     const memberCount = await prisma.user.count({ where: { teamId: host1.teamId } });
     check("تیم سه‌نفره شد", memberCount === TEAM_FULL, String(memberCount));
 
-    // ---------- joinBySlug: تیم پر ----------
-    console.log("\n# ۲ — joinBySlug با تیم پر");
+    // ---------- joinByInviteToken: تیم پر ----------
+    console.log("\n# ۲ — joinByInviteToken با تیم پر");
     const j4 = await makeUser("joiner4", "BUILDER");
-    const joinFull = await joinBySlug(j4.id, slug1);
+    const joinFull = await joinByInviteToken(j4.id, token1);
     check("پیوستن به تیم پر رد می‌شود", !joinFull.ok && !!joinFull.error, JSON.stringify(joinFull));
 
-    // ---------- joinBySlug: لینک نامعتبر ----------
-    const joinGhost = await joinBySlug(j4.id, "این-اسلاگ-وجود-ندارد");
+    // ---------- joinByInviteToken: لینک نامعتبر ----------
+    const joinGhost = await joinByInviteToken(j4.id, "این-اسلاگ-وجود-ندارد");
     check("لینک نامعتبر رد می‌شود", !joinGhost.ok && !!joinGhost.error, JSON.stringify(joinGhost));
 
-    // ---------- joinBySlug: خارج از فاز مجاز ----------
-    console.log("\n# ۳ — joinBySlug خارج از فاز اتاق ایده");
+    // ---------- joinByInviteToken: خارج از فاز مجاز ----------
+    console.log("\n# ۳ — joinByInviteToken خارج از فاز اتاق ایده");
     const h2 = await makeUser("host2", "BUILDER");
     const created2 = await createTeamForUser(h2.id, `تیم ${TAG} ۲`);
     check("ساخت تیم دوم موفق", !!created2.ok, JSON.stringify(created2));
     const host2 = await prisma.user.findUniqueOrThrow({ where: { id: h2.id }, include: { team: true } });
     if (host2.teamId) createdTeamIds.add(host2.teamId);
-    const slug2 = host2.team!.slug;
+    const token2 = host2.team!.inviteToken!;
 
     await setPhase("BUILD", original.endsAt);
-    const joinLatePhase = await joinBySlug(j4.id, slug2);
+    const joinLatePhase = await joinByInviteToken(j4.id, token2);
     check(
       "پیوستن بعد از پایان فاز اتاق ایده رد می‌شود",
       !joinLatePhase.ok && joinLatePhase.error === "این کار فقط تا پایان فاز «اتاق ایده» ممکن است.",
@@ -204,7 +204,7 @@ async function main() {
     check("goSolo دوباره روی همان تیم یک‌نفره هم موفق است (idempotent)", !!(await goSolo(soloUser.id)).ok);
 
     const soloSeeker = await makeUser("soloSeeker", "STORYTELLER");
-    const joinSolo = await joinBySlug(soloSeeker.id, soloTeam.slug);
+    const joinSolo = await joinByInviteToken(soloSeeker.id, soloTeam.inviteToken!);
     check("پیوستن با لینک به تیم فردی رد می‌شود", !joinSolo.ok && !!joinSolo.error?.includes("فردی"), JSON.stringify(joinSolo));
     const mm = await joinMatchmaking(soloSeeker.id);
     const seekerAfter = await prisma.user.findUniqueOrThrow({ where: { id: soloSeeker.id } });
@@ -229,7 +229,7 @@ async function main() {
     const reopened = await openSoloTeam(soloUser.id);
     check("openSoloTeam تیم فردی را دوباره باز می‌کند", !!reopened.ok && (await prisma.team.findUniqueOrThrow({ where: { id: soloTeam.id } })).solo === false, JSON.stringify(reopened));
     const lateJoiner = await makeUser("lateJoiner", "STORYTELLER");
-    const joinReopened = await joinBySlug(lateJoiner.id, soloTeam.slug);
+    const joinReopened = await joinByInviteToken(lateJoiner.id, soloTeam.inviteToken!);
     check("پس از بازگشایی، پیوستن با لینک ممکن است", !!joinReopened.ok, JSON.stringify(joinReopened));
     check("حالا که هم‌تیمی دارد goSolo رد می‌شود", !(await goSolo(soloUser.id)).ok);
     const strayUser = await makeUser("stray", "BUILDER");

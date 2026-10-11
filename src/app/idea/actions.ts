@@ -8,9 +8,14 @@ import { teamManageError } from "@/lib/team-access";
 import { getPhase } from "@/lib/phase";
 import { runAnalyst } from "@/lib/analyst";
 import { imageUrlError } from "@/lib/product-utils";
+import { AI_SUBMIT_COOLDOWN_MS, aiEvalCapMessage, aiSubmitCooldownMessage, runCappedAiEval } from "@/lib/ai";
+import { rateLimit } from "@/lib/rate-limit";
 
-/** `values`: مقادیر ارسالی فرم در صورت خطا، تا ری‌ست خودکار فرم (React 19) نوشته‌های کاربر را پاک نکند */
-export type IdeaActionState = { error?: string; ok?: boolean; values?: Record<string, string> };
+/**
+ * `values`: مقادیر ارسالی فرم در صورت خطا، تا ری‌ست خودکار فرم (React 19) نوشته‌های کاربر را پاک نکند.
+ * `notice`: پیام اطلاع‌رسانی کنار ذخیرهٔ موفق (مثلاً پرشدن سقف تحلیل هوش مصنوعی).
+ */
+export type IdeaActionState = { error?: string; ok?: boolean; values?: Record<string, string>; notice?: string };
 
 /** حداکثر طول فیلدهای متنی بلند ایده (هم در فرم و هم در سرور) */
 const LONG_TEXT_MAX = 2000;
@@ -89,6 +94,12 @@ export async function saveIdeaAction(prevState: IdeaActionState, formData: FormD
 
   const data = parsed.data;
 
+  // فاصلهٔ حداقل بین دو ثبت نهایی هر تیم: چرخهٔ «ویرایش ← ثبت» پشت‌سرهم هزینهٔ هوش مصنوعی می‌سازد.
+  if (intent === "submit") {
+    const cooldown = rateLimit("idea-submit", user.teamId, { limit: 1, windowMs: AI_SUBMIT_COOLDOWN_MS });
+    if (!cooldown.ok) return { error: aiSubmitCooldownMessage(cooldown.retryAfterSec), values };
+  }
+
   const idea = await prisma.idea.upsert({
     where: { teamId: user.teamId },
     update: {
@@ -115,10 +126,20 @@ export async function saveIdeaAction(prevState: IdeaActionState, formData: FormD
     },
   });
 
+  let notice: string | undefined;
   if (intent === "submit") {
     // تحلیل‌گر هرگز نباید ثبت ایده را خراب کند (نبود کلید یا خطای شبکه).
+    // حداکثر AI_EVAL_CAP_PER_PHASE تحلیل واقعی برای هر ایده در هر فاز؛ پس از آن نمرهٔ قبلی می‌ماند.
     try {
-      await runAnalyst(idea.id);
+      const { phase } = await getPhase();
+      const res = await runCappedAiEval({
+        kind: "analyst",
+        refId: idea.id,
+        phase,
+        cacheKey: `ai:analyst:${idea.id}`, // همان کلید کش lib/analyst.ts
+        run: () => runAnalyst(idea.id),
+      });
+      if (!res.ran) notice = aiEvalCapMessage("analyst");
     } catch (e) {
       console.error("runAnalyst failed after submit", e);
     }
@@ -126,7 +147,7 @@ export async function saveIdeaAction(prevState: IdeaActionState, formData: FormD
 
   revalidatePath("/idea");
   revalidatePath("/invest");
-  return { ok: true };
+  return notice ? { ok: true, notice } : { ok: true };
 }
 
 /** بازکردن قفل ایده برای ویرایش دوباره (پاک‌کردن submittedAt) */

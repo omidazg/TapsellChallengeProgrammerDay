@@ -27,6 +27,8 @@ export default async function AdminFlagsPage() {
           </Alert>
         </div>
 
+        {/* کارت خالی h3 دارد؛ h2 پنهان ترتیب سرتیترها را درست نگه می‌دارد */}
+        <h2 className="sr-only">فهرست پرچم‌ها</h2>
         {flags.length === 0 ? (
           <Empty title="پرچمی ثبت نشده" />
         ) : (

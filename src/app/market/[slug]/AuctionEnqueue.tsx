@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Alert } from "@/components/ui";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { fa } from "@/lib/persian";
 import { enqueueAuctionAction } from "./actions";
 
@@ -12,9 +13,10 @@ export function AuctionEnqueue({ slug, cutoffMin }: { slug: string; cutoffMin: n
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<number | null>(null);
+  const confirm = useConfirm();
 
-  function send() {
-    if (!confirm("نسخهٔ ویژهٔ هر محصول فقط یک‌بار حراج می‌شود و از صف بیرون نمی‌آید. همین حالا به صف حراج بفرستم؟")) return;
+  async function send() {
+    if (!(await confirm({ title: "همین حالا به صف حراج بفرستم؟", body: "نسخهٔ ویژهٔ هر محصول فقط یک‌بار حراج می‌شود و از صف بیرون نمی‌آید.", confirmLabel: "بفرست" }))) return;
     setError(null);
     startTransition(async () => {
       try {

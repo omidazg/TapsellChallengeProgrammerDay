@@ -1,4 +1,13 @@
 import { getActiveAnnouncements } from "@/lib/notifications";
+import { cached } from "@/lib/ttl-cache";
+
+/**
+ * این نوار در layout همهٔ صفحات رندر می‌شود؛ بدون کش هر بازدید یک کوئری بود. کش کوتاه است و
+ * اکشن‌های /admin/announcements پس از ساخت/فعال‌سازی/حذف همین کلید را باطل می‌کنند، پس
+ * تغییر ادمین فوراً دیده می‌شود (و تغییر خارج از آن مسیر، حداکثر پس از TTL).
+ */
+export const ACTIVE_ANNOUNCEMENTS_KEY = "announcements:active";
+const ACTIVE_ANNOUNCEMENTS_TTL_MS = 15_000;
 
 // متن سفید روی brand-cyan (~۲٫۴:۱) و amber-500 (~۲:۱) خوانا نبود؛ این ترکیب‌ها ≥۴٫۵:۱ هستند
 const LEVEL_CLASS: Record<string, string> = {
@@ -13,7 +22,7 @@ const LEVEL_CLASS: Record<string, string> = {
  * در همین فایل پیاده‌سازی شده تا نیازی به کامپوننت کلاینت جدا نباشد.
  */
 export async function AnnouncementBar() {
-  const announcements = await getActiveAnnouncements().catch(() => []);
+  const announcements = await cached(ACTIVE_ANNOUNCEMENTS_KEY, ACTIVE_ANNOUNCEMENTS_TTL_MS, getActiveAnnouncements).catch(() => []);
   if (announcements.length === 0) return null;
 
   return (

@@ -38,7 +38,7 @@ function RatingGroup({
             <label
               key={n}
               htmlFor={id}
-              className={`flex items-center justify-center size-11 rounded-full border font-black fa-num cursor-pointer transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-cyan has-[:focus-visible]:ring-offset-2 ${
+              className={`flex items-center justify-center size-11 rounded-full border font-black fa-num cursor-pointer transition ${
                 checked ? "bg-brand-navy text-white border-brand-navy" : "border-brand-mist text-brand-navy hover:bg-brand-ice"
               }`}
             >

@@ -158,6 +158,71 @@ describe("scoring.ts: computeAwards", () => {
   });
 });
 
+describe("scoring.ts: computeAwards — شرایط احراز و شکستن تساوی", () => {
+  it("تیم دارای کسر تقلب «انتخاب داوران» و «انتخاب مردم» را نمی‌برد؛ جایزه به تیم واجد شرایط بعدی می‌رسد", () => {
+    const out = output(
+      result("A", { total: 900, juryAdjusted: 50, people: 100 }),
+      result("B", { total: 800, juryAdjusted: 99, people: 900, cheatPenalty: 10 }),
+      result("C", { total: 500, juryAdjusted: 80, people: 50 }),
+      result("D", { total: 300, juryAdjusted: 10, people: 400 })
+    );
+    const awards = scoring.computeAwards(out, { teamNames: names, picks: NO_PICKS });
+    expect(awards.map((a) => [a.key, a.teamId])).toEqual([
+      ["champion", "A"],
+      ["jury", "C"],
+      ["people", "D"],
+    ]);
+  });
+
+  it("کسر تقلب مانع قهرمانی (امتیاز کل، که کسر را دارد) و جوایز انتخابی نیست", () => {
+    const out = output(
+      result("A", { total: 900, juryAdjusted: 50, people: 100, cheatPenalty: 5 }),
+      result("B", { total: 100, juryAdjusted: 10, people: 10, cheatPenalty: 5 })
+    );
+    const awards = scoring.computeAwards(out, { teamNames: names, picks: { ai: "B", live: null } });
+    expect(awards.map((a) => [a.key, a.teamId])).toEqual([
+      ["champion", "A"],
+      ["ai", "B"],
+    ]);
+  });
+
+  it("تیم بدون عضو هیچ جایزه‌ای نمی‌برد (خودکار یا انتخابی)", () => {
+    const out = output(
+      result("A", { total: 900, juryAdjusted: 90, people: 900, memberCount: 0 }),
+      result("B", { total: 500, juryAdjusted: 40, people: 40 }),
+      result("C", { total: 300, juryAdjusted: 30, people: 30 }),
+      result("D", { total: 100, juryAdjusted: 10, people: 10, memberCount: 0 })
+    );
+    const awards = scoring.computeAwards(out, { teamNames: names, picks: { ai: "D", live: "A" } });
+    expect(awards.map((a) => [a.key, a.teamId])).toEqual([
+      ["champion", "B"],
+      ["jury", "C"],
+    ]);
+    expect(awards.some((a) => a.teamId === "A" || a.teamId === "D")).toBe(false);
+  });
+
+  it("تساوی معیار با ترتیب رتبه شکسته می‌شود، مستقل از ترتیب ورودی", () => {
+    // B و C در نمرهٔ داوری برابرند؛ رتبهٔ C بهتر است (rank از موتور)
+    const teams = [
+      result("A", { total: 900, juryAdjusted: 95, people: 500, rank: 1 }),
+      result("C", { total: 700, juryAdjusted: 60, people: 10, rank: 2 }),
+      result("B", { total: 600, juryAdjusted: 60, people: 10, rank: 3 }),
+    ];
+    const awards = scoring.computeAwards({ teams }, { teamNames: names, picks: NO_PICKS });
+    expect(awards.find((a) => a.key === "jury")?.teamId).toBe("C");
+    // بدون rank: جایگاه در جدول (ترتیب رتبه) تساوی را می‌شکند — A قهرمان است، پس «مردم» به E (جلوتر از D در جدول) می‌رسد
+    const noRank = [result("A", { total: 900, juryAdjusted: 95, people: 500 }), result("E", { total: 10, people: 7 }), result("D", { total: 10, people: 7 })];
+    expect(scoring.computeAwards({ teams: noRank }, { teamNames: names, picks: NO_PICKS }).find((a) => a.key === "people")?.teamId).toBe("E");
+  });
+
+  it("prizeEligible", () => {
+    expect(scoring.prizeEligible("jury", { memberCount: 2, cheatPenalty: 1 })).toBe(false);
+    expect(scoring.prizeEligible("people", { memberCount: 2, cheatPenalty: 1 })).toBe(false);
+    expect(scoring.prizeEligible("champion", { memberCount: 2, cheatPenalty: 1 })).toBe(true);
+    expect(scoring.prizeEligible("live", { memberCount: 0, cheatPenalty: 0 })).toBe(false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // computeScores / getAwardPicks (با پایگاه‌داده)
 // ---------------------------------------------------------------------------
@@ -265,5 +330,37 @@ describe("scoring.ts: computeScores (داده‌ها از پایگاه‌داد�
     await prisma.setting.create({ data: { key: scoring.AWARD_PICK_KEYS.live, value: "" } });
     expect(await scoring.getAwardPicks()).toEqual({ ai: ids.B, live: null });
     expect(scoring.AWARD_PICK_KEYS).toEqual({ ai: "award_ai_team_id", live: "award_live_team_id" });
+  });
+});
+
+describe("scoring.ts: انتخاب «بهترین محصول لایو» فقط برای محصول LIVE و ترتیب قطعی computeScores", () => {
+  it("getAwardPicks انتخاب لایو را اگر محصول تیم LIVE نباشد نادیده می‌گیرد؛ getRawAwardPicks همان مقدار ذخیره‌شده است", async () => {
+    const team = await prisma.team.create({ data: { name: "لایو تست", slug: "live-pick-test" } });
+    await makeUser(team.id);
+    const product = await prisma.product.create({ data: { teamId: team.id, name: "لایو", submittedAt: new Date(), liveStatus: "REQUESTED" } });
+    await prisma.setting.upsert({
+      where: { key: scoring.AWARD_PICK_KEYS.live },
+      update: { value: team.id },
+      create: { key: scoring.AWARD_PICK_KEYS.live, value: team.id },
+    });
+    expect((await scoring.getAwardPicks()).live).toBeNull();
+    expect((await scoring.getRawAwardPicks()).live).toBe(team.id);
+    await prisma.product.update({ where: { id: product.id }, data: { liveStatus: "LIVE" } });
+    expect((await scoring.getAwardPicks()).live).toBe(team.id);
+    await prisma.setting.update({ where: { key: scoring.AWARD_PICK_KEYS.live }, data: { value: "" } });
+  });
+
+  it("computeScores در تساوی کامل، تیم با محصول زودتر ثبت‌شده را جلوتر می‌گذارد (و بی‌محصول را آخر)", async () => {
+    const mk = async (slug: string, submittedAt: Date | null) => {
+      const t = await prisma.team.create({ data: { name: `تساوی ${slug}`, slug } });
+      if (submittedAt) await prisma.product.create({ data: { teamId: t.id, name: slug, submittedAt } });
+      return t.id;
+    };
+    const late = await mk("tie-late", new Date("2026-01-02T00:00:00Z"));
+    const none = await mk("tie-none", null);
+    const early = await mk("tie-early", new Date("2026-01-01T00:00:00Z"));
+    const out = await scoring.computeScores();
+    const order = out.teams.map((t) => t.teamId).filter((id) => [late, none, early].includes(id));
+    expect(order).toEqual([early, late, none]);
   });
 });

@@ -32,7 +32,8 @@ export function Empty({ title, desc, cta }: { title: string; desc?: string; cta?
   return (
     <div className="card p-10 text-center anim-pop">
       <div className="text-5xl mb-3" aria-hidden>🪄</div>
-      <h3 className="text-xl font-black">{title}</h3>
+      {/* h2 (نه h3): معمولاً مستقیم زیر h1 صفحه می‌آید و سطح سرتیتر نباید پرش کند؛ اندازهٔ ظاهری همان است */}
+      <h2 className="text-xl font-black">{title}</h2>
       {desc && <p className="mt-2 text-brand-slate">{desc}</p>}
       {cta && <Link href={cta.href} className="btn-primary mt-5">{cta.label}</Link>}
     </div>
@@ -43,7 +44,7 @@ export function Locked({ title, desc }: { title: string; desc: string }) {
   return (
     <div className="card p-10 text-center bg-brand-ice">
       <div className="text-5xl mb-3" aria-hidden>🔒</div>
-      <h3 className="text-xl font-black">{title}</h3>
+      <h2 className="text-xl font-black">{title}</h2>
       <p className="mt-2 text-brand-slate">{desc}</p>
     </div>
   );

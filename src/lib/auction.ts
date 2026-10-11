@@ -3,7 +3,7 @@ import { prisma } from "./db";
 import { getPhase, getSetting, getSettingInt } from "./phase";
 import { DEFAULTS } from "./constants";
 import { fa } from "./persian";
-import { notifyUser } from "./notifications";
+import { notifyTeam, notifyUser } from "./notifications";
 import { cached, invalidate } from "./ttl-cache";
 import { publishAuctionChange, AUCTION_CACHE_PREFIX } from "./auction-events";
 // اقتصاد خالص: nextMinBid و shouldExtendAuction از موتور اقتصاد می‌آیند.
@@ -11,12 +11,17 @@ import { nextMinBid, shouldExtendAuction } from "./economy/engine";
 import { pickFirstPriceWinner } from "./economy/bids";
 import { reservedBuyCoins } from "./reservations";
 import { coverUrl } from "./product-utils";
+import { log } from "./log";
 export { reservedBuyCoins } from "./reservations";
 
 /** ضریب ایمنی: فقط تا این نسبت از زمان باقی‌ماندهٔ فاز صرف حراج‌ها می‌شود (بقیه برای تسویه/تأخیرها). */
 const AUCTION_PHASE_FIT_RATIO = 0.85;
 /** حداقل مطلق مدت هر حراج، حتی وقتی زمان فاز خیلی کم است. */
 const MIN_AUCTION_DURATION_SEC = 60;
+/** فاصلهٔ تیک زمان‌بند (instrumentation.ts): تسویه و شروع حراج بعدی تا این مقدار دیرتر رخ می‌دهد. */
+export const SCHEDULER_TICK_SEC = 30;
+/** پیش‌فرض auction_gap_sec (هم‌سان با زمان‌بند) */
+const DEFAULT_AUCTION_GAP_SEC = 60;
 
 /**
  * جابه‌جایی Fisher–Yates با node:crypto.randomInt (تصادفی رمزنگارانه، نه Math.random).
@@ -31,18 +36,28 @@ export function shuffleOrder<T>(arr: T[]): T[] {
 }
 
 /**
- * مدت هر حراج را طوری کوتاه می‌کند که همهٔ حراج‌های باقی‌مانده در زمان باقی‌ماندهٔ فاز جا شوند:
- * duration = clamp(floor(secondsLeftInPhase × ۰٫۸۵ ÷ auctionsRemainingIncludingThis), ۶۰, configuredDuration).
- * تابعی خالص است (بدون I/O) تا مستقیم قابل تست باشد.
+ * مدت هر حراج را طوری کوتاه می‌کند که همهٔ حراج‌های باقی‌مانده در زمان باقی‌ماندهٔ فاز جا شوند.
+ * هر حراج در عمل «مدت + سربار» طول می‌کشد؛ سربار = فاصلهٔ بین حراج‌ها (auction_gap_sec) + تأخیر تیک
+ * زمان‌بند (۳۰ ثانیه) + تمدید ضدِ لحظهٔ آخر مورد انتظار (anti_snipe_extend_sec):
+ *   n × (duration + overhead) ≤ secondsLeftInPhase × ۰٫۸۵
+ *   duration = clamp(floor(secondsLeftInPhase × ۰٫۸۵ ÷ n − overhead), ۶۰, configuredDuration)
+ * تابعی خالص است (بدون I/O) تا مستقیم قابل تست باشد. overheadPerAuctionSec پیش‌فرض صفر است (رفتار قدیمی).
  */
 export function clampAuctionDuration(
   secondsLeftInPhase: number,
   auctionsRemainingIncludingThis: number,
-  configuredDuration: number
+  configuredDuration: number,
+  overheadPerAuctionSec = 0
 ): number {
   if (auctionsRemainingIncludingThis <= 0 || secondsLeftInPhase <= 0) return MIN_AUCTION_DURATION_SEC;
-  const fitted = Math.floor((secondsLeftInPhase * AUCTION_PHASE_FIT_RATIO) / auctionsRemainingIncludingThis);
+  const perAuction = (secondsLeftInPhase * AUCTION_PHASE_FIT_RATIO) / auctionsRemainingIncludingThis;
+  const fitted = Math.floor(perAuction - Math.max(0, overheadPerAuctionSec));
   return Math.min(configuredDuration, Math.max(MIN_AUCTION_DURATION_SEC, fitted));
+}
+
+/** سربار هر حراج علاوه بر مدتش (ثانیه): فاصله + تیک زمان‌بند + یک تمدید ضدِ لحظهٔ آخر. */
+export function auctionOverheadSec(gapSec: number, antiSnipeExtendSec: number): number {
+  return Math.max(0, gapSec) + SCHEDULER_TICK_SEC + Math.max(0, antiSnipeExtendSec);
 }
 
 export type EnqueueResult = { ok: true; auctionId: string; position: number } | { ok: false; error: string };
@@ -108,13 +123,31 @@ export async function ensureAuctions() {
   publishAuctionChange();
 }
 
-/** پایان بازی: حراج زنده تسویه و حراج‌های اجرانشدهٔ صف حذف می‌شوند (بدون پیشنهاد هستند). */
+/**
+ * پایان بازی: حراج زنده تسویه و حراج‌های اجرانشدهٔ صف حذف می‌شوند (بدون پیشنهاد هستند).
+ * تیم‌هایی که محصولشان در صف مانده بود و نوبتش نرسید با اعلان باخبر می‌شوند (نه حذف بی‌صدا).
+ */
 export async function closeAuctionsForGameEnd() {
   const live = await prisma.auction.findMany({ where: { status: "LIVE" }, select: { id: true } });
   // در پایان بازی حراج بعدی نباید خودکار شروع شود، حتی اگر فاز هنوز CLOSED ثبت نشده باشد.
-  for (const a of live) await settleCore(a.id, { startNext: false });
-  const removed = await prisma.auction.deleteMany({ where: { status: "SCHEDULED", bids: { none: {} } } });
+  for (const a of live) await settleCore(a.id, { startNext: false, gameEnd: true });
+  const leftover = await prisma.auction.findMany({
+    where: { status: "SCHEDULED", bids: { none: {} } },
+    select: { id: true, product: { select: { teamId: true } } },
+  });
+  if (leftover.length === 0) return;
+  const removed = await prisma.auction.deleteMany({
+    where: { id: { in: leftover.map((a) => a.id) }, status: "SCHEDULED", bids: { none: {} } },
+  });
   if (removed.count > 0) publishAuctionChange();
+  for (const teamId of new Set(leftover.map((a) => a.product.teamId))) {
+    await notifyTeam(teamId, {
+      kind: "auction_unrun",
+      title: "حراج محصولتان برگزار نشد",
+      body: "روز بازار پیش از رسیدن نوبت محصول شما در صف حراج تمام شد و حراج آن برگزار نشد.",
+      href: "/auction",
+    }).catch((e) => console.error("notify leftover auction team failed", e));
+  }
 }
 
 /**
@@ -127,8 +160,12 @@ async function resolveAuctionDuration(configuredDuration: number): Promise<numbe
   if (phase !== "MARKET" || !endsAt) return configuredDuration;
   const secondsLeftInPhase = Math.max(0, Math.floor((endsAt.getTime() - Date.now()) / 1000));
   // شامل همین حراجی که قرار است زنده شود، به‌علاوهٔ بقیهٔ صف (SCHEDULED فعلی).
-  const remainingCount = await prisma.auction.count({ where: { status: "SCHEDULED" } });
-  return clampAuctionDuration(secondsLeftInPhase, remainingCount, configuredDuration);
+  const [remainingCount, gapSec, extendSec] = await Promise.all([
+    prisma.auction.count({ where: { status: "SCHEDULED" } }),
+    getSettingInt("auction_gap_sec", DEFAULT_AUCTION_GAP_SEC),
+    getSettingInt("anti_snipe_extend_sec", DEFAULTS.antiSnipeExtendSec),
+  ]);
+  return clampAuctionDuration(secondsLeftInPhase, remainingCount, configuredDuration, auctionOverheadSec(gapSec, extendSec));
 }
 
 /**
@@ -165,9 +202,21 @@ export async function startNextAuction(durationSec?: number) {
 /**
  * هستهٔ تسویه. idempotent است: با `updateMany` روی وضعیت LIVE قفل می‌گیرد،
  * پس دو فراخوانی هم‌زمان فقط یک‌بار برنده را بدهکار می‌کنند.
+ *
+ * پس از «پایان بازی» (فاز CLOSED) فقط مسیر پایان بازی (closeAuctionsForGameEnd با gameEnd) حق تسویه دارد،
+ * و پس از تسویهٔ قطعی هیچ مسیری: خریدِ برنده پس از ثبت نتیجهٔ نهایی در امتیاز نمی‌آمد و نتایج را
+ * با دفتر کل ناهمخوان می‌کرد. (مثلاً اگر closeAuctionsForGameEnd شکست خورده باشد، حراج زنده با
+ * بازدید صفحه یا کلیک ادمین نباید بعداً تسویه شود.)
  */
-async function settleCore(id: string, opts: { startNext?: boolean } = {}) {
+async function settleCore(id: string, opts: { startNext?: boolean; gameEnd?: boolean } = {}) {
   const settled = await prisma.$transaction(async (tx) => {
+    const gate = await tx.setting.findMany({ where: { key: { in: ["phase", "settled_at", "settled_final"] } } });
+    const gateMap = new Map(gate.map((r) => [r.key, r.value]));
+    const finalSettled = !!gateMap.get("settled_at") && gateMap.get("settled_final") !== "0";
+    if (finalSettled || (gateMap.get("phase") === "CLOSED" && !opts.gameEnd)) {
+      log.error("auction_settle_refused_after_game_end", { auctionId: id, phase: gateMap.get("phase") ?? null, finalSettled });
+      return false;
+    }
     // قفل منطقی: تنها فراخوانی‌ای که count=1 بگیرد حق تسویه دارد.
     const claimed = await tx.auction.updateMany({
       where: { id, status: "LIVE" },
@@ -212,8 +261,9 @@ async function settleCore(id: string, opts: { startNext?: boolean } = {}) {
     await tx.ledgerEntry.create({
       data: { userId: winner.id, wallet: "BUY", delta: -finalPrice, reason: "AUCTION_WIN", refId: auction.id },
     });
-    // برد حراج یک خرید است و در «حمایت مردمی» حساب می‌شود.
+    // برد حراج یک خرید است و در «حمایت مردمی» و جمع فروش بازار حساب می‌شود.
     invalidate("scores:");
+    invalidate("market:");
     await tx.auction.update({
       where: { id },
       data: { winnerId: winner.id, finalPrice },

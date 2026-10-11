@@ -4,6 +4,7 @@ import { SCORE_CATEGORY_ORDER, SCORE_CATEGORY_LABELS, SCORE_CATEGORY_MEASURES } 
 import { PRIZES, prizeAmountMillion, prizePoolFrom, formatMillion, type PrizePool } from "./prizes";
 import { ANTI_CHEAT_STATEMENT, CORE_RULES } from "./rules";
 import type { GameValues } from "./game-values-core";
+import { peopleExample } from "@/lib/people-example";
 
 /**
  * متن زمینه‌ای که به دستیار هوش مصنوعی داده می‌شود تا فقط بر اساس قوانین واقعی بازی پاسخ دهد.
@@ -47,7 +48,7 @@ ${skills}
 - یک کیف سکه برای همه‌چیز. سکهٔ رایگان اولیهٔ هر نفر: ${values.startingCoins} سکه.
 - خرید سکه با پول: هر سکه ${COIN_PRICE_TOMAN.toLocaleString("fa-IR")} تومان (ده هزار ریال)، حداقل ${DEFAULTS.minCoinPurchase} سکه و حداکثر ${values.maxBoughtCoinsPerUser} سکه برای هر نفر در کل بازی. از صفحهٔ «کیف سکه».
 - همهٔ پول خرید سکه به صندوق جایزه اضافه می‌شود.
-- حمایت از ایده (در «دور حمایت») و خرید محصول (در «روز بازار») به هر مقدار آزاد است، اما در امتیاز مردمی از هر نفر برای هر پروژه حداکثر ${values.supportCap} سکه حساب می‌شود و فرمول درجه‌دو است: ۱۰ نفر که هر کدام ۱۰ سکه بدهند، ۱۰ برابرِ یک نفر با ۱۰۰ سکه می‌ارزند.
+- حمایت از ایده (در «دور حمایت») و خرید محصول (در «روز بازار») به هر مقدار آزاد است، اما در امتیاز مردمی از هر نفر برای هر پروژه حداکثر ${values.supportCap} سکه حساب می‌شود و فرمول درجه‌دو است: ${peopleExample(values.supportCap)}
 - قیمت محصول بین ${DEFAULTS.minPrice} تا ${DEFAULTS.maxPrice} سکه است و تیم تعیینش می‌کند.
 - سکهٔ خرج‌نشده جریمه ندارد و سود سهام هم وجود ندارد.
 

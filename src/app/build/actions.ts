@@ -11,14 +11,18 @@ import { DEFAULTS } from "@/lib/constants";
 import { serializeImages, missingForSubmit, MAX_IMAGES, effectiveMaxPrice, imageUrlError } from "@/lib/product";
 import { runJuryAi } from "@/lib/jury-ai";
 import { fa } from "@/lib/persian";
+import { AI_SUBMIT_COOLDOWN_MS, aiEvalCapMessage, aiSubmitCooldownMessage, runCappedAiEval } from "@/lib/ai";
+import { rateLimit } from "@/lib/rate-limit";
 
 /**
  * `values`: مقادیر ارسالی فرم در صورت خطا، تا ری‌ست خودکار فرم (React 19) نوشته‌های کاربر را پاک نکند.
  * `missing`: موارد ناقص چک‌لیست وقتی «ثبت نهایی» رد شده (برای پیوند به فیلدها در فرم).
+ * `notice`: پیام اطلاع‌رسانی کنار ذخیرهٔ موفق (مثلاً پرشدن سقف داوری هوش مصنوعی).
  */
 export type ProductActionState = {
   error?: string;
   ok?: boolean;
+  notice?: string;
   values?: Record<string, string>;
   missing?: { label: string; fieldId: string }[];
 };
@@ -161,6 +165,12 @@ export async function saveProductAction(prevState: ProductActionState, formData:
     }
   }
 
+  // فاصلهٔ حداقل بین دو ثبت نهایی هر تیم: چرخهٔ «بازکردن ← ثبت» پشت‌سرهم هزینهٔ هوش مصنوعی می‌سازد.
+  if (intent === "submit") {
+    const cooldown = rateLimit("product-submit", user.teamId, { limit: 1, windowMs: AI_SUBMIT_COOLDOWN_MS });
+    if (!cooldown.ok) return { error: aiSubmitCooldownMessage(cooldown.retryAfterSec), values };
+  }
+
   const product = await prisma.product.upsert({
     where: { teamId: user.teamId },
     update: {
@@ -192,12 +202,22 @@ export async function saveProductAction(prevState: ProductActionState, formData:
     },
   });
 
+  let notice: string | undefined;
   if (intent === "submit") {
-    await runJuryAi(product.id).catch(() => null);
+    // حداکثر AI_EVAL_CAP_PER_PHASE داوری واقعی هوش مصنوعی برای هر محصول در هر فاز؛ پس از آن نمرهٔ قبلی می‌ماند.
+    const { phase } = await getPhase();
+    const res = await runCappedAiEval({
+      kind: "jury",
+      refId: product.id,
+      phase,
+      cacheKey: `ai:jury:${product.id}`, // همان کلید کش lib/jury-ai.ts
+      run: () => runJuryAi(product.id).catch(() => null),
+    }).catch(() => null);
+    if (res && !res.ran) notice = aiEvalCapMessage("jury");
   }
 
   revalidatePath("/build");
-  return { ok: true };
+  return notice ? { ok: true, notice } : { ok: true };
 }
 
 /** بازکردن قفل محصول برای ویرایش دوباره (پاک‌کردن submittedAt) */

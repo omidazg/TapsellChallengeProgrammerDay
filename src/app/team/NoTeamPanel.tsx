@@ -3,9 +3,10 @@
 import { useState, useTransition } from "react";
 import type { Team, TeamInvite, User } from "@prisma/client";
 import { Alert, Locked } from "@/components/ui";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { createTeamAction, joinMatchmakingAction, acceptInviteAction, declineInviteAction, goSoloAction } from "./actions";
 
-type InviteRow = TeamInvite & { team: Team; inviter: User };
+type InviteRow = Pick<TeamInvite, "id"> & { team: Pick<Team, "name">; inviter: Pick<User, "nickname"> };
 
 export function NoTeamPanel({ invites, formingOpen }: { invites: InviteRow[]; formingOpen: boolean }) {
   return (
@@ -102,7 +103,7 @@ function CreateTeamCard() {
   return (
     <form onSubmit={submit} className="card p-6 anim-rise">
       <div className="text-3xl" aria-hidden>🚀</div>
-      <h3 className="mt-2 text-lg font-black text-brand-navy">ساخت تیم</h3>
+      <h2 className="mt-2 text-lg font-black text-brand-navy">ساخت تیم</h2>
       <p className="mt-1 text-sm text-brand-slate">یک اسم برای تیمت انتخاب کن و یک یا دو هم‌تیمی دعوت کن.</p>
       {error && (
         <div className="mt-3" id="create-team-error">
@@ -143,7 +144,7 @@ function MatchmakingCard() {
   return (
     <div className="card p-6 anim-rise">
       <div className="text-3xl" aria-hidden>🧲</div>
-      <h3 className="mt-2 text-lg font-black text-brand-navy">تیم برایم پیدا کن</h3>
+      <h2 className="mt-2 text-lg font-black text-brand-navy">تیم برایم پیدا کن</h2>
       <p className="mt-1 text-sm text-brand-slate">به تیمی که جای خالی دارد (ترجیحاً تیمی که مهارت تو را ندارد) ملحق می‌شوی؛ اگر جایی نبود، تیم تازه‌ای برایت ساخته می‌شود.</p>
       {error && (
         <div className="mt-3">
@@ -162,8 +163,10 @@ function SoloCard() {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  function go() {
-    if (!window.confirm("فردی شرکت می‌کنی؟ تیم یک‌نفره‌ای به نام خودت ساخته می‌شود و تا وقتی بازش نکنی هم‌تیمی نمی‌پذیرد.")) return;
+  const confirm = useConfirm();
+
+  async function go() {
+    if (!(await confirm({ title: "فردی شرکت می‌کنی؟", body: "تیم یک‌نفره‌ای به نام خودت ساخته می‌شود و تا وقتی بازش نکنی هم‌تیمی نمی‌پذیرد." }))) return;
     setError(null);
     startTransition(async () => {
       const res = await goSoloAction();
@@ -174,7 +177,7 @@ function SoloCard() {
   return (
     <div className="card p-6 anim-rise">
       <div className="text-3xl" aria-hidden>🧑‍🚀</div>
-      <h3 className="mt-2 text-lg font-black text-brand-navy">شرکت فردی</h3>
+      <h2 className="mt-2 text-lg font-black text-brand-navy">شرکت فردی</h2>
       <p className="mt-1 text-sm text-brand-slate">
         تنها بازی کن؛ تعداد اعضای تیم در امتیاز هیچ اثری ندارد. هر وقت خواستی (تا پایان «اتاق ایده») می‌توانی تیمت را برای هم‌تیمی باز کنی.
       </p>

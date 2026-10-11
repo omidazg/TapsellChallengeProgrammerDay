@@ -10,7 +10,8 @@ import {
   acceptInvite,
   declineInvite,
   leaveTeam,
-  joinBySlug,
+  joinByInviteToken,
+  regenerateInviteToken,
   goSolo,
   openSoloTeam,
   type TeamResult,
@@ -59,15 +60,23 @@ export async function declineInviteAction(inviteId: string): Promise<TeamResult>
   return res;
 }
 
-/** پیوستن از طریق لینک دعوت؛ در صورت موفقیت به /team با پرچم موفقیت هدایت می‌کند */
-export async function joinBySlugAction(slug: string): Promise<TeamResult | never> {
+/** پیوستن از طریق لینک دعوت (توکن)؛ در صورت موفقیت به /team با پرچم موفقیت هدایت می‌کند */
+export async function joinByInviteTokenAction(token: string): Promise<TeamResult | never> {
   const user = await requireUser();
-  const res = await joinBySlug(user.id, slug);
+  const res = await joinByInviteToken(user.id, token);
   if (res.ok) {
     revalidatePath("/team");
     revalidatePath("/profile");
     redirect("/team?joined=1");
   }
+  return res;
+}
+
+/** لینک دعوت تازه؛ لینک قبلی دیگر کار نمی‌کند */
+export async function regenerateInviteLinkAction(): Promise<TeamResult> {
+  const user = await requireUser();
+  const res = await regenerateInviteToken(user.id);
+  if (res.ok) revalidatePath("/team");
   return res;
 }
 

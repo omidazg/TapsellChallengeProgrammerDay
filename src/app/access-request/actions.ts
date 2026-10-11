@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getSessionUserId } from "@/lib/auth";
 import { rateLimit, rateLimitMessage, clientIp, ACCESS_REQUEST_IP_RULE, ACCESS_STATUS_IP_RULE } from "@/lib/rate-limit";
-import { accessState, canRegister, normalizeEmail } from "@/lib/whitelist";
+import { ACCESS_STATUS_LABEL, accessState, canRegister, normalizeEmail } from "@/lib/whitelist";
 import { getPhase } from "@/lib/phase";
 import { normalizePhone } from "@/lib/phone";
 
@@ -58,7 +58,7 @@ export async function submitAccessRequestAction(_prev: AccessRequestState, formD
     phone: str("phone"),
   };
 
-  if (await getSessionUserId()) return { error: "شما از قبل وارد شده‌اید.", values };
+  if (await getSessionUserId()) return { error: "از قبل وارد شده‌ای.", values };
 
   const ip = await clientIp();
   const limit = rateLimit("access-request:ip", ip, ACCESS_REQUEST_IP_RULE());
@@ -75,14 +75,31 @@ export async function submitAccessRequestAction(_prev: AccessRequestState, formD
   if (user) return { ok: "HAS_ACCOUNT" };
   if (await canRegister(data.email)) return { ok: "ALLOWED", email: data.email };
 
-  // یک درخواست برای هر ایمیل: ارسال دوباره اطلاعات را تازه می‌کند و درخواست ردشده را به صف برمی‌گرداند
-  const existing = await prisma.accessRequest.findUnique({ where: { email: data.email }, select: { id: true } });
-  await prisma.accessRequest.upsert({
-    where: { email: data.email },
-    update: { ...data, status: "PENDING", reviewedById: null, reviewedAt: null },
-    create: data,
-  });
-  return { ok: existing ? "UPDATED" : "CREATED", email: data.email };
+  // یک درخواست برای هر ایمیل، و فرم بدون ورود است: ارسال دوباره هرگز درخواست موجود را بازنویسی
+  // نمی‌کند. وگرنه هر کسی می‌توانست با ایمیل دیگری شمارهٔ خودش را جا بزند و با تأیید برگزارکننده
+  // همان شماره به لیست سفید می‌رفت، یا درخواست ردشده را بی‌صدا دوباره به صف بفرستد.
+  const existing = await prisma.accessRequest.findUnique({ where: { email: data.email }, select: { status: true } });
+  if (existing) return { error: existingRequestMessage(existing.status), values };
+  try {
+    await prisma.accessRequest.create({ data });
+  } catch (e) {
+    // دو ارسال هم‌زمان با یک ایمیل: دومی به کلید یکتا می‌خورد
+    if ((e as { code?: string })?.code === "P2002") return { error: existingRequestMessage("PENDING"), values };
+    throw e;
+  }
+  return { ok: "CREATED", email: data.email };
+}
+
+/** پیام درخواست تکراری؛ وضعیت فعلی گفته می‌شود ولی هیچ دادهٔ شخصیِ درخواست قبلی نه */
+function existingRequestMessage(status: string): string {
+  const label = ACCESS_STATUS_LABEL[status] ?? status;
+  const next =
+    status === "PENDING"
+      ? "منتظر بررسی برگزارکننده بمان؛ وضعیتش را از بخش پیگیری پایین همین صفحه ببین."
+      : status === "APPROVED"
+        ? "اگر هنوز نمی‌توانی ثبت‌نام کنی، با برگزارکننده تماس بگیر."
+        : "اگر فکر می‌کنی اشتباهی رخ داده یا باید اطلاعاتش (مثلاً شماره) عوض شود، با برگزارکننده تماس بگیر.";
+  return `برای این ایمیل قبلاً درخواست دسترسی ثبت شده (وضعیت: ${label}). ${next}`;
 }
 
 export type AccessStatus = "PENDING" | "ALLOWED" | "REJECTED" | "NONE" | "HAS_ACCOUNT";

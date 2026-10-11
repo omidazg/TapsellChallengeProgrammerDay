@@ -27,6 +27,7 @@ export default async function AdSlotsPage() {
     return (
       <Container>
         <PageHeader eyebrow="روز بازار" title="جایگاه تبلیغاتی" desc="تیم‌ها ساعت‌های تبلیغ روز بازار را با قیمت ثابت سکه می‌خرند." />
+        <h2 className="sr-only">وضعیت جایگاه‌ها</h2>
         <Locked title="هنوز زود است" desc="خرید جایگاه تبلیغاتی از فاز «ساخت محصول» باز می‌شود." />
       </Container>
     );
@@ -109,6 +110,8 @@ export default async function AdSlotsPage() {
         {!readOnly && blockReason && <Alert kind="info">{blockReason}</Alert>}
 
         <div className="card p-4 sm:p-6">
+          {/* هر ساعت در نمای موبایل h3 دارد؛ این h2 پنهان ترتیب سرتیترها را درست نگه می‌دارد */}
+          <h2 className="sr-only">جدول ساعت‌ها و جایگاه‌ها</h2>
           <SlotGrid cells={cells} canBuy={!blockReason} spendable={spendable} />
         </div>
       </div>

@@ -135,7 +135,7 @@ export function BuildForm({
         ) : (
           <Alert kind="error">{state.error}</Alert>
         ))}
-      {state.ok && <Alert kind="ok">ذخیره شد.</Alert>}
+      {state.ok && <Alert kind="ok">ذخیره شد.{state.notice ? ` ${state.notice}` : ""}</Alert>}
       {!editable && lockNote && <Alert kind="info">{lockNote}</Alert>}
 
       <fieldset disabled={locked} className="space-y-6 disabled:opacity-70">
@@ -158,7 +158,7 @@ export function BuildForm({
         <div className="grid md:grid-cols-2 gap-5">
           <div>
             <label className="label" htmlFor="demoUrl">لینک دمو</label>
-            <input id="demoUrl" name="demoUrl" type="url" defaultValue={v.demoUrl ?? initial?.demoUrl} maxLength={500} className="input" placeholder="https://..." dir="ltr" />
+            <input id="demoUrl" name="demoUrl" type="url" defaultValue={v.demoUrl ?? initial?.demoUrl} maxLength={500} className="input" placeholder="https://…" dir="ltr" />
           </div>
           <div>
             <label className="label" htmlFor="teaserUrl">لینک تیزر (یوتیوب، آپارات یا mp4)</label>
@@ -168,19 +168,20 @@ export function BuildForm({
               value={teaserUrl}
               onChange={(e) => setTeaserUrl(e.target.value)}
               className="input"
-              placeholder="https://..."
+              placeholder="https://…"
               dir="ltr"
             />
           </div>
         </div>
 
-        {teaser.kind !== "none" && teaser.embedSrc && (
+        {teaser.kind === "video" && teaser.embedSrc && (
+          <p className="text-xs text-brand-slate">
+            این لینک یوتیوب یا آپارات نیست؛ در صفحهٔ محصول به‌جای پخش‌کننده، دکمهٔ «تماشای تیزر» نشان داده می‌شود.
+          </p>
+        )}
+        {(teaser.kind === "youtube" || teaser.kind === "aparat") && teaser.embedSrc && (
           <div className="relative w-full max-w-md aspect-video rounded-2xl overflow-hidden border border-brand-mist anim-pop bg-black">
-            {teaser.kind === "video" ? (
-              <video src={teaser.embedSrc} controls className="w-full h-full object-contain" />
-            ) : (
-              <iframe src={teaser.embedSrc} className="w-full h-full" allowFullScreen title="پیش‌نمایش تیزر" />
-            )}
+            <iframe src={teaser.embedSrc} className="w-full h-full" allowFullScreen title="پیش‌نمایش تیزر" />
           </div>
         )}
 
@@ -325,7 +326,7 @@ function ImagesField({ images, setImages, disabled }: { images: string[]; setIma
                 <button
                   type="button"
                   onClick={() => removeImage(idx)}
-                  className="absolute top-1 left-1 size-6 rounded-full bg-brand-navy/80 text-white text-xs flex items-center justify-center hover:bg-brand-red"
+                  className="absolute top-0 left-0 isolate size-11 flex items-center justify-center text-white text-xs before:absolute before:inset-2 before:-z-10 before:rounded-full before:bg-brand-navy/80 hover:before:bg-brand-red"
                   aria-label={`حذف تصویر ${fa(idx + 1)}`}
                 >
                   ✕

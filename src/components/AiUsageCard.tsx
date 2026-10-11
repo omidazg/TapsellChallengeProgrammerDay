@@ -23,7 +23,7 @@ export async function AiUsageCard() {
       <div className="flex items-center gap-2 mb-4">
         <span className="text-2xl">📊</span>
         <h3 className="font-black text-brand-navy">مصرف هوش مصنوعی امروز</h3>
-        <span className="text-xs text-brand-slate/70 fa-num">({tehranDayKey()})</span>
+        <span className="text-xs text-brand-slate fa-num">({tehranDayKey()})</span>
       </div>
 
       <div className="grid grid-cols-3 gap-3 mb-4 text-center">

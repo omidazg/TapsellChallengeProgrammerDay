@@ -21,6 +21,7 @@ export default async function AuctionPage() {
     return (
       <Container>
         <PageHeader eyebrow="حراج زنده" title="حراج زنده" desc="نسخه‌های ویژهٔ محصولات در «روز بازار» یکی‌یکی زنده حراج می‌شوند." />
+        <h2 className="sr-only">وضعیت حراج</h2>
         <Locked title="هنوز زود است" desc="حراج زنده در فاز «روز بازار» برگزار می‌شود؛ تیم‌ها همان موقع محصولشان را از صفحهٔ محصول به صف حراج می‌فرستند." />
       </Container>
     );
@@ -76,6 +77,8 @@ export default async function AuctionPage() {
             )}
           </div>
 
+          {/* سرتیتر پنهان بخش حراج جاری؛ کارت «فعلاً حراجی زنده نیست» h3 دارد و نباید بعد از h1 بیاید */}
+          <h2 className="sr-only">حراج جاری</h2>
           <AuctionStage
             initialId={liveId}
             initialBudget={initialBudget}
@@ -89,7 +92,7 @@ export default async function AuctionPage() {
 
           <div className="grid md:grid-cols-2 gap-6 mt-8">
             <div className="card p-4 sm:p-6">
-              <h3 className="font-black text-brand-navy mb-3">صف حراج</h3>
+              <h2 className="font-black text-brand-navy mb-3">صف حراج</h2>
               {scheduled.length === 0 ? (
                 <p className="text-sm text-brand-slate">فعلاً محصولی در صف نیست.</p>
               ) : (
@@ -122,7 +125,7 @@ function ResultsOnly({ ended }: { ended: AuctionItem[] }) {
 function EndedList({ ended, title, empty }: { ended: AuctionItem[]; title: string; empty: string }) {
   return (
     <div className="card p-4 sm:p-6">
-      <h3 className="font-black text-brand-navy mb-3">{title}</h3>
+      <h2 className="font-black text-brand-navy mb-3">{title}</h2>
       {ended.length === 0 ? (
         <p className="text-sm text-brand-slate">{empty}</p>
       ) : (

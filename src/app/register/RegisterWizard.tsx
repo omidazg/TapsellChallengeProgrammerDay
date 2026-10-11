@@ -125,7 +125,7 @@ export function RegisterWizard({
       if (!em) fe.email = "ایمیل را وارد کن.";
       else if (!EMAIL_RE.test(em)) fe.email = "ایمیل نامعتبر است.";
       if (!password) fe.password = "رمز عبور را وارد کن.";
-      else if (password.length < 6) fe.password = "رمز عبور باید حداقل ۶ نویسه باشد.";
+      else if (password.length < 8) fe.password = "رمز عبور باید حداقل ۸ نویسه باشد.";
       if (nickname.trim().length < 2) fe.nickname = "نام مستعار باید بین ۲ تا ۳۰ نویسه باشد.";
       if (!department) fe.department = "دپارتمان را انتخاب کن.";
       if (phoneInput.trim() && !phoneProof) fe.phone = "شمارهٔ موبایل را با کد پیامکی تأیید کن، یا فیلدش را خالی بگذار.";
@@ -260,7 +260,7 @@ export function RegisterWizard({
               <PasswordInput
                 id="password"
                 autoComplete="new-password"
-                minLength={6}
+                minLength={8}
                 maxLength={72}
                 className={INVALID_CLS}
                 value={password}
@@ -268,7 +268,7 @@ export function RegisterWizard({
                   setPassword(e.target.value);
                   clearField("password");
                 }}
-                placeholder="حداقل ۶ نویسه"
+                placeholder="حداقل ۸ نویسه"
                 required
                 {...invalidProps("password")}
               />
@@ -445,7 +445,7 @@ export function RegisterWizard({
       </form>
       <p className="mt-6 text-center text-sm text-brand-slate">
         قبلاً ثبت‌نام کرده‌ای؟{" "}
-        <Link href={loginHref(email.trim(), nextUrl)} className="font-bold text-brand-cyan-dark">
+        <Link href={loginHref(email.trim(), nextUrl)} className="inline-flex items-center min-h-11 px-1 font-bold text-brand-cyan-dark underline underline-offset-4">
           وارد شو
         </Link>
       </p>

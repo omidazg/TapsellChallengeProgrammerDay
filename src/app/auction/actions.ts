@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { placeBid, getBidBudget } from "@/lib/auction";
 import { rateLimit, rateLimitMessage } from "@/lib/rate-limit";
 import { getPhase } from "@/lib/phase";
+import { bidErrorMessage, GENERIC_BID_ERROR } from "./bid-errors";
 
 /** حراج زنده بخشی از «روز بازار» است؛ پیشنهاد فقط در همین فاز مجاز است. */
 async function auctionPhaseError(): Promise<string | null> {
@@ -33,8 +34,11 @@ export async function placeBidAction(auctionId: string, amount: number) {
     revalidatePath("/auction");
     return { ok: true as const, budget: await getBidBudget(user.id, parsed.data.auctionId).catch(() => null) };
   } catch (e) {
+    const error = bidErrorMessage(e);
+    // خطای غیرِ قاعدهٔ بازی فقط در لاگ سرور، نه در پاسخ کاربر
+    if (error === GENERIC_BID_ERROR) console.error("placeBid failed", e);
     return {
-      error: e instanceof Error ? e.message : "خطای نامشخص",
+      error,
       budget: await getBidBudget(user.id, parsed.data.auctionId).catch(() => null),
     };
   }

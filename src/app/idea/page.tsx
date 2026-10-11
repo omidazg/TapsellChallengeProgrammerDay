@@ -9,6 +9,7 @@ import { teamAccess } from "@/lib/team-access";
 import { IdeaForm, UnsubmitButton } from "./IdeaForm";
 import { AnalystCard } from "./AnalystCard";
 import { Cover } from "./Cover";
+import { AI_EVAL_CAP_PER_PHASE, aiEvalCount } from "@/lib/ai";
 
 export const metadata = { title: "اتاق ایده" };
 
@@ -91,13 +92,16 @@ export default async function IdeaPage() {
         <PageHeader eyebrow="فاز فعلی" title="اتاق ایده" />
         <Container className="space-y-4">
           {isIdeation && reason && <Alert kind="info">{reason}</Alert>}
-          <Empty title="ایده‌ای ثبت نشده" desc={isIdeation ? undefined : "تیم شما ایده‌ای برای این دوره ثبت نکرده است."} />
+          <Empty title="ایده‌ای ثبت نشده" desc={isIdeation ? undefined : "تیمت برای این دوره ایده‌ای ثبت نکرده است."} />
         </Container>
       </>
     );
   }
 
   const aiTag = ideaAiTag(idea);
+  // سقف تحلیل هوش مصنوعی در این فاز پر شده؟ (ثبت دوباره نمرهٔ قبلی را نگه می‌دارد)
+  const analystCapReached =
+    isIdeation && canManage && !!idea.submittedAt && (await aiEvalCount("analyst", idea.id, phase)) >= AI_EVAL_CAP_PER_PHASE;
 
   return (
     <>
@@ -110,6 +114,11 @@ export default async function IdeaPage() {
       <Container className="max-w-3xl space-y-6">
         {isIdeation && idea.submittedAt && canManage && (
           <Alert kind="ok">ایده ثبت نهایی شده است. تا پایان فاز اتاق ایده هر عضو تیم می‌تواند برای ویرایش دوباره آن را باز کند.</Alert>
+        )}
+        {analystCapReached && (
+          <Alert kind="info">
+            سقف {AI_EVAL_CAP_PER_PHASE.toLocaleString("fa-IR")} بار تحلیل هوش مصنوعی برای این ایده در این فاز پر شده است؛ اگر دوباره ثبت کنی، تحلیل اجرا نمی‌شود و نمرهٔ فعلی حفظ می‌شود.
+          </Alert>
         )}
         {isIdeation && !idea.submittedAt && <Alert kind="info">این پیش‌نویس هنوز ثبت نهایی نشده.</Alert>}
         {!isIdeation && !idea.submittedAt && (

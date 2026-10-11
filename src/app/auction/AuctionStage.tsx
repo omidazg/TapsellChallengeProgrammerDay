@@ -554,7 +554,7 @@ export function AuctionStage({
         <div className="relative h-56 sm:h-72">
           <Image src={current.product.cover} alt={current.product.specialName} fill className="object-cover" unoptimized />
           <div className="absolute inset-0 bg-gradient-to-t from-brand-navy/80 via-brand-navy/10 to-transparent" />
-          <div className="absolute bottom-4 right-4 left-4 text-white">
+          <div className="absolute bottom-4 inset-x-4 text-white">
             <span className="chip-cyan !bg-white/20 !text-white">{current.product.teamName}</span>
             <h2 className="mt-2 text-2xl sm:text-3xl font-black break-words">{current.product.specialName}</h2>
           </div>
@@ -574,7 +574,7 @@ export function AuctionStage({
               {isLive ? mmss(remaining) : current.status === "SCHEDULED" ? "در صف" : "پایان‌یافته"}
             </div>
             {isLive ? (
-              <div className="text-left">
+              <div className="text-end">
                 <div className="text-xs font-bold text-brand-slate">بالاترین پیشنهاد</div>
                 {current.highest ? (
                   <div className="flex items-center gap-2 mt-1 anim-pop" key={current.highest.amount}>
@@ -589,7 +589,7 @@ export function AuctionStage({
                 )}
               </div>
             ) : current.status === "ENDED" ? (
-              <div className="text-left">
+              <div className="text-end">
                 <div className="text-xs font-bold text-brand-slate">برنده</div>
                 {current.winnerNickname ? (
                   <div className="mt-1">
@@ -605,7 +605,7 @@ export function AuctionStage({
 
           {outbid && (
             <div className="anim-pop">
-              <Alert kind="error">روی شما پیشنهاد بالاتر داده شد!</Alert>
+              <Alert kind="error">کسی از تو بالاتر پیشنهاد داد!</Alert>
             </div>
           )}
           {error && <Alert kind="error">{error}</Alert>}
@@ -637,7 +637,7 @@ export function AuctionStage({
                     ⏱ {mmss(remaining)}
                   </span>
                   {error || outbid ? (
-                    <span className="min-w-0 truncate font-bold text-brand-red">{error ?? "روی شما پیشنهاد بالاتر داده شد!"}</span>
+                    <span className="min-w-0 truncate font-bold text-brand-red">{error ?? "کسی از تو بالاتر پیشنهاد داد!"}</span>
                   ) : (
                     <span className="min-w-0 truncate text-brand-slate">
                       حداقل <b className="fa-num text-brand-navy">{fa(current.nextMin)}</b> · قابل‌خرج{" "}

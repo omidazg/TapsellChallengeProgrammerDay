@@ -97,11 +97,11 @@ export function IdeaForm({
       <div className="grid md:grid-cols-2 gap-5">
         <div>
           <label className="label" htmlFor="problem">مسئله</label>
-          <textarea id="problem" name="problem" defaultValue={v.problem ?? initial?.problem} required maxLength={2000} rows={4} className="input" placeholder="چه مشکلی را حل می‌کنید؟" />
+          <textarea id="problem" name="problem" defaultValue={v.problem ?? initial?.problem} required maxLength={2000} rows={4} className="input" placeholder="چه مشکلی را حل می‌کنی؟" />
         </div>
         <div>
           <label className="label" htmlFor="audience">مخاطب</label>
-          <textarea id="audience" name="audience" defaultValue={v.audience ?? initial?.audience} required maxLength={2000} rows={4} className="input" placeholder="مخاطب هدف شما کیست؟" />
+          <textarea id="audience" name="audience" defaultValue={v.audience ?? initial?.audience} required maxLength={2000} rows={4} className="input" placeholder="مخاطب هدفت کیست؟" />
         </div>
       </div>
 

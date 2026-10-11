@@ -48,6 +48,12 @@
   --ok-soft: rgba(73, 186, 134, 0.16);
   --warn: #ffcf7a;
   --warn-soft: rgba(245, 165, 36, 0.16);
+  /* حلقهٔ فوکوس روشن: ≥۹:۱ روی --bg و --surface (cyan-dark روشن روی تیره فقط ~۳٫۲:۱ بود) */
+  --focus-ring: #5fd1ec;
+  /* زمینهٔ حالت «انتخاب‌شده» (پیل/دکمهٔ فعال). #002d47 روی سطح تیره تقریباً نامرئی بود؛
+     این آبی روشن‌تر با متن سفید ۷٫۴:۱ است. */
+  --selected-bg: #1f5a80;
+  --selected-bg-hover: #26688f;
 
   /* نام‌های مستعار قدیمی باید دوباره روی همین عنصر حل شوند */
   --bg-soft: var(--surface-2);
@@ -97,6 +103,12 @@
 
 /* کارت با زمینهٔ نرم (مثل Locked در ui.tsx): در روشن utility بر .card می‌چربد، در تیره هم باید */
 [data-theme="dark"] .card.bg-brand-ice { background-color: var(--surface-2); }
+/* کارت تأکیدی سرمه‌ای (کارت «کار بعدی تو» صفحهٔ اصلی): بازنویسی .card بالا آن را هم‌رنگ کارت‌های
+   عادی می‌کرد؛ در تیره آبی عمیق‌تر از سطح با حاشیهٔ روشن‌تر می‌ماند (متن سفید ۱۱٫۹:۱). */
+[data-theme="dark"] .card.bg-brand-navy {
+  background-color: #0f3a57;
+  border-color: var(--selected-bg);
+}
 
 [data-theme="dark"] .input {
   background-color: var(--input-bg);
@@ -133,8 +145,24 @@
 [data-theme="dark"] .border-brand-mist\/70 { border-color: color-mix(in srgb, var(--border) 70%, transparent); }
 [data-theme="dark"] .divide-brand-mist > :not(:last-child) { border-color: var(--border); }
 
-/* پیل/تب فعال (bg-brand-navy) روی سطح تیره تقریباً نامرئی بود */
-[data-theme="dark"] .bg-brand-navy[aria-current="page"] { background-color: #1f5a80; }
+/* پیل/تب/دکمهٔ فعال یا انتخاب‌شده (bg-brand-navy یا btn-navy) روی سطح تیره تقریباً نامرئی بود.
+   همهٔ شکل‌های «انتخاب‌شده» را می‌پوشاند: aria-current (صفحه/مرحله)، aria-pressed (دکمهٔ toggle)،
+   aria-checked/aria-selected (رادیو و تب نقش‌دار) و برچسب رادیوی پنهانِ :checked. */
+[data-theme="dark"] .btn-navy,
+[data-theme="dark"] .bg-brand-navy:is([aria-current]:not([aria-current="false"]), [aria-pressed="true"], [aria-checked="true"], [aria-selected="true"]),
+[data-theme="dark"] label.bg-brand-navy:has(:checked) {
+  background-color: var(--selected-bg);
+}
+[data-theme="dark"] .btn-navy:hover { background-color: var(--selected-bg-hover); }
+/* انتخاب‌شده‌ها علاوه بر زمینه حاشیهٔ فیروزه‌ای می‌گیرند تا فقط با رنگ از گزینهٔ عادی جدا نشوند */
+[data-theme="dark"] :is(.bg-brand-navy, .btn-navy):is([aria-pressed="true"], [aria-checked="true"], [aria-selected="true"]),
+[data-theme="dark"] label.bg-brand-navy:has(:checked) {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+[data-theme="dark"] .border-brand-navy { border-color: var(--accent); }
+
+/* هایلایت فوکوس کیبورد آیتم‌های فهرست (مثل ChecklistCard) */
+[data-theme="dark"] .focus-visible\:bg-brand-ice:focus-visible { background-color: var(--surface-3); }
 
 /* جدول‌ها (ردیف‌ها فقط با border-brand-mist جدا می‌شوند، بالا پوشش داده شد) */
 

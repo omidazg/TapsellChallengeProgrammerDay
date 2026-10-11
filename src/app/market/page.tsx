@@ -9,7 +9,8 @@ import { productAiTag, type AiTagInfo } from "@/lib/ai-tag";
 import { PageHeader, Container, Empty, Locked, Coin } from "@/components/ui";
 import { AiTag } from "@/components/AiTag";
 import { fa, coins } from "@/lib/persian";
-import { getMarketProducts, getCurrentAdSlotWinners, type MarketSort } from "@/lib/market";
+import { getMarketProducts, getCurrentAdSlotWinners, MARKET_CACHE_PREFIX, type MarketSort } from "@/lib/market";
+import { cached } from "@/lib/ttl-cache";
 import { SalesTicker } from "./SalesTicker";
 
 export const metadata = { title: "بازار" };
@@ -40,6 +41,7 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
           }
         />
         <Container>
+          <h2 className="sr-only">وضعیت بازار</h2>
           <Locked title="بازار هنوز باز نشده" desc="بازار از فاز «ساخت محصول» به‌صورت پیش‌نمایش، و از فاز «روز بازار» برای خرید باز می‌شود." />
         </Container>
       </>
@@ -54,7 +56,10 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
     getMarketProducts(sort, { userId: user.id }),
     readOnly ? Promise.resolve([]) : getCurrentAdSlotWinners(),
     // برچسب هوش مصنوعی کارت‌ها (نمرهٔ داور هوش مصنوعی) — MarketCard این دو فیلد را ندارد.
-    prisma.product.findMany({ where: { submittedAt: { not: null } }, select: { id: true, aiQuality: true, aiNotes: true } }),
+    // کش کوتاه مشترک (مثل کارت‌های بازار) تا هر بازدید یک کوئری تازه نسازد.
+    cached(`${MARKET_CACHE_PREFIX}ai`, 3_000, () =>
+      prisma.product.findMany({ where: { submittedAt: { not: null } }, select: { id: true, aiQuality: true, aiNotes: true } })
+    ),
   ]);
   const aiTagById = new Map<string, AiTagInfo | null>(aiRows.map((r) => [r.id, productAiTag(r)]));
 
@@ -104,6 +109,8 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
           </Link>
         </div>
 
+        {/* سرتیتر پنهان فهرست؛ ترتیب h1 ← h2 ← h3 (کارت خالی) را درست نگه می‌دارد */}
+        <h2 className="sr-only">محصولات بازار</h2>
         {ordered.length === 0 ? (
           <Empty title="هنوز محصولی ثبت نشده" desc="به‌محض ثبت نهایی محصولات تیم‌ها، اینجا نمایش داده می‌شوند." />
         ) : (

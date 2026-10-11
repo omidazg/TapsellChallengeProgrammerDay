@@ -75,6 +75,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           user={user ? { id: user.id, nickname: user.nickname, isAdmin: user.isAdmin, buyWallet: user.buyWallet, teamName: user.team?.name ?? null, avatarSeed: user.avatarSeed } : null}
           phase={phaseInfo.phase}
           phaseEndsAt={phaseInfo.endsAt?.toISOString() ?? null}
+          // همان شرط صفحه‌های ایده/حمایت (DueDiligenceChat): بدون کلید، دستیار فقط توضیح نشان می‌دهد
+          aiOff={!process.env.ANTHROPIC_API_KEY}
         >
           {children}
         </AppShell>

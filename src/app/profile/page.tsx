@@ -38,7 +38,7 @@ export default async function ProfilePage() {
               <div className="mt-3 text-xs text-brand-slate">{user.department}</div>
               <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-xs">
                 <Coin n={user.buyWallet} label="کیف سکه" />
-                <Link href="/coins" className="font-bold text-brand-cyan-dark hover:underline">
+                <Link href="/coins" className="inline-flex items-center min-h-11 font-bold text-brand-cyan-dark hover:underline">
                   + خرید سکه
                 </Link>
               </div>
@@ -73,7 +73,7 @@ export default async function ProfilePage() {
               stats={{ coffee: user.coffee, bugs: user.bugs, sleep: user.sleep, confidence: user.confidence }}
             />
             <div className="card p-6 anim-rise scroll-mt-24" id="skill">
-              <h3 className="mb-1 text-lg font-black text-brand-navy">مهارت اصلی</h3>
+              <h2 className="mb-1 text-lg font-black text-brand-navy">مهارت اصلی</h2>
               <p className="mb-4 text-sm text-brand-slate">فقط برای معرفی و پیدا کردن هم‌تیمی است و در امتیاز اثری ندارد.</p>
               {skillOpen ? (
                 <SkillPicker role={role} />
@@ -84,7 +84,7 @@ export default async function ProfilePage() {
               )}
             </div>
             <div className="card p-6 anim-rise">
-              <h3 className="mb-4 text-lg font-black text-brand-navy">ویرایش شخصیت</h3>
+              <h2 className="mb-4 text-lg font-black text-brand-navy">ویرایش شخصیت</h2>
               <EditProfileForm
                 nickname={user.nickname}
                 stats={{ coffee: user.coffee, bugs: user.bugs, sleep: user.sleep, confidence: user.confidence }}
@@ -92,7 +92,7 @@ export default async function ProfilePage() {
             </div>
             <PhoneCard phone={user.phone} smsEnabled={smsEnabled()} />
             <div className="card p-6 anim-rise">
-              <h3 className="mb-1 text-lg font-black text-brand-navy">نشان‌ها</h3>
+              <h2 className="mb-1 text-lg font-black text-brand-navy">نشان‌ها</h2>
               <p className="mb-4 text-sm text-brand-slate">نشان‌های روشن را گرفته‌ای؛ نشان‌های خاکستری هنوز قفل‌اند.</p>
               <BadgeGrid badges={badges} />
             </div>

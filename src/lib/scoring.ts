@@ -18,6 +18,7 @@ export const LEDGER_REASON_LABEL: Record<string, string> = {
   ADSLOT: "جایگاه تبلیغاتی",
   COIN_PURCHASE: "خرید سکه",
   ADMIN: "تنظیم برگزارکننده",
+  ADSLOT_REFUND: "بازپرداخت جایگاه تبلیغاتی تحویل‌نشده",
   // دلیل‌های قدیمی (پیش از بازطراحی)
   BID_HOLD: "توقیف پیشنهاد حراج",
   BID_RELEASE: "آزادسازی پیشنهاد حراج",
@@ -46,7 +47,9 @@ export async function configFromSettings(): Promise<EconomyConfig> {
 export async function computeScores(): Promise<ScoreOutput> {
   const config = await configFromSettings();
 
+  // ترتیب ثابت (نه ترتیب دلخواه پایگاه‌داده)؛ رتبه‌بندی خودش هم قطعی است (compareRank).
   const teams = await prisma.team.findMany({
+    orderBy: { id: "asc" },
     include: {
       members: { select: { id: true } },
       idea: { include: { investments: { select: { userId: true, amount: true, selfFunded: true } } } },
@@ -68,6 +71,7 @@ export async function computeScores(): Promise<ScoreOutput> {
       jury: p ? { works: p.juryWorks, value: p.juryValue, pitch: p.juryPitch } : null,
       aiQuality: p?.aiQuality ?? null,
       cheatPenalty: t.cheatPenalty,
+      productSubmittedAt: p?.submittedAt ? p.submittedAt.getTime() : null,
     };
   });
 
@@ -89,10 +93,24 @@ export function computeScoresCached(): Promise<ScoreOutput> {
 /** کلیدهای Setting برای جوایزی که داوران انتخاب می‌کنند */
 export const AWARD_PICK_KEYS = { ai: "award_ai_team_id", live: "award_live_team_id" } as const;
 
-/** انتخاب داوران برای جوایز «برترین کاربرد هوش مصنوعی» و «بهترین محصول لایو» */
-export async function getAwardPicks(): Promise<{ ai: string | null; live: string | null }> {
+/** انتخاب‌های خام داوران (همان مقدار ذخیره‌شده، بدون بررسی شرط‌ها) — برای هشدار در پنل داوری. */
+export async function getRawAwardPicks(): Promise<{ ai: string | null; live: string | null }> {
   const [ai, live] = await Promise.all([getSetting(AWARD_PICK_KEYS.ai, ""), getSetting(AWARD_PICK_KEYS.live, "")]);
   return { ai: ai || null, live: live || null };
+}
+
+/**
+ * انتخاب داوران برای جوایز «برترین کاربرد هوش مصنوعی» و «بهترین محصول لایو».
+ * جایزهٔ لایو فقط به محصولی می‌رسد که هم‌اکنون روی بازار استودیو LIVE است؛ اگر محصول تیم انتخاب‌شده
+ * بعداً از LIVE خارج شده باشد، انتخاب نادیده گرفته می‌شود (null).
+ */
+export async function getAwardPicks(): Promise<{ ai: string | null; live: string | null }> {
+  const raw = await getRawAwardPicks();
+  if (raw.live) {
+    const product = await prisma.product.findUnique({ where: { teamId: raw.live }, select: { liveStatus: true } });
+    if (product?.liveStatus !== "LIVE") return { ai: raw.ai, live: null };
+  }
+  return raw;
 }
 
 export type AwardKey = PrizeKey;
@@ -113,15 +131,39 @@ export interface AwardExtra {
   picks: { ai: string | null; live: string | null };
 }
 
+/** جوایز خودکاری که تیمِ دارای کسر تقلب نمی‌تواند ببرد (به تیم واجد شرایط بعدی می‌رسند). */
+const NO_CHEAT_PRIZES: ReadonlySet<PrizeKey> = new Set<PrizeKey>(["jury", "people"]);
+
+/** آیا تیم برای این جایزه واجد شرایط است؟ تیم بدون عضو هیچ جایزه‌ای نمی‌برد. */
+export function prizeEligible(prize: PrizeKey, t: Pick<TeamResult, "memberCount" | "cheatPenalty">): boolean {
+  if (t.memberCount <= 0) return false;
+  if (NO_CHEAT_PRIZES.has(prize) && t.cheatPenalty > 0) return false;
+  return true;
+}
+
 /**
  * پنج جایزهٔ پایان بازی به ترتیب PRIZES؛ هر پروژه حداکثر یک جایزه می‌گیرد.
- * جوایز خودکار به نفر بعدی می‌رسند اگر نفر اول قبلاً جایزه گرفته باشد؛ جایزهٔ انتخابی داوران
- * اگر تیم انتخاب‌شده قبلاً جایزه گرفته باشد اهدا نمی‌شود (پنل داوری این را هشدار می‌دهد).
+ * جوایز خودکار به نفر بعدی می‌رسند اگر نفر اول قبلاً جایزه گرفته یا واجد شرایط نباشد (تیم بدون عضو؛
+ * و برای «انتخاب داوران» و «انتخاب مردم» تیم دارای کسر تقلب)؛ جایزهٔ انتخابی داوران اگر تیم انتخاب‌شده
+ * قبلاً جایزه گرفته یا بدون عضو باشد اهدا نمی‌شود (پنل داوری این را هشدار می‌دهد). جایزه‌ای که اهدا نشود
+ * سهمش پرداخت نمی‌شود.
+ *
+ * تساوی معیار با همان ترتیب قطعی رتبه‌بندی شکسته می‌شود (امتیاز کل → مردم → داوری → ثبت زودتر → teamId)؛
+ * output.teams به ترتیب رتبه است، پس جایگاه هر تیم در آن همین ترتیب را نمایندگی می‌کند.
  */
 export function computeAwards(output: ScoreOutput, extra: AwardExtra): Award[] {
   const awarded = new Set<string>();
   const awards: Award[] = [];
   const byId = new Map(output.teams.map((t) => [t.teamId, t]));
+
+  // جایگاه در جدول رتبه (یا rank ثبت‌شده) برای شکستن تساوی؛ در نهایت teamId.
+  const position = new Map(output.teams.map((t, i) => [t.teamId, t.rank ?? i + 1]));
+  const tieBreak = (a: TeamResult, b: TeamResult) => {
+    const pa = position.get(a.teamId)!;
+    const pb = position.get(b.teamId)!;
+    if (pa !== pb) return pa - pb;
+    return a.teamId < b.teamId ? -1 : a.teamId > b.teamId ? 1 : 0;
+  };
 
   const metricOf: Partial<Record<PrizeKey, (t: TeamResult) => number>> = {
     champion: (t) => t.total,
@@ -145,11 +187,12 @@ export function computeAwards(output: ScoreOutput, extra: AwardExtra): Award[] {
 
     const metric = metricOf[prize.key];
     if (metric) {
-      const sorted = [...output.teams].sort((a, b) => metric(b) - metric(a));
+      const sorted = [...output.teams].sort((a, b) => metric(b) - metric(a) || tieBreak(a, b));
       for (const t of sorted) {
         // جایزه به معیار صفر تعلق نمی‌گیرد (مثلاً «انتخاب داوران» وقتی هنوز کسی داوری نشده)
         if (metric(t) <= 0) break;
         if (awarded.has(t.teamId)) continue;
+        if (!prizeEligible(prize.key, t)) continue;
         give(t, metric(t));
         break;
       }
@@ -158,7 +201,7 @@ export function computeAwards(output: ScoreOutput, extra: AwardExtra): Award[] {
 
     const pickedId = prize.key === "ai" ? extra.picks.ai : prize.key === "live" ? extra.picks.live : null;
     const picked = pickedId ? byId.get(pickedId) : undefined;
-    if (picked && !awarded.has(picked.teamId)) give(picked, picked.total);
+    if (picked && !awarded.has(picked.teamId) && prizeEligible(prize.key, picked)) give(picked, picked.total);
   }
 
   return awards;

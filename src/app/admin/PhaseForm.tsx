@@ -3,6 +3,7 @@
 import { useActionState, useRef, useSyncExternalStore } from "react";
 import { useFormStatus } from "react-dom";
 import { Alert } from "@/components/ui";
+import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { fa, jdatetime } from "@/lib/persian";
 import { setPhaseAction, type AdminActionState } from "./actions";
 import { localInputToIso, toLocalInputValue } from "./datetime-local";
@@ -48,6 +49,7 @@ export function PhaseForm({
   const formRef = useRef<HTMLFormElement>(null);
   const phaseSelectRef = useRef<HTMLSelectElement>(null);
   const endsAtInputRef = useRef<HTMLInputElement>(null);
+  const confirmSubmit = useConfirmSubmit();
   // ورودی datetime-local به منطقهٔ زمانی مرورگر است؛ سرور (کانتینر UTC) آن را اشتباه تفسیر می‌کرد.
   // پس مقدار محلی همین‌جا در مرورگر به ISO تبدیل و بعد به سرور فرستاده می‌شود.
   const [state, formAction] = useActionState<AdminActionState, FormData>(async (prev, formData) => {
@@ -99,7 +101,7 @@ export function PhaseForm({
         } else if (selected !== phase) {
           msg = `فاز به «${label}» تغییر کند؟ برای همهٔ بازیکنان اعلان می‌شود.${endsAtNote}`;
         }
-        if (msg && !confirm(msg)) e.preventDefault();
+        if (msg) confirmSubmit(e, { title: msg, destructive: selected === "CLOSED" });
       }}
       className="card p-4 sm:p-6 space-y-4 anim-rise scroll-mt-32"
     >
@@ -135,8 +137,8 @@ export function PhaseForm({
             aria-describedby="endsAt-hint"
             className="input"
           />
-          <p id="endsAt-hint" className="mt-1 text-[11px] text-brand-slate">
-            به وقت مرورگر شما؛ خالی یعنی بدون زمان پایان.
+          <p id="endsAt-hint" className="mt-1 text-xs text-brand-slate">
+            به وقت مرورگرت؛ خالی یعنی بدون زمان پایان.
           </p>
         </div>
       </div>
@@ -145,7 +147,7 @@ export function PhaseForm({
         {next && <NextPhaseButton label={next.label} hours={nextHours} onGo={goToNext} />}
       </div>
       {next && (
-        <p className="text-[11px] text-brand-slate">
+        <p className="text-xs text-brand-slate">
           دکمهٔ «رفتن به …» فاز بعد را با زمان پایان{" "}
           {nextHours != null ? `${fa(nextHours)} ساعت از همین حالا (طبق تنظیمات زمان‌بند)` : "خالی"} در فرم می‌نویسد و پس از تأیید اعمال می‌کند.
         </p>
