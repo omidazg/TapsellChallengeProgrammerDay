@@ -4,7 +4,8 @@ import { fa } from "@/lib/persian";
 export function PageHeader({ eyebrow, title, desc, action }: { eyebrow?: string; title: string; desc?: string; action?: React.ReactNode }) {
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-8 sm:pt-10 pb-6 flex flex-wrap items-end gap-4 anim-rise">
-      <div className="flex-1 min-w-0">
+      {/* basis 20rem (نه 0): وقتی کنار action کمتر از ۲۰rem جا بماند، action به خط بعد می‌رود و تیتر در موبایل له نمی‌شود؛ در دسکتاپ چیدمان همان است */}
+      <div className="min-w-0 flex-[1_1_20rem]">
         {eyebrow && <div className="text-xs font-bold text-brand-cyan-dark mb-1">{eyebrow}</div>}
         <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-brand-navy break-words">{title}</h1>
         {desc && <p className="mt-2 text-brand-slate max-w-2xl">{desc}</p>}
