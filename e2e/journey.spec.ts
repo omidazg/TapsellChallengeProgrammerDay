@@ -87,6 +87,8 @@ test("full journey: register → team/solo → idea → support → build → bu
 
   // ---------- ۵) رقیب محصولش را می‌سازد و نهایی می‌کند (برای خرید و حراج لازم است) ----------
   await rivalPage.goto("/build");
+  // محور عمومی فنی و غیرفنی را جدا داوری می‌کند و بدون انتخاب دسته ثبت نهایی ممکن نیست.
+  await rivalPage.locator("#category").selectOption("TECH");
   await rivalPage.locator('[name="name"]').fill("بازارچهٔ دفتر");
   await rivalPage.locator('[name="tagline"]').fill("خرید و فروش ساده بین همکاران");
   await rivalPage.locator('textarea[name="description"]').fill("یک صفحهٔ آگهی داخلی برای وسایل دست‌دوم همکاران.");
