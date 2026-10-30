@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>پرسش‌های نسخهٔ دوم</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f6f5f2; --surface:#ffffff; --surface-2:#f0eee9; --ink:#1d1c1a; --ink-2:#55524c; --ink-3:#8a867e;
+  --line:#e2dfd8; --accent:#2f5fd0; --accent-soft:#e7eefc; --rec:#16794a; --rec-soft:#e3f4ea;
+  --warn:#9a5b00; --warn-soft:#fbf0dc; --now:#5b4ab3; --now-soft:#eeebfa;
+  --s-open:#16794a; --s-ro:#2f5fd0; --s-closed:#b3361d; --s-hidden:#6b6860;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141413; --surface:#1d1c1a; --surface-2:#262522; --ink:#efece6; --ink-2:#b9b4aa; --ink-3:#86827a;
+    --line:#34322e; --accent:#7ea2f5; --accent-soft:#1f2a44; --rec:#5cc98f; --rec-soft:#16301f;
+    --warn:#e9ad52; --warn-soft:#33270f; --now:#ab9cf2; --now-soft:#272140;
+    --s-open:#5cc98f; --s-ro:#7ea2f5; --s-closed:#f08a73; --s-hidden:#9a968d;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141413; --surface:#1d1c1a; --surface-2:#262522; --ink:#efece6; --ink-2:#b9b4aa; --ink-3:#86827a;
+  --line:#34322e; --accent:#7ea2f5; --accent-soft:#1f2a44; --rec:#5cc98f; --rec-soft:#16301f;
+  --warn:#e9ad52; --warn-soft:#33270f; --now:#ab9cf2; --now-soft:#272140;
+  --s-open:#5cc98f; --s-ro:#7ea2f5; --s-closed:#f08a73; --s-hidden:#9a968d;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Vazirmatn,Tahoma,sans-serif;line-height:1.85;font-size:15.5px}
+a{color:var(--accent)}
+.wrap{max-width:900px;margin:0 auto;padding:0 16px 96px}
+header.top{padding:40px 0 20px}
+h1{font-size:28px;line-height:1.4;margin:0 0 8px;font-weight:800}
+.lede{color:var(--ink-2);margin:0 0 18px;max-width:70ch}
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-size:13.5px;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.dot{width:10px;height:10px;border-radius:3px;display:inline-block}
+.bar{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+.bar .in{max-width:900px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.prog{flex:1;min-width:160px}
+.prog .t{font-size:13px;color:var(--ink-2)}
+.prog .track{height:6px;background:var(--surface-2);border-radius:99px;overflow:hidden;margin-top:4px}
+.prog .fill{height:100%;width:0;background:var(--accent);transition:width .25s}
+button{font:inherit;cursor:pointer}
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:7px 14px;border-radius:9px;font-size:14px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+:root[data-theme="dark"] .btn.primary{color:#0d1424}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .btn.primary{color:#0d1424}}
+.btn:focus-visible,input:focus-visible,textarea:focus-visible,.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+nav.toc{display:flex;flex-wrap:wrap;gap:6px;margin:22px 0 8px}
+nav.toc a{font-size:13px;text-decoration:none;color:var(--ink-2);background:var(--surface);border:1px solid var(--line);padding:3px 10px;border-radius:99px}
+section.sec{margin-top:44px}
+.sec-h{display:flex;gap:12px;align-items:baseline}
+.num{font-weight:800;color:var(--accent);font-size:15px;min-width:28px}
+h2{font-size:21px;margin:0;line-height:1.5}
+.ask{margin:10px 0 0;padding:10px 14px;border-inline-start:3px solid var(--line);color:var(--ink-2);font-size:14.5px}
+.boxes{display:grid;gap:10px;margin:14px 0 6px}
+.box{border-radius:12px;padding:12px 16px;font-size:14.5px}
+.box b.k{display:block;font-size:12.5px;letter-spacing:0;margin-bottom:2px}
+.box.now{background:var(--now-soft)} .box.now b.k{color:var(--now)}
+.box.plan{background:var(--accent-soft)} .box.plan b.k{color:var(--accent)}
+.box.warn{background:var(--warn-soft)} .box.warn b.k{color:var(--warn)}
+.box ul{margin:4px 0 0;padding-inline-start:20px}
+.q{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-top:14px}
+.q.done{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+.q .qid{font-size:12px;color:var(--ink-3);font-weight:700}
+.q h3{font-size:16px;margin:2px 0 4px;line-height:1.7;font-weight:700}
+.q .why{font-size:13.5px;color:var(--ink-2);margin:0 0 10px}
+.opts{display:grid;gap:6px}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:9px;border:1px solid transparent;cursor:pointer}
+.opt:hover{background:var(--surface-2)}
+.opt input{margin-top:7px;accent-color:var(--accent);flex:none}
+.opt.on{background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 35%,transparent)}
+.rec{display:inline-block;font-size:11.5px;font-weight:700;color:var(--rec);background:var(--rec-soft);padding:0 7px;border-radius:6px;margin-inline-start:6px;vertical-align:1px}
+textarea{width:100%;min-height:44px;margin-top:8px;font:inherit;font-size:14px;color:var(--ink);background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:8px 10px;resize:vertical}
+textarea::placeholder{color:var(--ink-3)}
+/* control-center mock */
+.mock{background:var(--surface);border:1px solid var(--line);border-radius:14px;margin-top:14px;overflow:hidden}
+.mock-h{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.mock-h b{font-size:15px}
+.mock-h small{color:var(--ink-3);font-size:12.5px}
+.grp{padding:6px 16px 4px;font-size:12.5px;font-weight:700;color:var(--ink-3);border-top:1px solid var(--line)}
+.grp:first-of-type{border-top:0}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px 14px;flex-wrap:wrap;padding:8px 16px}
+.row .nm{font-size:14.5px}
+.row .nm small{display:block;color:var(--ink-3);font-size:12.5px;line-height:1.6}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;flex:none}
+.seg button{border:0;background:transparent;color:var(--ink-2);font-size:12.5px;padding:4px 10px;border-inline-start:1px solid var(--line)}
+.seg button:first-child{border-inline-start:0}
+.seg button.on[data-s="open"]{background:var(--s-open);color:#fff}
+.seg button.on[data-s="ro"]{background:var(--s-ro);color:#fff}
+.seg button.on[data-s="closed"]{background:var(--s-closed);color:#fff}
+.seg button.on[data-s="hidden"]{background:var(--s-hidden);color:#fff}
+.seg button.on[data-s="manual"],.seg button.on[data-s="api"]{background:var(--s-ro);color:#fff}
+.seg button.on[data-s="off"]{background:var(--s-hidden);color:#fff}
+.mock-f{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--ink-2)}
+.chip{border:1px dashed var(--line);border-radius:8px;padding:3px 10px}
+.pages{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:12px}
+.page{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:13.5px;color:var(--ink-2)}
+.page b{display:block;color:var(--ink);font-size:14.5px;margin-bottom:2px}
+.weights{display:flex;height:34px;border-radius:9px;overflow:hidden;margin-top:10px;font-size:12.5px;font-weight:700}
+.weights div{display:flex;align-items:center;justify-content:center;color:#fff;white-space:nowrap;padding:0 6px}
+.w-ai{background:#5b4ab3}.w-mk{background:#16794a}.w-jy{background:#2f5fd0}
+.wlbl{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink-3);margin-top:4px}
+table.sub{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:8px}
+table.sub td,table.sub th{padding:5px 8px;border-bottom:1px solid var(--line);text-align:start}
+table.sub th{color:var(--ink-3);font-weight:600;font-size:12.5px}
+footer{margin-top:48px;color:var(--ink-3);font-size:13px}
+.toast{position:fixed;bottom:18px;inset-inline-start:50%;transform:translateX(50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:10px;font-size:13.5px;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+@media (max-width:560px){
+  h1{font-size:23px}
+  .q{padding:14px}
+  .row{padding:8px 12px}
+  .seg button{padding:4px 7px}
+}
+@media print{
+  .bar,nav.toc,.toast{display:none}
+  .q{break-inside:avoid}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<div class="bar"><div class="in">
+  <div class="prog"><div class="t" id="progT">۰ از ۰ پرسش پاسخ داده شده</div><div class="track"><div class="fill" id="progF"></div></div></div>
+  <button class="btn" id="themeBtn" type="button" aria-label="تغییر تم">🌓</button>
+  <button class="btn" id="resetBtn" type="button">پاک‌کردن پاسخ‌ها</button>
+  <button class="btn primary" id="exportBtn" type="button">دانلود پاسخ‌ها</button>
+</div></div>
+
+<div class="wrap">
+<header class="top">
+  <h1>پرسش‌ها پیش از شروع نسخهٔ دوم پلتفرم</h1>
+  <p class="lede">شش تغییری را که خواسته شده با کد فعلی پلتفرم مقایسه کردم. در هر بخش اول وضعیت فعلی آمده، بعد پیشنهاد من و بعد پرسش‌هایی که جوابشان را لازم دارم. گزینه‌ای که با برچسب «پیشنهادی» آمده، کاری است که اگر جوابی نرسد انجامش می‌دهم. برای هر پرسش می‌توانید یک گزینه انتخاب کنید یا در کادر توضیح بنویسید. پاسخ‌ها در همین مرورگر می‌مانند. وقتی تمام شد «دانلود پاسخ‌ها» را بزنید و فایل را برایم بفرستید.</p>
+  <div class="legend">
+    <span><i class="dot" style="background:var(--now)"></i>وضعیت فعلی پلتفرم</span>
+    <span><i class="dot" style="background:var(--accent)"></i>پیشنهاد من</span>
+    <span><i class="dot" style="background:var(--warn)"></i>نکتهٔ مهم</span>
+    <span><span class="rec" style="margin:0">پیشنهادی</span> گزینهٔ پیش‌فرض</span>
+  </div>
+  <nav class="toc" id="toc"></nav>
+</header>
+
+<main id="main"></main>
+
+<footer>این فایل از روی کد فعلی مخزن (فازها، امتیازدهی، جوایز، بازار استودیو و پنل ادمین) تهیه شده است. فایل پاسخ‌ها با پسوند <code>.md</code> دانلود می‌شود و با هر ویرایشگر متنی باز می‌شود.</footer>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const SECTIONS = [
+{
+  id:"g", num:"۰", title:"کلیات",
+  ask:"پیش از شش تغییر، دو پرسش کلی هست که روی چند بخش اثر می‌گذارد.",
+  now:"بازی برای یک رویداد کوتاه طراحی شده است. مدت پیش‌فرض فازها: اتاق ایده ۲۴ ساعت، دور حمایت ۲۴ ساعت، ساخت محصول ۴۸ ساعت و روز بازار ۸ ساعت. سایت روی festival.pegah.tech بالا است.",
+  warn:"«نصب و درآمد واقعی روی بازار» به چند هفته زمان نیاز دارد. اگر مسابقه چند روزه بماند، بخش ۳۰٪ بازار برای بیشتر تیم‌ها نزدیک صفر می‌شود و عملاً به جای محصول، سرعت انتشار سنجیده می‌شود.",
+  qs:[
+    {id:"G1", q:"مسابقه بعد از این تغییرات چقدر طول می‌کشد؟", why:"زمان لازم برای نصب، کامنت و درآمد واقعی به همین بستگی دارد.",
+      opts:[{t:"همان چند روز (رویداد فشرده)"},{t:"۲ تا ۴ هفته"},{t:"بیش از یک ماه"}]},
+    {id:"G2", q:"الان کاربر یا تیم واقعی روی سایت ثبت‌نام کرده که باید حفظ شود؟",
+      opts:[{t:"بله. حفظ شوند و همه به‌صورت پیش‌فرض در محور «عمومی» قرار بگیرند (قابل تغییر توسط تیم)", rec:true},{t:"بله. حفظ شوند و از هر تیم بخواهیم محورش را انتخاب کند"},{t:"نه، دادهٔ واقعی نداریم و می‌شود دیتابیس را ریست کرد"}]},
+  ]
+},
+{
+  id:"s1", num:"۱", title:"حذف زمان‌بندی: همهٔ مراحل از اول باز",
+  ask:"مراحل ساخت تیم، ایده، سرمایه‌گذاری و بقیه زمان‌بندی نداشته باشند تا کسی که سریع‌تر است منتظر مرحلهٔ بعد نماند.",
+  now:"شش فاز سراسری به ترتیب داریم: ثبت‌نام و تیم، اتاق ایده، دور حمایت، ساخت محصول، روز بازار و پایان. زمان‌بند هر ۳۰ ثانیه چک می‌کند و فاز را جلو می‌برد. هر کار فقط در فاز خودش ممکن است. مثلاً ثبت ایده فقط در «اتاق ایده»، حمایت با سکه فقط در «دور حمایت» و تغییر اعضای تیم فقط تا پایان «اتاق ایده».",
+  plan:["«فاز سراسری» حذف می‌شود. به جایش هر بخش یک کلید وضعیت جدا دارد (باز، فقط‌خواندنی، بسته، مخفی) که ادمین دستی تغییرش می‌دهد. جزئیاتش در بخش ۷ آمده.","زمان‌بند خودکار فازها خاموش می‌شود.","ترتیب فقط برای هر تیم معنا دارد، نه برای کل مسابقه. مثلاً تیمی که ایده ندارد محصول نمی‌سازد، ولی تیم دیگری که ایده‌اش را ثبت کرده می‌تواند همان لحظه محصولش را شروع کند."],
+  qs:[
+    {id:"1.1", q:"ترتیب داخلی هر تیم (تیم، بعد ایده، بعد محصول، بعد درخواست انتشار) حفظ شود؟",
+      opts:[{t:"بله. هر تیم با سرعت خودش جلو می‌رود ولی مراحل خودش را به ترتیب طی می‌کند", rec:true},{t:"نه، همه چیز کاملاً آزاد باشد. مثلاً بدون ثبت ایده هم بشود محصول ثبت کرد"}]},
+    {id:"1.2", q:"حمایت با سکه از ایده‌ها و خرید محصول‌ها هم از اول باز باشد؟", why:"وقتی همه چیز از اول باز است، تیمی که زودتر ایده ثبت کند زمان بیشتری برای جمع‌کردن حمایت دارد.",
+      opts:[{t:"بله. این همان پاداش سرعت است"},{t:"بله، ولی مجموع حمایت هر ایده تا پایان مخفی بماند تا اثر «زودتر رسیدن» کم شود"},{t:"نه. حمایت و خرید فقط وقتی باز شود که ادمین کلیدش را بزند"},{t:"بستگی به بخش ۶ دارد: اگر حمایت با سکه از امتیاز حذف شود، این موضوع اهمیتی ندارد", rec:true}]},
+    {id:"1.3", q:"تیم بعد از گرفتن حمایت بتواند ایده‌اش را ویرایش کند؟", why:"کسی که از ایدهٔ الف حمایت کرده ممکن است بعداً ببیند ایده به ب تغییر کرده است.",
+      opts:[{t:"بتواند، ولی تاریخچهٔ تغییرات برای حامی‌ها نمایش داده شود", rec:true},{t:"بعد از اولین حمایت، ایده قفل شود"},{t:"کاملاً آزاد باشد"}]},
+    {id:"1.4", q:"اعضای تیم تا کی قابل تغییر باشند؟ (الان تا پایان «اتاق ایده»)",
+      opts:[{t:"تا وقتی محصول ثبت نهایی نشده است", rec:true},{t:"همیشه، تا وقتی ادمین بخش «تیم» را ببندد"},{t:"بعد از ثبت ایده قفل شود"}]},
+    {id:"1.5", q:"«حراج زنده» و «جایگاه تبلیغاتی» ذاتاً زمان‌دار هستند. با این دو چه کنیم؟",
+      opts:[{t:"بمانند و ادمین هر وقت خواست دستی شروعشان کند", rec:true},{t:"فعلاً مخفی شوند و بعداً تصمیم می‌گیریم"},{t:"کلاً حذف شوند"}]},
+    {id:"1.6", q:"ارزیابی هوش مصنوعی کی انجام شود؟", why:"وقتی تیم‌ها در زمان‌های مختلف محصول ثبت می‌کنند، این انتخاب روی انصاف اثر دارد.",
+      opts:[{t:"بلافاصله بعد از ثبت محصول، با امکان یک بار درخواست ارزیابی مجدد. ارزیابی نهایی هم برای همه یک‌جا در پایان انجام شود", rec:true},{t:"فقط در پایان و برای همه یک‌جا"},{t:"هر وقت ادمین دستی اجرایش کند"}]},
+    {id:"1.7", q:"پایان مسابقه چطور باشد؟",
+      opts:[{t:"یک ددلاین نهایی روی سایت نمایش داده شود، ولی بستن بخش‌ها را ادمین دستی انجام دهد", rec:true},{t:"ددلاینی نمایش داده نشود. ادمین اعلام کند و دستی ببندد"},{t:"ددلاین نهایی خودکار باشد (تنها زمان‌بندی باقی‌مانده)"}]},
+  ]
+},
+{
+  id:"s2", num:"۲", title:"اتصال به بازار استودیو و درخواست انتشار",
+  ask:"اتصال به بازار استودیو برقرار شود تا تیم‌ها بتوانند درخواست انتشار بدهند و برای نصب و درآمد واقعی امتیاز بگیرند. فعلاً فقط جای آن روی پلتفرم ساخته شود. زیرساخت اتصال را امیر شریف‌زاده و بهروز آماده می‌کنند.",
+  now:"درخواست انتشار همین حالا هست: تیم از صفحهٔ ساخت محصول لینک کد یا بسته و یک توضیح می‌فرستد. ادمین در صفحهٔ «بازار استودیو» وضعیت را دستی عوض می‌کند (درخواست، در حال انتشار، لایو، نیاز به اصلاح). محصول لایو نشان «🚀 لایو» می‌گیرد و نامزد جایزهٔ «بهترین محصول لایو» می‌شود، ولی در امتیاز اثری ندارد. هیچ آماری هم از بازار دریافت نمی‌کنیم.",
+  plan:["برای هر محصول یک فیلد «شناسهٔ بسته (package name) یا لینک صفحه در بازار» اضافه می‌شود.","یک جدول آمار بازار برای هر محصول ساخته می‌شود: نصب کل، نصب فعال، درآمد، امتیاز ستاره‌ای و تعداد نظر، همراه با تاریخ آخرین به‌روزرسانی.","منبع آمار یک «درایور» جداست، مثل کاری که برای پیامک و درگاه پرداخت کرده‌ایم. فعلاً ادمین آمار را دستی وارد می‌کند یا فایل اکسل آپلود می‌کند. بعداً API تیم بازار استودیو جای آن را می‌گیرد و به بقیهٔ کد دست نمی‌زنیم.","برای امیر شریف‌زاده و بهروز یک سند کوتاه نیازمندی فنی آماده می‌کنم که مشخص کند دقیقاً چه API و چه داده‌ای لازم داریم."],
+  qs:[
+    {id:"2.1", q:"تا آماده‌شدن API، آمار بازار را از کجا بیاوریم؟",
+      opts:[{t:"ادمین دستی وارد کند یا اکسل آپلود کند", rec:true},{t:"فقط یک جای خالی با برچسب «به‌زودی» بگذاریم و امتیاز بازار فعلاً صفر باشد"},{t:"تیم‌ها اسکرین‌شات کنسول توسعه‌دهنده آپلود کنند و ادمین تأیید کند"}]},
+    {id:"2.2", q:"کدام شاخص‌ها در امتیاز بیایند؟", multi:true, why:"در متن درخواست «نصب، کامنت و لایک» آمده. در بازار «لایک» نداریم و نزدیک‌ترین چیز امتیاز ستاره‌ای است. اگر منظور چیز دیگری است، در توضیح بنویسید.",
+      opts:[{t:"نصب کل"},{t:"نصب فعال (کاربرانی که حذف نکرده‌اند)", rec:true},{t:"درآمد واقعی (پرداخت درون‌برنامه‌ای یا خرید)", rec:true},{t:"امتیاز ستاره‌ای", rec:true},{t:"تعداد نظر (کامنت)", rec:true},{t:"نرخ حذف نصب (به عنوان عامل منفی)"}]},
+    {id:"2.3", q:"محصول‌ها با کدام اکانت توسعه‌دهنده در بازار منتشر شوند؟", why:"این انتخاب به قانون مالکیت (بخش ۵) هم مربوط است.",
+      opts:[{t:"اکانت مشترک گروه پگاه یا بازار استودیو. با قانون مالکیت هم‌خوان است و آمار هم یک‌جا در دسترس است", rec:true},{t:"اکانت خود تیم"},{t:"هر دو مجاز باشد"}]},
+    {id:"2.4", q:"برای محصول‌هایی که روی بازار منتشر نمی‌شوند (سایت، بات، ابزار داخلی، محتوای ویدیویی، راهکار OS)، بخش ۳۰٪ بازار چه می‌شود؟",
+      opts:[{t:"وزن این بخش برای آن محورها بین هوش مصنوعی و داوری پخش شود (وزن جدا برای هر محور)", rec:true},{t:"با شاخص‌های جایگزین سنجیده شوند، مثل بازدید یا کاربر فعال (منبع داده باید مشخص شود)"},{t:"صفر بگیرند. یعنی انتشار روی بازار عملاً اجباری است"},{t:"بررسی شود که بازار استودیو وب‌اپ یا PWA را هم منتشر می‌کند یا نه"}]},
+    {id:"2.5", q:"آمار بازار در چه بازه‌ای سنجیده شود؟",
+      opts:[{t:"از لحظهٔ انتشار تا ددلاین نهایی، با یک برداشت نهایی (snapshot)", rec:true},{t:"یک بازهٔ ثابت برای همه (مثلاً ۷ روز آخر) تا زودتر منتشرکردن مزیت نباشد"},{t:"آمار بر اساس تعداد روزهایی که محصول منتشر بوده نرمال شود"}]},
+    {id:"2.6", q:"جلوی نصب و نظر جعلی را چطور بگیریم؟", multi:true,
+      opts:[{t:"اگر API بازار نصب‌های مشکوک را جدا می‌کند، فقط نصب‌های معتبر را بشماریم", rec:true},{t:"نصب و نظر اعضای خود گروه پگاه حساب نشود (اگر داده‌اش در دسترس باشد)"},{t:"محصول‌های مشکوک به داوری یا ادمین ارجاع شوند، با همان سازوکار فعلی «پرچم تخلف»", rec:true}]},
+    {id:"2.7", q:"انتشار را چه کسی انجام دهد؟",
+      opts:[{t:"روند فعلی: تیم درخواست می‌دهد و تیم بازار استودیو بررسی و منتشر می‌کند", rec:true},{t:"تیم خودش منتشر می‌کند و فقط لینک صفحه را در پلتفرم ثبت می‌کند"}]},
+    {id:"2.8", q:"سند نیازمندی فنی اتصال را برای امیر شریف‌زاده و بهروز آماده کنم؟", why:"شامل شناسایی محصول، احراز هویت API، فهرست شاخص‌ها، بازهٔ به‌روزرسانی و نحوهٔ ارسال درخواست انتشار.",
+      opts:[{t:"بله، آماده کن", rec:true},{t:"نه، خودشان تعریف می‌کنند"}]},
+  ]
+},
+{
+  id:"s3", num:"۳", title:"محورهای مسابقه",
+  ask:"چند محور برای مسابقه تعریف شود: عمومی، راهکار OS و تولید محتوا. چون هنوز ایشوهای OS را نداده‌اند، جای این محور خالی بماند تا اگر ندادند حذفش کنیم.",
+  now:"یک محور واحد داریم و همهٔ تیم‌ها در یک رده‌بندی هستند. فرم ثبت محصول هم یکی است: لینک دمو، تیزر، تصاویر و قیمت.",
+  plan:["یک مدل «محور» ساخته می‌شود با نام، توضیح، دستهٔ فنی یا غیرفنی، فرم ارسال مخصوص، وزن‌های امتیاز مخصوص و وضعیت (فعال یا مخفی).","هر تیم یک محور انتخاب می‌کند.","محور «راهکار OS» از اول ساخته می‌شود ولی مخفی است. ادمین هر وقت ایشوها رسید با یک کلید فعالش می‌کند، و اگر نرسید همان‌طور مخفی می‌ماند."],
+  qs:[
+    {id:"3.1", q:"منظور از «OS» در «راهکار OS» چیست؟",
+      opts:[{t:"Open Source: حل ایشوهای یک پروژهٔ متن‌باز"},{t:"سیستم‌عامل یا زیرساخت داخلی"},{t:"نام یک تیم یا محصول داخلی گروه"}]},
+    {id:"3.2", q:"محور «راهکار OS» چطور کار کند؟",
+      opts:[{t:"ادمین فهرست ایشوها را وارد می‌کند. تیم یکی را انتخاب می‌کند و لینک PR یا MR تحویل می‌دهد", rec:true},{t:"فقط یک توضیح کلی باشد و تیم خودش مسئله را تعریف کند"},{t:"هنوز معلوم نیست. فعلاً فقط جای خالی بماند"}]},
+    {id:"3.3", q:"اگر ایشو داشته باشیم، چند تیم می‌توانند یک ایشو را بردارند؟",
+      opts:[{t:"هر ایشو فقط یک تیم"},{t:"چند تیم، و بهترین راهکار برنده است", rec:true}]},
+    {id:"3.4", q:"هر تیم در چند محور شرکت کند؟",
+      opts:[{t:"فقط یک محور. تا پیش از ثبت نهایی قابل تغییر است", rec:true},{t:"یک محصول در چند محور"},{t:"چند محور با محصول‌های جدا"}]},
+    {id:"3.5", q:"خروجی محور «تولید محتوا» چیست؟", multi:true,
+      opts:[{t:"ویدیو"},{t:"مقاله یا بلاگ"},{t:"پادکست"},{t:"دورهٔ آموزشی"},{t:"پست شبکه‌های اجتماعی"}], notePh:"کجا منتشر می‌شود (ببین، آپارات، اینستاگرام، …)؟ موضوع آزاد است یا دربارهٔ محصولات گروه؟"},
+    {id:"3.6", q:"تیم‌های تولید محتوا هم در حمایت با سکه و بازار شرکت می‌کنند؟",
+      opts:[{t:"بله، مثل بقیه", rec:true},{t:"نه، فقط محتوا ثبت می‌کنند و داوری می‌شوند"}]},
+    {id:"3.7", q:"تقسیم فنی و غیرفنی در چه سطحی است؟", why:"در متن درخواست آمده «جایزهٔ tech و non-tech جدا شود».",
+      opts:[{t:"در سطح محور: «عمومی» و «OS» فنی، «تولید محتوا» غیرفنی", rec:true},{t:"در سطح تیم یا فرد، مثلاً بر اساس سمت شغلی ثبت‌شده در پروفایل"},{t:"هر دو: محور، و در محور «عمومی» هم دو دستهٔ فنی و غیرفنی (مثلاً محصول با ابزار بدون کد)"}]},
+    {id:"3.8", q:"جدول امتیاز چطور نمایش داده شود؟",
+      opts:[{t:"جدول جدا برای هر محور، به‌اضافهٔ یک نمای کلی", rec:true},{t:"فقط جدول جدا برای هر محور"},{t:"یک جدول کلی"}]},
+    {id:"3.9", q:"محور دیگری هم در نظر دارید؟", text:true},
+  ]
+},
+{
+  id:"s4", num:"۴", title:"جوایز",
+  ask:"هر محور یک جایزهٔ نفر اول داشته باشد: نفر اول ساخت محصول (عمومی)، نفر اول تولید محتوا و نفر اول راهکار OS. جوایز دیگری هم برای هر بخش باشد و جوایز فنی و غیرفنی از هم جدا شوند. فعلاً فقط نفر اول هر محور قطعی است.",
+  now:"پنج جایزه از «صندوق جایزه» پرداخت می‌شود. صندوق شامل پایهٔ ۲ میلیارد تومان به‌اضافهٔ کل پول خرید سکه است. سهم‌ها: بنیان‌گذار برتر ۳۵٪، انتخاب داوران ۲۰٪، برترین کاربرد هوش مصنوعی ۱۵٪، انتخاب مردم ۱۵٪ و بهترین محصول لایو ۱۵٪. هر تیم حداکثر یک جایزه می‌برد. فهرست جوایز در کد ثابت است.",
+  plan:["جوایز از کد به داده منتقل می‌شوند و ادمین برای هر محور جایزه تعریف، ویرایش یا حذف می‌کند.","فعلاً فقط «نفر اول» هر محور تعریف می‌شود و مبلغ‌ها با عنوان «به‌زودی اعلام می‌شود» نمایش داده می‌شوند."],
+  qs:[
+    {id:"4.1", q:"مبلغ جوایز روی سایت نمایش داده شود؟",
+      opts:[{t:"فعلاً نه. فقط «به‌زودی اعلام می‌شود» نمایش داده شود و ادمین بعداً مبلغ را وارد کند", rec:true},{t:"مبلغ ثابت هر جایزه همین حالا وارد شود"},{t:"همان مدل صندوق درصدی ادامه پیدا کند"}]},
+    {id:"4.2", q:"«صندوق جایزه» (پایه به‌اضافهٔ پول خرید سکه) بماند؟",
+      opts:[{t:"بماند و بین محورها تقسیم شود"},{t:"حذف شود. هر جایزه مبلغ ثابت داشته باشد", rec:true},{t:"فقط برای جایزهٔ «انتخاب مردم» بماند"}]},
+    {id:"4.3", q:"جوایز فعلی کدام بمانند؟", multi:true, notePh:"اگر می‌مانند، در هر محور باشند یا یک بار برای کل مسابقه؟",
+      opts:[{t:"انتخاب مردم"},{t:"برترین کاربرد هوش مصنوعی"},{t:"بهترین محصول لایو روی بازار"},{t:"انتخاب داوران (جدا از نفر اول)"},{t:"هیچ‌کدام. فعلاً فقط نفر اول هر محور", rec:true}]},
+    {id:"4.4", q:"یک تیم بتواند چند جایزه ببرد؟",
+      opts:[{t:"نه، حداکثر یک جایزه (مثل الان)"},{t:"نفر اول محور به‌اضافهٔ حداکثر یک جایزهٔ ویژه", rec:true},{t:"بدون محدودیت"}]},
+    {id:"4.5", q:"نفر دوم و سوم هر محور هم جایزه دارند؟",
+      opts:[{t:"بله"},{t:"نه"},{t:"بعداً تصمیم می‌گیریم. ادمین می‌تواند اضافه کند", rec:true}]},
+    {id:"4.6", q:"اگر یک محور شرکت‌کنندهٔ خیلی کمی داشت (مثلاً یک تیم)، جایزه‌اش داده شود؟",
+      opts:[{t:"فقط اگر نمرهٔ داوری از یک حداقل بالاتر باشد", rec:true},{t:"بله، در هر صورت"},{t:"محور با محور دیگری ادغام شود"}]},
+    {id:"4.7", q:"برای «جوایز دیگر هر بخش» نمونه‌ای در ذهن دارید؟", text:true},
+  ]
+},
+{
+  id:"s5", num:"۵", title:"قانون مالکیت محصول",
+  ask:"در قوانین بیاید که مالکیت محصولی که برای سرمایه‌گذاری انتخاب شود با گروه است. به طور کلی قانون مالکیت محصول داشته باشیم.",
+  now:"در قوانین فعلی (صفحهٔ راهنما و دستیار هوش مصنوعی) هیچ بندی دربارهٔ مالکیت نیست. شرکت‌کننده هم هیچ متنی را تأیید نمی‌کند.",
+  plan:["یک بخش «مالکیت محصول» به قوانین اضافه می‌شود، در صفحهٔ راهنما و در دانش دستیار هوش مصنوعی.","پیش از ثبت نهایی محصول، هر عضو تیم باید تیک «قوانین مالکیت را خواندم و می‌پذیرم» را بزند. زمان پذیرش هم ذخیره می‌شود.","متن پیش‌نویس را من می‌نویسم، ولی متن نهایی باید تأیید حقوقی بگیرد."],
+  warn:"این بند حقوقی است. هر متنی که روی سایت برود باید قبلش تأیید واحد حقوقی را بگیرد.",
+  qs:[
+    {id:"5.1", q:"مالکیت محصول‌هایی که برای سرمایه‌گذاری انتخاب نمی‌شوند با کیست؟",
+      opts:[{t:"با تیم می‌ماند", rec:true},{t:"گروه تا مدت مشخصی (مثلاً ۶ ماه) حق تقدم سرمایه‌گذاری یا خرید دارد"},{t:"همهٔ محصول‌های مسابقه متعلق به گروه است"}]},
+    {id:"5.2", q:"بعد از انتخاب برای سرمایه‌گذاری، نقش و سهم اعضای تیم در قانون بیاید؟",
+      opts:[{t:"نه. قانون فقط مالکیت را می‌گوید و جزئیات در قرارداد جداگانه می‌آید", rec:true},{t:"بله، کلیات نقش و سهم اعضا هم بیاید"}]},
+    {id:"5.3", q:"شرکت‌کننده‌ها قانون را چطور بپذیرند؟",
+      opts:[{t:"تیک اجباری برای همهٔ اعضا پیش از ثبت نهایی محصول", rec:true},{t:"تیک اجباری هنگام ثبت‌نام (کاربران فعلی هم بار اول ورود باید بپذیرند)"},{t:"فقط متن در قوانین، بدون تیک"}]},
+    {id:"5.4", q:"مالکیت شامل چه چیزهایی است؟", multi:true,
+      opts:[{t:"کد"},{t:"نام و برند"},{t:"اکانت و صفحهٔ محصول در بازار"},{t:"محتوای تولیدشده (محور تولید محتوا)"},{t:"دادهٔ کاربران محصول"}]},
+    {id:"5.5", q:"تکلیف کد متن‌باز یا کاری که تیم قبل از مسابقه داشته چیست؟",
+      opts:[{t:"مجاز است ولی تیم باید هنگام ثبت اعلامش کند. شامل انتقال مالکیت نمی‌شود", rec:true},{t:"ممنوع است. فقط کار انجام‌شده در طول مسابقه پذیرفته می‌شود"}]},
+    {id:"5.6", q:"متن نهایی را چه کسی تأیید می‌کند؟", text:true, notePh:"نام فرد یا واحد"},
+  ]
+},
+{
+  id:"s6", num:"۶", title:"امتیازدهی: ۳۰٪ هوش مصنوعی، ۳۰٪ بازار، ۴۰٪ داوری",
+  ask:"به پیشنهاد آقای عطارزاده: ۳۰٪ هوش مصنوعی، ۳۰٪ نصب واقعی روی بازار و کامنت و لایک (هوش مصنوعی پیشنهاد بدهد هر کدام چقدر وزن داشته باشند)، و ۴۰٪ داوری نهایی. ترکیب و روش کار کمیتهٔ داوری را دکتر فروغی تعیین می‌کنند.",
+  now:"از ۱۰۰۰ امتیاز: داوری انسانی ۵۰۰ (سه پرسش ۰ تا ۱۰: آیا کار می‌کند، ارزش واقعی، تیزر و ارائه)، حمایت مردمی با سکه ۳۰۰ (فرمول درجه‌دو با سقف اثر هر نفر) و هوش مصنوعی ۲۰۰. هر بخش نسبت به بهترین تیم نرمال می‌شود. نمرهٔ داوری را ادمین برای هر محصول وارد می‌کند: یک نمره، نه نمرهٔ چند داور جدا.",
+  plan:["وزن‌ها در پنل ادمین قابل تنظیم می‌شوند و پیش‌فرض ۳۰/۳۰/۴۰ است. برای هر محور هم وزن جدا قابل تعریف است.","پیشنهاد اولیهٔ من برای تقسیم ۳۰٪ بازار در جدول پایین آمده. این وزن‌ها هم در پنل قابل تغییرند.","برای نصب و درآمد مقیاس لگاریتمی استفاده می‌شود تا یک محصول پرطرفدار بقیه را به صفر نرساند. امتیاز ستاره‌ای فقط وقتی حساب می‌شود که محصول حداقل تعداد نظر را داشته باشد (مثلاً ۱۰ نظر).","نقش «داور» با حساب کاربری جدا اضافه می‌شود. هر داور مستقل نمره می‌دهد و نمرهٔ نهایی میانگین است."],
+  extra:"weights",
+  qs:[
+    {id:"6.1", q:"حمایت مردمی با سکه، که الان ۳۰٪ امتیاز است، چه شود؟", why:"در ترکیب جدید جایی برایش نیست. اگر حذف شود، خرید سکه با پول واقعی دیگر اثری در امتیاز ندارد.",
+      opts:[{t:"از امتیاز حذف شود. سکه فقط برای جایزهٔ «انتخاب مردم» (اگر بماند) و سرگرمی بازی بماند", rec:true},{t:"بخشی از ۳۰٪ بازار شود (مثلاً یک‌پنجم آن)"},{t:"کل اقتصاد سکه (حمایت، خرید، حراج، خرید سکه با پول) حذف شود"}]},
+    {id:"6.2", q:"«هوش مصنوعی وزن‌ها را بگوید» یعنی کدام؟",
+      opts:[{t:"همین پیشنهاد جدول بالا، که من آماده کرده‌ام، پیش‌فرض شود و ادمین بعداً تغییرش دهد", rec:true},{t:"هوش مصنوعی داخل پلتفرم بعد از جمع‌شدن دادهٔ واقعی وزن‌ها را پیشنهاد دهد و ادمین تأیید کند"},{t:"خودمان عددها را می‌دهیم (در توضیح بنویسید)"}], notePh:"اگر با عددهای جدول موافق نیستید، عدد خودتان را بنویسید"},
+    {id:"6.3", q:"آمار بازار چطور به امتیاز تبدیل شود؟",
+      opts:[{t:"نسبت به بهترین محصول همان محور، با مقیاس لگاریتمی", rec:true},{t:"آستانهٔ ثابت (مثلاً ۱۰۰۰ نصب فعال یعنی نمرهٔ کامل)"},{t:"بر اساس رتبه (صدک)"}]},
+    {id:"6.4", q:"وزن‌ها برای همهٔ محورها یکی باشد؟",
+      opts:[{t:"نه. هر محور وزن خودش را دارد (مثلاً محتوا و OS بخش بازار ندارند)", rec:true},{t:"بله، یکسان"}]},
+    {id:"6.5", q:"هوش مصنوعی برای همهٔ محورها با یک معیار ارزیابی کند؟",
+      opts:[{t:"نه. هر محور معیار (rubric) خودش را دارد", rec:true},{t:"بله، یک معیار مشترک"}]},
+    {id:"6.6", q:"پلتفرم برای کمیتهٔ داوری چه امکاناتی لازم دارد؟", multi:true, why:"تصمیم نهایی با دکتر فروغی است. این‌ها امکاناتی است که اگر لازم باشد باید از الان بسازیم.",
+      opts:[{t:"حساب کاربری جدا با نقش «داور»", rec:true},{t:"نمرهٔ مستقل هر داور و میانگین‌گیری", rec:true},{t:"حذف بالاترین و پایین‌ترین نمره (وقتی داورها زیاد باشند)"},{t:"معیارها و پرسش‌های داوری قابل تنظیم برای هر محور", rec:true},{t:"تخصیص داور به محور"},{t:"نمرهٔ هوش مصنوعی و آمار بازار برای داور مخفی بماند تا سوگیری نداشته باشد"}]},
+    {id:"6.7", q:"داوری روی همهٔ تیم‌ها انجام شود یا فقط فینالیست‌ها؟",
+      opts:[{t:"فقط N تیم برتر هر محور بر اساس امتیاز هوش مصنوعی و بازار. N را ادمین تعیین می‌کند", rec:true},{t:"همهٔ تیم‌ها"}]},
+    {id:"6.8", q:"تا تصمیم دکتر فروغی، معیارهای فعلی داوری بمانند؟ (کار می‌کند؟ ارزش واقعی؟ تیزر و ارائه؟)",
+      opts:[{t:"بمانند و بعداً قابل تغییر باشند", rec:true},{t:"خالی بمانند تا معیارها برسد"}]},
+    {id:"6.9", q:"شرکت‌کننده‌ها امتیاز را کی ببینند؟",
+      opts:[{t:"امتیاز هوش مصنوعی و بازار به‌صورت زنده. نمرهٔ داوری فقط در پایان", rec:true},{t:"همه چیز تا پایان مخفی"},{t:"همه چیز زنده"}]},
+  ]
+},
+{
+  id:"s7", num:"۷", title:"پنل ادمین: مرکز کنترل وضعیت‌ها",
+  ask:"چون بخش‌ها زمان‌بندی ندارند، ادمین باید بتواند وضعیت آن‌ها را دستی تغییر دهد.",
+  now:"ادمین الان یک «فاز سراسری» را عوض می‌کند و زمان‌بند خودکار هم آن را جلو می‌برد. صفحه‌های تیم‌ها، کاربران، سکه، حراج، بازار استودیو، داوری، تسویه، اطلاعیه‌ها، پرچم تخلف و گزارش کارهای ادمین موجودند.",
+  plan:["صفحهٔ «فاز» با صفحهٔ «مرکز کنترل» عوض می‌شود. نمونهٔ این صفحه پایین آمده و کلیدهایش را می‌شود امتحان کرد.","هر بخش چهار وضعیت دارد: باز، فقط‌خواندنی (می‌بینند ولی نمی‌توانند تغییر دهند)، بسته (پیام «فعلاً بسته است» نمایش داده می‌شود) و مخفی (از منو حذف می‌شود).","هر تغییر وضعیت در گزارش کارهای ادمین ثبت می‌شود. ادمین می‌تواند با یک تیک، اطلاعیه یا اعلان هم برای همه بفرستد.","دکمهٔ «پایان مسابقه» همهٔ بخش‌ها را فقط‌خواندنی می‌کند و تسویه را شروع می‌کند.","صفحه‌های تازه: محورها، جوایز، وزن‌های امتیاز، داوران و آمار بازار."],
+  extra:"mock",
+  qs:[
+    {id:"7.1", q:"چهار وضعیت (باز، فقط‌خواندنی، بسته، مخفی) کافی است؟",
+      opts:[{t:"بله", rec:true},{t:"ساده‌تر باشد: فقط باز و بسته"}], notePh:"اگر وضعیت دیگری لازم است بنویسید"},
+    {id:"7.2", q:"وقتی ادمین وضعیت بخشی را عوض می‌کند، به شرکت‌کننده‌ها اطلاع داده شود؟",
+      opts:[{t:"اختیاری باشد. ادمین با یک تیک تصمیم بگیرد", rec:true},{t:"همیشه"},{t:"هیچ‌وقت. اطلاعیه را جداگانه می‌نویسیم"}]},
+    {id:"7.3", q:"ادمین بتواند برای یک تیم خاص استثنا بگذارد؟", why:"مثلاً بعد از بسته‌شدن ثبت محصول، یک تیم مشکل فنی داشته و ۱۰ دقیقه وقت بیشتر لازم دارد.",
+      opts:[{t:"بله. باز کردن بخش فقط برای همان تیم، با ثبت در گزارش", rec:true},{t:"نه"}]},
+    {id:"7.4", q:"کنار هر کلید، یک «ددلاین اختیاری» هم باشد؟", why:"درخواست این بود که زمان‌بندی نباشد. ولی ددلاینِ صرفاً نمایشی (بدون بستن خودکار) ممکن است به درد بخورد.",
+      opts:[{t:"نه. همه چیز کاملاً دستی باشد", rec:true},{t:"فقط برای نمایش، بدون بستن خودکار"},{t:"بله، با بستن خودکار"}]},
+    {id:"7.5", q:"چه نقش‌هایی در پنل لازم است؟", multi:true,
+      opts:[{t:"ادمین کامل", rec:true},{t:"داور (فقط صفحهٔ داوری)", rec:true},{t:"اپراتور بازار استودیو (فقط درخواست‌های انتشار و آمار بازار)", rec:true},{t:"ناظر فقط‌خواندنی (مثلاً برای مدیران)"}]},
+    {id:"7.6", q:"زمان‌بند خودکار فعلی چه شود؟",
+      opts:[{t:"زمان‌بندی فازها حذف شود ولی کارهای پس‌زمینه بمانند (تسویهٔ حراج، پاک‌سازی اعلان‌ها، همگام‌سازی آمار بازار)", rec:true},{t:"کاملاً حذف شود"}]},
+    {id:"7.7", q:"در مرکز کنترل بخش دیگری هم لازم است؟", text:true},
+  ]
+},
+{
+  id:"z", num:"✦", title:"هر چیز دیگر",
+  qs:[{id:"Z1", q:"نکته، اولویت یا ددلاینی که باید بدانم؟", text:true, notePh:"مثلاً: کدام تغییرها باید زودتر روی سایت برود"}]
+}
+];
+
+const MOCK = [
+  {g:"مراحل بازی", rows:[
+    {k:"reg", n:"ثبت‌نام", s:"open"},
+    {k:"team", n:"تشکیل و تغییر تیم", s:"open"},
+    {k:"idea", n:"ثبت و ویرایش ایده", s:"open"},
+    {k:"invest", n:"حمایت با سکه از ایده‌ها", s:"open"},
+    {k:"build", n:"ساخت و ثبت محصول", s:"open"},
+    {k:"studio", n:"درخواست انتشار روی بازار استودیو", s:"open"},
+    {k:"market", n:"بازار (خرید محصول، قلب)", s:"open"},
+    {k:"auction", n:"حراج زنده", d:"با دکمهٔ «شروع حراج» در صفحهٔ حراج", s:"closed"},
+    {k:"ads", n:"جایگاه تبلیغاتی", s:"hidden"},
+    {k:"coins", n:"خرید سکه با پول", s:"open"},
+  ]},
+  {g:"محورها", rows:[
+    {k:"t-gen", n:"محور عمومی (ساخت محصول)", d:"فنی", s:"open"},
+    {k:"t-content", n:"محور تولید محتوا", d:"غیرفنی", s:"open"},
+    {k:"t-os", n:"محور راهکار OS", d:"منتظر ایشوها", s:"hidden"},
+  ]},
+  {g:"ارزیابی و نتایج", rows:[
+    {k:"ai", n:"ارزیابی هوش مصنوعی", s:"open"},
+    {k:"jury", n:"داوری نهایی (پنل داوران)", s:"closed"},
+    {k:"board", n:"جدول امتیاز", s:"ro"},
+    {k:"results", n:"نتایج و برندگان", s:"hidden"},
+  ]},
+  {g:"اتصال‌ها", rows:[
+    {k:"bazaar", n:"منبع آمار بازار استودیو", d:"API بعداً توسط تیم بازار استودیو", s:"manual", kind:"src"},
+  ]},
+];
+const STATES = [["open","باز"],["ro","فقط‌خواندنی"],["closed","بسته"],["hidden","مخفی"]];
+const SRC = [["manual","ورود دستی"],["api","API"],["off","غیرفعال"]];
+
+const SUB = [
+  ["نصب فعال","۳۵٪","کاربر واقعی که نگهش داشته؛ سخت‌تر از نصب کل دست‌کاری می‌شود"],
+  ["درآمد واقعی","۲۵٪","نشانهٔ ارزش واقعی. با مقیاس لگاریتمی"],
+  ["امتیاز ستاره‌ای","۱۵٪","فقط با حداقل ۱۰ نظر"],
+  ["نصب کل","۱۵٪","رسیدن به کاربر"],
+  ["تعداد نظر","۱۰٪","درگیری کاربر. نظرهای کوتاه و تکراری فیلتر می‌شوند"],
+];
+
+const KEY = "pegah-v2-questions";
+let state = {};
+try { state = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { state = {}; }
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+const fa = n => String(n).replace(/\d/g, d => "۰۱۲۳۴۵۶۷۸۹"[d]);
+const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function render(){
+  const main = document.getElementById("main");
+  const toc = document.getElementById("toc");
+  let html = "", tocH = "";
+  for (const s of SECTIONS){
+    tocH += `<a href="#${s.id}">${s.num}. ${esc(s.title.split(":")[0])}</a>`;
+    html += `<section class="sec" id="${s.id}"><div class="sec-h"><span class="num">${s.num}</span><h2>${esc(s.title)}</h2></div>`;
+    if (s.ask) html += `<div class="ask">${esc(s.ask)}</div>`;
+    html += `<div class="boxes">`;
+    if (s.now) html += `<div class="box now"><b class="k">وضعیت فعلی پلتفرم</b>${esc(s.now)}</div>`;
+    if (s.plan) html += `<div class="box plan"><b class="k">پیشنهاد من</b><ul>${s.plan.map(p=>`<li>${esc(p)}</li>`).join("")}</ul></div>`;
+    if (s.warn) html += `<div class="box warn"><b class="k">نکتهٔ مهم</b>${esc(s.warn)}</div>`;
+    html += `</div>`;
+    if (s.extra === "weights") html += weightsHTML();
+    if (s.extra === "mock") html += mockHTML();
+    for (const q of s.qs) html += qHTML(q);
+    html += `</section>`;
+  }
+  main.innerHTML = html;
+  toc.innerHTML = tocH;
+  bind();
+  progress();
+}
+
+function qHTML(q){
+  const a = state[q.id] || {};
+  const sel = a.sel || [];
+  let h = `<div class="q" data-q="${q.id}"><div class="qid">پرسش ${fa(q.id)}</div><h3>${esc(q.q)}</h3>`;
+  if (q.why) h += `<p class="why">${esc(q.why)}</p>`;
+  if (q.opts){
+    h += `<div class="opts" role="${q.multi?"group":"radiogroup"}">`;
+    q.opts.forEach((o,i)=>{
+      const on = sel.includes(i);
+      h += `<label class="opt${on?" on":""}"><input type="${q.multi?"checkbox":"radio"}" name="q-${q.id}" value="${i}"${on?" checked":""}><span>${esc(o.t)}${o.rec?'<span class="rec">پیشنهادی</span>':""}</span></label>`;
+    });
+    h += `</div>`;
+    if (q.multi) h += `<p class="why" style="margin:6px 0 0">چند گزینه را می‌شود انتخاب کرد.</p>`;
+  }
+  const ph = q.notePh || (q.text ? "پاسخ را اینجا بنویسید" : "توضیح یا پاسخ دیگر (اختیاری)");
+  h += `<textarea data-note="${q.id}" placeholder="${esc(ph)}" aria-label="توضیح پرسش ${q.id}"${q.text?' style="min-height:80px"':""}>${esc(a.note||"")}</textarea></div>`;
+  return h;
+}
+
+function weightsHTML(){
+  return `<div class="q" style="margin-top:10px"><div class="qid">ترکیب پیشنهادی امتیاز</div>
+  <div class="weights" role="img" aria-label="۳۰ درصد هوش مصنوعی، ۳۰ درصد بازار، ۴۰ درصد داوری">
+    <div class="w-ai" style="width:30%">هوش مصنوعی ۳۰٪</div><div class="w-mk" style="width:30%">بازار ۳۰٪</div><div class="w-jy" style="width:40%">داوری نهایی ۴۰٪</div>
+  </div>
+  <div class="wlbl"><span>فعلی: داوری ۵۰٪، حمایت با سکه ۳۰٪، هوش مصنوعی ۲۰٪</span></div>
+  <h3 style="margin-top:14px">پیشنهاد من برای تقسیم ۳۰٪ بازار</h3>
+  <table class="sub"><thead><tr><th>شاخص</th><th>سهم از ۳۰٪</th><th>دلیل</th></tr></thead><tbody>
+  ${SUB.map(r=>`<tr><td>${r[0]}</td><td><b>${r[1]}</b></td><td style="color:var(--ink-2)">${r[2]}</td></tr>`).join("")}
+  </tbody></table></div>`;
+}
+
+function mockHTML(){
+  let h = `<div class="mock" aria-label="نمونهٔ مرکز کنترل"><div class="mock-h"><b>🎛️ مرکز کنترل</b><small>نمونهٔ آزمایشی: کلیدها کار می‌کنند ولی چیزی ذخیره نمی‌شود</small></div>`;
+  for (const g of MOCK){
+    h += `<div class="grp">${g.g}</div>`;
+    for (const r of g.rows){
+      const opts = r.kind === "src" ? SRC : STATES;
+      h += `<div class="row"><div class="nm">${r.n}${r.d?`<small>${r.d}</small>`:""}</div><div class="seg" role="group" aria-label="${r.n}">${opts.map(([v,l])=>`<button type="button" data-s="${v}" class="${v===r.s?"on":""}" aria-pressed="${v===r.s}">${l}</button>`).join("")}</div></div>`;
+    }
+  }
+  h += `<div class="mock-f"><span class="chip">☐ اطلاع به همهٔ شرکت‌کننده‌ها</span><span class="chip">استثنا برای یک تیم…</span><span class="chip" style="border-color:var(--s-closed);color:var(--s-closed)">🏁 پایان مسابقه و تسویه</span></div></div>`;
+  h += `<div class="pages">
+    <div class="page"><b>محورها</b>افزودن، ویرایش و مخفی‌کردن محور. دستهٔ فنی یا غیرفنی، فرم ارسال و فهرست ایشوهای OS.</div>
+    <div class="page"><b>جوایز</b>جایزه‌های هر محور، مبلغ یا «به‌زودی»، سقف تعداد جایزه برای هر تیم.</div>
+    <div class="page"><b>وزن‌های امتیاز</b>۳۰/۳۰/۴۰ و تقسیم بخش بازار، برای هر محور جدا.</div>
+    <div class="page"><b>داوران</b>دعوت داور، تخصیص به محور، معیارها و پیشرفت داوری.</div>
+    <div class="page"><b>آمار بازار</b>ورود دستی یا اکسل، تاریخ آخرین به‌روزرسانی و وضعیت اتصال API.</div>
+  </div>`;
+  return h;
+}
+
+function bind(){
+  document.querySelectorAll(".q[data-q]").forEach(el=>{
+    const id = el.dataset.q;
+    el.querySelectorAll("input").forEach(inp=>inp.addEventListener("change",()=>{
+      const sel = [...el.querySelectorAll("input:checked")].map(x=>+x.value);
+      state[id] = {...(state[id]||{}), sel};
+      el.querySelectorAll(".opt").forEach((o,i)=>o.classList.toggle("on", sel.includes(i)));
+      save(); progress();
+    }));
+    const ta = el.querySelector("textarea");
+    ta.addEventListener("input",()=>{ state[id] = {...(state[id]||{}), note: ta.value}; save(); progress(); });
+  });
+  document.querySelectorAll(".seg").forEach(seg=>seg.addEventListener("click",e=>{
+    const b = e.target.closest("button"); if(!b) return;
+    seg.querySelectorAll("button").forEach(x=>{ x.classList.toggle("on", x===b); x.setAttribute("aria-pressed", x===b); });
+  }));
+}
+
+function answered(id){ const a = state[id]; return !!a && ((a.sel && a.sel.length) || (a.note && a.note.trim())); }
+function allQs(){ return SECTIONS.flatMap(s=>s.qs); }
+function progress(){
+  const qs = allQs(); const n = qs.filter(q=>answered(q.id)).length;
+  document.getElementById("progT").textContent = `${fa(n)} از ${fa(qs.length)} پرسش پاسخ داده شده`;
+  document.getElementById("progF").style.width = (n/qs.length*100)+"%";
+  qs.forEach(q=>{ const el = document.querySelector(`.q[data-q="${q.id}"]`); if (el) el.classList.toggle("done", !!answered(q.id)); });
+}
+
+function toast(t){ const el = document.getElementById("toast"); el.textContent = t; el.classList.add("show"); setTimeout(()=>el.classList.remove("show"), 2200); }
+
+document.getElementById("exportBtn").addEventListener("click",()=>{
+  const d = new Date();
+  let md = `# پاسخ‌ها: پرسش‌های نسخهٔ دوم پلتفرم\n\nتاریخ: ${d.toLocaleDateString("fa-IR")}\n`;
+  for (const s of SECTIONS){
+    md += `\n## ${s.num}. ${s.title}\n`;
+    for (const q of s.qs){
+      const a = state[q.id] || {};
+      md += `\n### ${q.id}. ${q.q}\n`;
+      const sel = (a.sel||[]).map(i=>q.opts[i].t);
+      if (sel.length) md += sel.map(t=>`- ✅ ${t}`).join("\n") + "\n";
+      if (a.note && a.note.trim()) md += `\n> ${a.note.trim().replace(/\n/g,"\n> ")}\n`;
+      if (!sel.length && !(a.note && a.note.trim())) md += `- (بی‌پاسخ — گزینهٔ پیشنهادی اعمال می‌شود${q.opts && q.opts.some(o=>o.rec) ? ": " + q.opts.filter(o=>o.rec).map(o=>o.t).join(" / ") : ""})\n`;
+    }
+  }
+  const blob = new Blob([md], {type:"text/markdown;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "pegah-v2-answers.md";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  toast("فایل پاسخ‌ها دانلود شد");
+});
+document.getElementById("resetBtn").addEventListener("click",()=>{
+  if (!confirm("همهٔ پاسخ‌ها پاک شود؟")) return;
+  state = {}; save(); render(); toast("پاسخ‌ها پاک شد");
+});
+document.getElementById("themeBtn").addEventListener("click",()=>{
+  const r = document.documentElement;
+  const dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  r.dataset.theme = dark ? "light" : "dark";
+});
+render();
+</script>
+</body>
+</html>
