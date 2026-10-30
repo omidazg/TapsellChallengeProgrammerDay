@@ -49,6 +49,9 @@ function containsWalletKey(value: unknown): boolean {
   return false;
 }
 
+// فقط خودِ عدد؛ نام تیم‌ها مُهر زمان دارد و میلی‌ثانیه‌های تاریخ هم ممکن است ۹۹۹ باشد.
+const LEAKED_AMOUNT = /(?<![\d.])999(?!\d)/;
+
 async function main() {
   const { prisma } = await import("../src/lib/db");
   const { buildFeed } = await import("../src/lib/feed");
@@ -172,7 +175,7 @@ async function main() {
       investEvent?.text === `تیم «${teamA.name}» حمایت تازه گرفت`,
       investEvent?.text
     );
-    check("متن حمایت مبلغ (۹۹۹) را لو نمی‌دهد", !!investEvent && !investEvent.text.includes("999"), investEvent?.text);
+    check("متن حمایت مبلغ (۹۹۹) را لو نمی‌دهد", !!investEvent && !LEAKED_AMOUNT.test(investEvent.text), investEvent?.text);
 
     const purchaseEvent = feed.find((e) => e.id === `purchase:${purchase.id}`);
     check(
@@ -195,7 +198,7 @@ async function main() {
     const feedJson = JSON.stringify(feed);
     check("فید هیچ ایمیلی ندارد", !feedJson.includes("@"));
     check("فید هیچ کلید موجودی کیف پولی ندارد", !containsWalletKey(feed));
-    check("فید مبلغ حمایت (۹۹۹) را لو نمی‌دهد", !feedJson.includes("999"));
+    check("فید مبلغ حمایت (۹۹۹) را لو نمی‌دهد", !LEAKED_AMOUNT.test(feedJson));
 
     // ---------- payload سالن ----------
     const hall = await getHallPayloadCached();
