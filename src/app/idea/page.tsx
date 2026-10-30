@@ -1,27 +1,38 @@
-import Link from "next/link";
+import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { getPhase, phaseIndex, PHASE_LABEL } from "@/lib/phase";
+import { getPhase } from "@/lib/phase";
 import { prisma } from "@/lib/db";
-import { PageHeader, Container, Empty, Locked, Alert } from "@/components/ui";
+import { PageHeader, Container, Empty, Alert } from "@/components/ui";
+import { ModuleClosed, ModuleReadOnly } from "@/components/ModuleState";
+import { TrackSwitcher } from "@/components/TrackSwitcher";
+import { TrackProgress } from "@/components/TrackProgress";
 import { AiTag } from "@/components/AiTag";
 import { ideaAiTag } from "@/lib/ai-tag";
 import { teamAccess } from "@/lib/team-access";
+import { moduleStatusFor, trackGate } from "@/lib/module-state";
+import { resolveTrack } from "@/lib/track-data";
 import { IdeaForm, UnsubmitButton } from "./IdeaForm";
 import { AnalystCard } from "./AnalystCard";
 import { Cover } from "./Cover";
 import { AI_EVAL_CAP_PER_PHASE, aiEvalCount } from "@/lib/ai";
 
-export const metadata = { title: "اتاق ایده" };
+export const metadata = { title: "ثبت ایده" };
 
-export default async function IdeaPage() {
+const TITLE = "ثبت ایده";
+
+export default async function IdeaPage({ searchParams }: { searchParams: Promise<{ track?: string }> }) {
   const user = await requireUser();
-  const { phase } = await getPhase();
+  const sp = await searchParams;
   const aiOff = !process.env.ANTHROPIC_API_KEY;
+
+  const status = await moduleStatusFor("idea", user.teamId);
+  if (status === "hidden") notFound();
+  if (status === "closed") return <ModuleClosed moduleKey="idea" title={TITLE} />;
 
   if (!user.teamId) {
     return (
       <>
-        <PageHeader eyebrow="فاز فعلی" title="اتاق ایده" desc="اینجا ایدهٔ تیمت را می‌نویسی و برای «دور حمایت» ثبت می‌کنی." />
+        <PageHeader title={TITLE} desc="اینجا ایدهٔ تیمت را می‌نویسی و ثبت می‌کنی تا بقیه ببینند و از آن حمایت کنند." />
         <Container>
           <Empty
             title="هنوز عضو تیمی نیستی"
@@ -33,41 +44,69 @@ export default async function IdeaPage() {
     );
   }
 
-  if (phaseIndex(phase) < phaseIndex("IDEATION")) {
+  const { track, tracks } = await resolveTrack(sp.track);
+  if (!track) {
     return (
       <>
-        <PageHeader
-          eyebrow={`از فاز «${PHASE_LABEL.IDEATION}» باز می‌شود`}
-          title="اتاق ایده"
-          action={
-            <Link href="/" className="btn-ghost">
-              الان چه کنم؟
-            </Link>
-          }
-        />
+        <PageHeader title={TITLE} />
         <Container>
-          <Locked title="هنوز زود است" desc="اتاق ایده از فاز «اتاق ایده» باز می‌شود." />
+          <Empty title="فعلاً محوری باز نیست" desc="به‌محض باز شدن محورها می‌توانی ایده‌ات را ثبت کنی." />
         </Container>
       </>
     );
   }
 
-  const idea = await prisma.idea.findUnique({ where: { teamId: user.teamId } });
-  const isIdeation = phase === "IDEATION";
+  const key = { teamId_trackId: { teamId: user.teamId, trackId: track.id } };
+  const [idea, product, trackError, { canManage, reason }, { phase }] = await Promise.all([
+    prisma.idea.findUnique({ where: key }),
+    prisma.product.findUnique({ where: key, select: { submittedAt: true, liveStatus: true } }),
+    trackGate(track.id, user.teamId),
+    teamAccess(user),
+    getPhase(),
+  ]);
   // هر عضو تیم (یا شرکت‌کنندهٔ فردی) ایده را می‌نویسد و ویرایش می‌کند.
-  const { canManage, reason } = await teamAccess(user);
+  const editable = status === "open" && !trackError && canManage;
 
-  if (isIdeation && !idea?.submittedAt && canManage) {
+  const nav = (
+    <>
+      <TrackSwitcher tracks={tracks} current={track.id} hrefFor={(id) => `/idea?track=${encodeURIComponent(id ?? track.id)}`} />
+      <TrackProgress
+        trackId={track.id}
+        hasTeam
+        ideaSubmitted={!!idea?.submittedAt}
+        productSubmitted={!!product?.submittedAt}
+        publish={track.kind === "PRODUCT" ? { requested: !!product?.liveStatus } : null}
+      />
+      {status === "ro" && <ModuleReadOnly moduleKey="idea" />}
+      {trackError && <Alert kind="info">{trackError}</Alert>}
+    </>
+  );
+  const analyst = idea && (
+    <AnalystCard
+      clarity={idea.analystClarity}
+      feasibility={idea.analystFeasibility}
+      novelty={idea.analystNovelty}
+      summary={idea.analystSummary}
+      advice={idea.analystAdvice}
+      aiOff={aiOff}
+    />
+  );
+
+  if (editable && !idea?.submittedAt) {
     return (
       <>
         <PageHeader
-          eyebrow="فاز فعلی"
-          title="اتاق ایده"
-          desc={`ایدهٔ تیمت را بنویس و پیش از پایان فاز ثبت نهایی کن تا در «${PHASE_LABEL.SEED_ROUND}» دیده شود و حامی جمع کند. هر عضو تیم می‌تواند ویرایشش کند.`}
+          eyebrow={track.name}
+          title={TITLE}
+          desc={`${track.description ? `${track.description} ` : ""}ایده‌ات را بنویس و ثبت نهایی کن تا دیده شود، حامی جمع کند و مرکز ساخت همین محور برایت باز شود. هر عضو تیم می‌تواند ویرایشش کند.`}
         />
-        <Container className="max-w-3xl">
+        <Container className="max-w-3xl space-y-6">
+          {nav}
+          {idea && <Alert kind="info">این پیش‌نویس هنوز ثبت نهایی نشده و دیگران آن را نمی‌بینند.</Alert>}
           <IdeaForm
-            draftKey={`${user.teamId}:${idea?.id ?? "new"}`}
+            key={track.id}
+            trackId={track.id}
+            draftKey={`${user.teamId}:${track.id}:${idea?.id ?? "new"}`}
             initial={
               idea
                 ? {
@@ -81,6 +120,8 @@ export default async function IdeaPage() {
                 : null
             }
           />
+          {/* بازخورد تحلیل‌گر کنار فرم می‌ماند تا تیم با دیدن آن ایده را بهتر کند */}
+          {analyst}
         </Container>
       </>
     );
@@ -89,43 +130,42 @@ export default async function IdeaPage() {
   if (!idea) {
     return (
       <>
-        <PageHeader eyebrow="فاز فعلی" title="اتاق ایده" />
-        <Container className="space-y-4">
-          {isIdeation && reason && <Alert kind="info">{reason}</Alert>}
-          <Empty title="ایده‌ای ثبت نشده" desc={isIdeation ? undefined : "تیمت برای این دوره ایده‌ای ثبت نکرده است."} />
+        <PageHeader eyebrow={track.name} title={TITLE} />
+        <Container className="max-w-3xl space-y-6">
+          {nav}
+          {reason && <Alert kind="info">{reason}</Alert>}
+          <Empty title="ایده‌ای ثبت نشده" desc="تیمت در این محور ایده‌ای ثبت نکرده است." />
         </Container>
       </>
     );
   }
 
   const aiTag = ideaAiTag(idea);
-  // سقف تحلیل هوش مصنوعی در این فاز پر شده؟ (ثبت دوباره نمرهٔ قبلی را نگه می‌دارد)
-  const analystCapReached =
-    isIdeation && canManage && !!idea.submittedAt && (await aiEvalCount("analyst", idea.id, phase)) >= AI_EVAL_CAP_PER_PHASE;
+  // سقف تحلیل هوش مصنوعی پر شده؟ (ثبت دوباره نمرهٔ قبلی را نگه می‌دارد)
+  const analystCapReached = editable && !!idea.submittedAt && (await aiEvalCount("analyst", idea.id, phase)) >= AI_EVAL_CAP_PER_PHASE;
 
   return (
     <>
       <PageHeader
-        eyebrow="فاز فعلی"
+        eyebrow={track.name}
         title={idea.title}
         desc={idea.oneLiner}
-        action={isIdeation && canManage && idea.submittedAt ? <UnsubmitButton /> : undefined}
+        action={editable && idea.submittedAt ? <UnsubmitButton trackId={track.id} /> : undefined}
       />
       <Container className="max-w-3xl space-y-6">
-        {isIdeation && idea.submittedAt && canManage && (
-          <Alert kind="ok">ایده ثبت نهایی شده است. تا پایان فاز اتاق ایده هر عضو تیم می‌تواند برای ویرایش دوباره آن را باز کند.</Alert>
+        {nav}
+        {editable && idea.submittedAt && (
+          <Alert kind="ok">
+            ایده ثبت نهایی شده است و هر عضو تیم می‌تواند آن را برای ویرایش باز کند. اگر بعد از گرفتن حمایت ایده را تغییر دهی،
+            تاریخچهٔ تغییرات به حامی‌ها نشان داده می‌شود و می‌توانند حمایتشان را پس بگیرند.
+          </Alert>
         )}
         {analystCapReached && (
           <Alert kind="info">
-            سقف {AI_EVAL_CAP_PER_PHASE.toLocaleString("fa-IR")} بار تحلیل هوش مصنوعی برای این ایده در این فاز پر شده است؛ اگر دوباره ثبت کنی، تحلیل اجرا نمی‌شود و نمرهٔ فعلی حفظ می‌شود.
+            سقف {AI_EVAL_CAP_PER_PHASE.toLocaleString("fa-IR")} بار تحلیل هوش مصنوعی برای این ایده پر شده است؛ اگر دوباره ثبت کنی، تحلیل اجرا نمی‌شود و نمرهٔ فعلی حفظ می‌شود.
           </Alert>
         )}
-        {isIdeation && !idea.submittedAt && <Alert kind="info">این پیش‌نویس هنوز ثبت نهایی نشده.</Alert>}
-        {!isIdeation && !idea.submittedAt && (
-          <Alert kind="error">
-            این ایده پیش از پایان فاز «اتاق ایده» ثبت نهایی نشد و در «{PHASE_LABEL.SEED_ROUND}» نمایش داده نمی‌شود.
-          </Alert>
-        )}
+        {!idea.submittedAt && <Alert kind="info">این پیش‌نویس هنوز ثبت نهایی نشده و دیگران آن را نمی‌بینند.</Alert>}
 
         {idea.coverUrl && (
           <div className="relative w-full aspect-[8/5] rounded-3xl overflow-hidden border border-brand-mist anim-rise">
@@ -144,12 +184,12 @@ export default async function IdeaPage() {
             <p className="text-brand-navy leading-7 break-words whitespace-pre-line">{idea.audience}</p>
           </div>
           <div>
-            <div className="text-xs font-bold text-brand-slate mb-1">برنامهٔ ساخت ۴۸ ساعته</div>
+            <div className="text-xs font-bold text-brand-slate mb-1">برنامهٔ ساخت</div>
             <p className="text-brand-navy leading-7 break-words whitespace-pre-line">{idea.buildPlan}</p>
           </div>
         </div>
 
-        <AnalystCard clarity={idea.analystClarity} feasibility={idea.analystFeasibility} novelty={idea.analystNovelty} summary={idea.analystSummary} aiOff={aiOff} />
+        {analyst}
       </Container>
     </>
   );

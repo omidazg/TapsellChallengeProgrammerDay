@@ -61,12 +61,12 @@ export async function deleteTeamAction(prevState: TeamsActionState, formData: Fo
 
   const team = await prisma.team.findUnique({
     where: { id: parsed.data.teamId },
-    include: { members: { select: { id: true } }, idea: { select: { id: true } }, product: { select: { id: true } } },
+    include: { members: { select: { id: true } }, ideas: { select: { id: true } }, products: { select: { id: true } } },
   });
   if (!team) return { error: "تیم پیدا نشد" };
   if (team.members.length > 0) return { error: "فقط تیم خالی را می‌توان حذف کرد" };
   // ایده/محصول به حمایت‌ها و خریدهای دیگران گره خورده‌اند؛ حذفشان دفتر کل را ناقص می‌کند.
-  if (team.idea || team.product) return { error: "این تیم ایده یا محصول ثبت کرده و قابل حذف نیست" };
+  if (team.ideas.length > 0 || team.products.length > 0) return { error: "این تیم ایده یا محصول ثبت کرده و قابل حذف نیست" };
 
   // ردیف‌های وابسته (دعوت‌نامه، پیشنهاد جایگاه، پرچم، امتیاز) کلید خارجی دارند و بدون پاک‌شدن،
   // حذف تیم با خطای پایگاه‌داده شکست می‌خورد — همان الگوی adminMergeTeams در lib/team.ts.
@@ -78,6 +78,7 @@ export async function deleteTeamAction(prevState: TeamsActionState, formData: Fo
       await tx.adSlotBid.deleteMany({ where: { teamId: team.id } });
       await tx.collusionFlag.deleteMany({ where: { OR: [{ teamId: team.id }, { otherTeamId: team.id }] } });
       await tx.teamScore.deleteMany({ where: { teamId: team.id } });
+      await tx.moduleException.deleteMany({ where: { teamId: team.id } });
       await tx.team.delete({ where: { id: team.id } });
     });
   } catch (e) {

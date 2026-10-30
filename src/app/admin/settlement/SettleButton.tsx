@@ -27,10 +27,13 @@ export function SettleButton({ settled, phaseClosed }: { settled: boolean; phase
         <form
           action={formAction}
           onSubmit={(e) => {
-            const warn = phaseClosed
-              ? ""
-              : "\n\nهشدار: بازی هنوز در فاز «پایان بازی» نیست؛ این تسویهٔ زودهنگام است. نتیجه همین حالا ثبت می‌شود، ولی با رفتن بازی به «پایان بازی» با همهٔ حمایت‌ها، خریدها و نمره‌ها تا آن لحظه دوباره محاسبه و جایگزین می‌شود.";
-            confirmSubmit(e, { title: "تسویهٔ نهایی اجرا شود؟", body: phaseClosed ? "این کار برگشت‌ناپذیر است." : `تسویهٔ زودهنگام.${warn}`, destructive: true });
+            confirmSubmit(e, {
+              title: "تسویهٔ نهایی اجرا شود؟",
+              body: phaseClosed
+                ? "نتیجهٔ همهٔ ثبت‌ها ثبت می‌شود. بعداً فقط با «بازتسویه» قابل به‌روزرسانی است."
+                : "تسویهٔ زودهنگام: مسابقه هنوز تمام نشده است. نتیجه همین حالا ثبت می‌شود، ولی با پایان مسابقه با همهٔ حمایت‌ها، خریدها و نمره‌ها تا آن لحظه دوباره محاسبه و جایگزین می‌شود.",
+              destructive: true,
+            });
           }}
         >
           <button type="submit" disabled={pending || settled} className="btn-primary disabled:opacity-50">
@@ -58,7 +61,7 @@ export function SettleButton({ settled, phaseClosed }: { settled: boolean; phase
           className="space-y-2"
         >
           <p className="text-xs text-brand-slate">
-            اگر پس از تسویه نمرهٔ داوری، انتخاب جایزه یا کسر تقلبی ثبت شد، با بازتسویه در نتیجهٔ نهایی اعمال می‌شود.
+            اگر پس از تسویه نمرهٔ داوری، ارزیابی هوش مصنوعی یا کسر تقلبی ثبت شد، با بازتسویه در نتیجه اعمال می‌شود.
           </p>
           <button type="submit" disabled={rePending} className="btn-ghost disabled:opacity-50">
             {rePending ? "در حال بازتسویه…" : "بازتسویه با نمره‌ها و کسرهای تازه"}
@@ -68,7 +71,7 @@ export function SettleButton({ settled, phaseClosed }: { settled: boolean; phase
       {reState.error && <Alert kind="error">{reState.error}</Alert>}
       {reState.ok && (
         <Alert kind="ok">
-          بازتسویه انجام شد؛ نتیجهٔ {fa(reState.teams ?? 0)} تیم دوباره ثبت شد
+          بازتسویه انجام شد؛ نتیجهٔ {fa(reState.teams ?? 0)} ثبت دوباره ذخیره شد
           {reState.settledAt && <> ({jdatetime(new Date(reState.settledAt))})</>}.
         </Alert>
       )}
@@ -76,8 +79,8 @@ export function SettleButton({ settled, phaseClosed }: { settled: boolean; phase
       {state.error && <Alert kind="error">{state.error}</Alert>}
       {state.ok && (
         <Alert kind={state.alreadySettled ? "info" : "ok"}>
-          {state.alreadySettled ? "بازی از قبل تسویه شده بود؛ چیزی دوباره ثبت نشد. " : "تسویه انجام شد. "}
-          نتیجهٔ {fa(state.teams ?? 0)} تیم ثبت و قفل است
+          {state.alreadySettled ? "تسویه از قبل انجام شده بود؛ چیزی دوباره ثبت نشد. " : "تسویه انجام شد. "}
+          نتیجهٔ {fa(state.teams ?? 0)} ثبت ذخیره شد
           {state.settledAt && <> (زمان تسویه: {jdatetime(new Date(state.settledAt))})</>}.
         </Alert>
       )}

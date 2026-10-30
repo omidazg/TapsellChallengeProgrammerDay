@@ -113,6 +113,7 @@ async function main() {
     const productA = await prisma.product.create({
       data: {
         teamId: teamA.id,
+        slug: "smoke-feed-alpha-general",
         name: "محصول آلفا",
         specialName: "نسخهٔ ویژهٔ آلفا",
         price: 20,
@@ -138,15 +139,17 @@ async function main() {
       },
     });
 
-    await setPhase("MARKET", null);
-    // خودِ setPhase چیزی در AuditLog ثبت نمی‌کند (این کار در src/app/admin/actions.ts با audit() انجام می‌شود)؛
-    // برای شبیه‌سازی همان مسیر واقعی، ردیف AuditLog را همین‌جا با همان شکل («phase.set» + target=فاز جدید) می‌سازیم.
-    await prisma.auditLog.create({ data: { actorId: null, action: "phase.set", target: "MARKET", detail: "" } });
+    await setPhase("LIVE", null);
+    // خودِ setPhase چیزی در AuditLog ثبت نمی‌کند (این کار در src/app/admin/control/actions.ts با audit() انجام می‌شود)؛
+    // برای شبیه‌سازی همان مسیر واقعی، ردیف پایان مسابقه را همین‌جا می‌سازیم. ردیف قدیمی LIVE خبر عمومی نیست.
+    await prisma.auditLog.create({ data: { actorId: null, action: "phase.set", target: "LIVE", detail: "" } });
+    await prisma.auditLog.create({ data: { actorId: null, action: "contest.end", target: "", detail: "" } });
     invalidate(""); // پس از setPhase، کش‌های دیگر (فید/سالن) هم باید تازه محاسبه شوند
 
     // ---------- فید ----------
     const feed = await buildFeed(20);
-    check("فید حداقل ۶ رویداد دارد (تیم×۲ + ایده + حمایت + خرید + حراج + فاز)", feed.length >= 7, `len=${feed.length}`);
+    check("فید فقط یک خبر پایان دارد و ردیف قدیمی LIVE خبر نمی‌شود", feed.filter((e) => e.id.startsWith("phase:")).length === 1, JSON.stringify(feed.map((e) => e.id)));
+    check("فید حداقل ۷ رویداد دارد (تیم×۲ + ایده + حمایت + خرید + حراج + پایان)", feed.length >= 7, `len=${feed.length}`);
 
     const ids = feed.map((e) => e.id);
     check("شناسه‌ها یکتا هستند", new Set(ids).size === ids.length);
@@ -185,8 +188,8 @@ async function main() {
       auctionEvent?.text
     );
 
-    const phaseEvent = feed.find((e) => e.text.includes("فاز بازی به"));
-    check("رویداد تغییر فاز ساخته شد", !!phaseEvent, JSON.stringify(feed.map((e) => e.text)));
+    const phaseEvent = feed.find((e) => e.text === "مسابقه به پایان رسید");
+    check("رویداد پایان مسابقه ساخته شد", !!phaseEvent, JSON.stringify(feed.map((e) => e.text)));
 
     // ---------- بدون نشت ----------
     const feedJson = JSON.stringify(feed);
@@ -198,9 +201,9 @@ async function main() {
     const hall = await getHallPayloadCached();
     check("payload سالن فاز/برچسب/سرور-ناو دارد", typeof hall.phase === "string" && typeof hall.phaseLabel === "string" && typeof hall.serverNow === "string");
     check("payload سالن فهرست تیم‌های برتر دارد", Array.isArray(hall.topTeams) && hall.topTeams.length > 0, `len=${hall.topTeams.length}`);
-    check("هر تیم برتر فقط teamId/name/logoSeed/metric دارد", hall.topTeams.every((t) => {
+    check("هر تیم برتر فقط فیلدهای عمومی دارد", hall.topTeams.every((t) => {
       const keys = Object.keys(t).sort().join(",");
-      return keys === "logoSeed,metric,name,teamId";
+      return keys === "key,logoSeed,metric,name,productName,teamId,trackName";
     }), JSON.stringify(hall.topTeams[0]));
     check("payload سالن نوار فروش (ticker) دارد", Array.isArray(hall.ticker.recent) && typeof hall.ticker.volume === "number");
     check("payload سالن فید دارد", Array.isArray(hall.feed) && hall.feed.length > 0, `len=${hall.feed.length}`);
@@ -221,8 +224,8 @@ async function main() {
     await prisma.idea.deleteMany({ where: { id: ideaA.id } });
     await prisma.user.deleteMany({ where: { id: { in: createdUserIds } } });
     await prisma.team.deleteMany({ where: { id: { in: createdTeamIds } } });
-    await prisma.auditLog.deleteMany({ where: { action: "phase.set" } });
-    await setPhase((previousPhase as Phase | null) ?? "REGISTRATION", null);
+    await prisma.auditLog.deleteMany({ where: { action: { in: ["phase.set", "contest.end"] } } });
+    await setPhase((previousPhase as Phase | null) ?? "LIVE", null);
   } catch (err) {
     console.error(err);
     check("اجرای بدون خطا", false, String(err));

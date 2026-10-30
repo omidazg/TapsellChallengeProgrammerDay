@@ -4,7 +4,6 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { getPhase } from "@/lib/phase";
 
 export type SurveyActionState = { error?: string; ok?: boolean };
 
@@ -17,20 +16,9 @@ const surveySchema = z.object({
   comment: z.string().trim().max(1000, "نظر حداکثر ۱۰۰۰ نویسه").optional().default(""),
 });
 
-async function assertOpen() {
-  const { phase } = await getPhase();
-  if (phase !== "MARKET" && phase !== "CLOSED") {
-    return "نظرسنجی از فاز «روز بازار» به بعد باز است.";
-  }
-  return null;
-}
-
 /** ثبت یا ویرایش پاسخ نظرسنجی (یک پاسخ به ازای هر کاربر، upsert بر اساس userId) */
 export async function submitSurveyAction(prevState: SurveyActionState, formData: FormData): Promise<SurveyActionState> {
   const user = await requireUser();
-
-  const gateError = await assertOpen();
-  if (gateError) return { error: gateError };
 
   const parsed = surveySchema.safeParse({
     rating: formData.get("rating"),

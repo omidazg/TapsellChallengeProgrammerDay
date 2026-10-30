@@ -1,10 +1,13 @@
 export const metadata = { title: "حراج زنده" };
-import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { getPhase, getSettingInt, phaseAtLeast } from "@/lib/phase";
+import { getSettingInt } from "@/lib/phase";
+import { moduleStatusFor } from "@/lib/module-state";
+import { ModuleClosed, ModuleReadOnly } from "@/components/ModuleState";
+import { AuctionEnqueue } from "@/app/market/[slug]/AuctionEnqueue";
 import { DEFAULTS } from "@/lib/constants";
-import { Container, PageHeader, Locked, Coin } from "@/components/ui";
+import { Container, PageHeader, Coin } from "@/components/ui";
 import { fa, coins } from "@/lib/persian";
 import { listAuctions, currentOrNextAuctionId, getBidBudget } from "@/lib/auction";
 import { AuctionStage } from "./AuctionStage";
@@ -15,38 +18,35 @@ type AuctionItem = Awaited<ReturnType<typeof listAuctions>>[number];
 
 export default async function AuctionPage() {
   const user = await requireUser();
-  const { phase } = await getPhase();
 
-  if (!phaseAtLeast(phase, "MARKET")) {
-    return (
-      <Container>
-        <PageHeader eyebrow="حراج زنده" title="حراج زنده" desc="نسخه‌های ویژهٔ محصولات در «روز بازار» یکی‌یکی زنده حراج می‌شوند." />
-        <h2 className="sr-only">وضعیت حراج</h2>
-        <Locked title="هنوز زود است" desc="حراج زنده در فاز «روز بازار» برگزار می‌شود؛ تیم‌ها همان موقع محصولشان را از صفحهٔ محصول به صف حراج می‌فرستند." />
-      </Container>
-    );
-  }
+  // حراج زنده بخشی از بازار است و از همان وضعیت پیروی می‌کند.
+  const status = await moduleStatusFor("market", user.teamId);
+  if (status === "hidden") notFound();
+  if (status === "closed") return <ModuleClosed moduleKey="market" title="حراج زنده" />;
+  const open = status === "open";
 
-  const [auctions, liveId, cutoffMin, myProduct] = await Promise.all([
+  const [auctions, liveId, cutoffMin, myProducts] = await Promise.all([
     listAuctions(),
     currentOrNextAuctionId(),
     getSettingInt("auction_enqueue_cutoff_min", DEFAULTS.auctionEnqueueCutoffMin),
-    user.teamId
-      ? prisma.product.findUnique({ where: { teamId: user.teamId }, select: { submittedAt: true, auction: { select: { id: true } } } })
-      : Promise.resolve(null),
+    // محصول‌های ثبت‌شدهٔ تیم کاربر با نسخهٔ ویژه که هنوز به صف نرفته‌اند
+    user.teamId && open
+      ? prisma.product.findMany({
+          where: { teamId: user.teamId, submittedAt: { not: null }, specialName: { not: "" }, auction: { is: null } },
+          select: { trackId: true, name: true, track: { select: { name: true } } },
+        })
+      : Promise.resolve([]),
   ]);
   // بودجهٔ خصوصی کاربر (موجودی/رزرو/قابل‌خرج) برای حراج جاری؛ جدا از وضعیت عمومی و کش مشترک حراج.
-  const initialBudget = phase === "CLOSED" ? null : await getBidBudget(user.id, liveId);
+  const initialBudget = open ? await getBidBudget(user.id, liveId) : null;
 
   const scheduled = auctions.filter((a) => a.status === "SCHEDULED");
   const ended = auctions.filter((a) => a.status === "ENDED");
-  // محصول ثبت‌شدهٔ تیمِ کاربر که هنوز به صف نرفته: میان‌بر به صفحهٔ محصول برای «فرستادن به حراج».
-  const canEnqueueOwn = phase === "MARKET" && !!user.team && !!myProduct?.submittedAt && !myProduct.auction;
 
   return (
     <Container>
       <PageHeader
-        eyebrow="روز بازار"
+        eyebrow="بازار"
         title="حراج زنده"
         desc="نسخه‌های ویژهٔ محصولات یکی‌یکی و به ترتیب صف زنده حراج می‌شوند؛ صف از قبل پیداست، پس سکه‌هایت را برای حراج‌های بعدی هم نگه دار."
         action={
@@ -57,23 +57,27 @@ export default async function AuctionPage() {
         }
       />
 
-      {phase === "CLOSED" ? (
-        <ResultsOnly ended={ended} />
+      {!open ? (
+        <div className="space-y-4">
+          <ModuleReadOnly moduleKey="market" />
+          <ResultsOnly ended={ended} />
+        </div>
       ) : (
         <>
           <div className="card p-4 sm:p-5 mb-6 bg-brand-ice space-y-2 text-sm text-brand-navy leading-7">
             <p>
-              تیم‌ها محصولشان را از صفحهٔ محصول به صف حراج می‌فرستند؛ تا {fa(cutoffMin)} دقیقه پیش از پایان روز بازار. هر حراج که تمام شود،
+              تیم‌ها محصولشان را از صفحهٔ محصول به صف حراج می‌فرستند؛ تا {fa(cutoffMin)} دقیقه پیش از پایان مسابقه. هر حراج که تمام شود،
               بعدی پس از فاصله‌ای کوتاه خودکار شروع می‌شود.
             </p>
             <p className="text-brand-slate">
               برندهٔ هر حراج همان مبلغ پیشنهادش را می‌پردازد و این برد مثل یک خرید، حمایت از آن تیم حساب می‌شود. روی نسخهٔ ویژهٔ تیم خودت
               نمی‌توانی پیشنهاد بدهی.
             </p>
-            {canEnqueueOwn && user.team && (
-              <Link href={`/market/${user.team.slug}`} className="btn-primary inline-flex !py-2">
-                🔨 فرستادن محصول تیمت به حراج ←
-              </Link>
+            {myProducts.length > 0 && (
+              <AuctionEnqueue
+                cutoffMin={cutoffMin}
+                options={myProducts.map((p) => ({ trackId: p.trackId, label: `${p.name} (${p.track.name})` }))}
+              />
             )}
           </div>
 

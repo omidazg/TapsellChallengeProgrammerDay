@@ -6,6 +6,7 @@ import { Alert } from "@/components/ui";
 import { AiTag } from "@/components/AiTag";
 import { productAiTag } from "@/lib/ai-tag";
 import { UnsubmitButton } from "./UnsubmitButton";
+import { AiRecheckButton } from "./AiRecheckButton";
 import { ChecklistLink } from "./ChecklistLink";
 
 function ProgressRing({ value }: { value: number }) {
@@ -43,15 +44,21 @@ export function ChecklistCard({
   submitted,
   slug,
   editable,
+  trackId,
   aiQuality,
   aiNotes,
+  canRecheck,
 }: {
   checklist: ChecklistItem[];
   submitted: boolean;
-  slug: string;
+  /** نشانی صفحهٔ محصول؛ پیش از اولین ذخیره null است */
+  slug: string | null;
   editable: boolean;
+  trackId: string;
   aiQuality: number | null;
   aiNotes: string | null;
+  /** ارزیابی مجدد هنوز مصرف نشده و بخش هوش مصنوعی باز است */
+  canRecheck: boolean;
 }) {
   const progress = checklistProgress(checklist);
   const aiTag = productAiTag({ aiQuality, aiNotes });
@@ -82,13 +89,13 @@ export function ChecklistCard({
       </ul>
 
       {submitted && (
-        <Alert kind="ok">محصول ثبت نهایی شده است.{editable ? " تا پایان فاز ساخت می‌توانی برای ویرایش دوباره آن را باز کنی." : ""}</Alert>
+        <Alert kind="ok">محصول ثبت نهایی شده است.{editable ? " می‌توانی برای ویرایش دوباره آن را باز کنی. تا وقتی محصول ثبت نهایی است اعضای تیم عوض نمی‌شوند." : ""}</Alert>
       )}
 
       {(aiTag || aiNotes) && (
         <div className="rounded-2xl bg-brand-ice p-4 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs font-bold text-brand-cyan-dark">داوری هوش مصنوعی</div>
+            <div className="text-xs font-bold text-brand-cyan-dark">بازخورد هوش مصنوعی</div>
             <AiTag tag={aiTag} compact />
           </div>
           {aiQuality !== null && <div className="text-2xl font-black text-brand-navy fa-num">{fa(aiQuality)} / ۱۰۰</div>}
@@ -97,11 +104,15 @@ export function ChecklistCard({
         </div>
       )}
 
-      {submitted && editable && <UnsubmitButton />}
+      {canRecheck && <AiRecheckButton trackId={trackId} />}
 
-      <Link href={`/market/${slug}`} target="_blank" className="btn-ghost w-full justify-center">
-        پیش‌نمایش صفحهٔ محصول ↗
-      </Link>
+      {submitted && editable && <UnsubmitButton trackId={trackId} />}
+
+      {slug && (
+        <Link href={`/market/${slug}`} target="_blank" className="btn-ghost w-full justify-center">
+          پیش‌نمایش صفحهٔ محصول ↗
+        </Link>
+      )}
     </div>
   );
 }

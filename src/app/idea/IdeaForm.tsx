@@ -39,11 +39,13 @@ function SubmitButtons() {
 }
 
 export function IdeaForm({
+  trackId,
   initial,
   draftKey,
 }: {
+  trackId: string;
   initial: IdeaInput | null;
-  /** کلید پیش‌نویس محلی (بر پایهٔ تیم و شناسهٔ ایده) */
+  /** کلید پیش‌نویس محلی (بر پایهٔ تیم، محور و شناسهٔ ایده) */
   draftKey: string;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
@@ -80,6 +82,7 @@ export function IdeaForm({
 
   return (
     <form ref={formRef} action={formAction} className="card p-6 space-y-5 anim-rise">
+      <input type="hidden" name="trackId" value={trackId} />
       {draft.found && <DraftBanner savedAt={draft.found.savedAt} onRestore={draft.restore} onDismiss={draft.dismiss} />}
       {state.error && <Alert kind="error">{state.error}</Alert>}
       {state.ok && <Alert kind="ok">ذخیره شد.</Alert>}
@@ -106,7 +109,7 @@ export function IdeaForm({
       </div>
 
       <div>
-        <label className="label" htmlFor="buildPlan">در ۴۸ ساعت چه چیزی ساخته می‌شود؟</label>
+        <label className="label" htmlFor="buildPlan">چه چیزی ساخته می‌شود؟</label>
         <textarea id="buildPlan" name="buildPlan" defaultValue={v.buildPlan ?? initial?.buildPlan} required maxLength={2000} rows={4} className="input" placeholder="برنامهٔ ساخت را شرح دهید" />
       </div>
 
@@ -163,8 +166,8 @@ function UnsubmitSubmit() {
   );
 }
 
-export function UnsubmitButton() {
-  const [state, formAction] = useActionState<IdeaActionState, FormData>(unsubmitIdeaAction, {});
+export function UnsubmitButton({ trackId }: { trackId: string }) {
+  const [state, formAction] = useActionState<IdeaActionState, FormData>(() => unsubmitIdeaAction(trackId), {});
   return (
     <form action={formAction}>
       {state.error && <Alert kind="error">{state.error}</Alert>}

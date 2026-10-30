@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { getPhase, phaseIndex } from "@/lib/phase";
+import { moduleOpen } from "@/lib/module-state";
 import { cache } from "react";
 import { getTeamPreviewByInviteToken, TEAM_FULL } from "@/lib/team";
 import { fa } from "@/lib/persian";
@@ -32,10 +32,9 @@ export default async function JoinPage({ params }: { params: Promise<{ token: st
   }
 
   const user = await getCurrentUser();
-  const { phase } = await getPhase();
-  const formingOpen = phaseIndex(phase) <= phaseIndex("IDEATION");
-  // ثبت‌نام حساب جدید فقط در فاز «ثبت‌نام و تیم» باز است (همان شرط /register).
-  const registrationOpen = phase === "REGISTRATION";
+  const formingOpen = await moduleOpen("team", user?.teamId);
+  // ثبت‌نام حساب جدید فقط وقتی بخش ثبت‌نام باز است (همان شرط /register).
+  const registrationOpen = await moduleOpen("registration");
 
   return (
     <>
@@ -71,7 +70,7 @@ export default async function JoinPage({ params }: { params: Promise<{ token: st
                   <p className="text-sm text-brand-navy">
                     {registrationOpen
                       ? "برای پیوستن به این تیم، اول باید وارد شوی یا ثبت‌نام کنی."
-                      : "برای پیوستن به این تیم، اول وارد حسابت شو. مهلت ثبت‌نام حساب جدید تمام شده است."}
+                      : "برای پیوستن به این تیم، اول وارد حسابت شو. ثبت‌نام حساب جدید الان بسته است."}
                   </p>
                 )}
                 <div className="flex flex-col sm:flex-row gap-3">
@@ -98,7 +97,7 @@ export default async function JoinPage({ params }: { params: Promise<{ token: st
             ) : !formingOpen ? (
               <Locked
                 title="پیوستن به تیم بسته است"
-                desc="فاز اتاق ایده به پایان رسیده؛ برای پیوستن به تیم با برگزارکننده هماهنگ کن."
+                desc="بخش تیم فعلاً باز نیست؛ برای پیوستن به تیم با برگزارکننده هماهنگ کن."
               />
             ) : team.solo ? (
               <div className="card p-6 anim-rise text-center space-y-3">

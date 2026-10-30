@@ -5,14 +5,8 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { placeBid, getBidBudget } from "@/lib/auction";
 import { rateLimit, rateLimitMessage } from "@/lib/rate-limit";
-import { getPhase } from "@/lib/phase";
+import { moduleGate } from "@/lib/module-state";
 import { bidErrorMessage, GENERIC_BID_ERROR } from "./bid-errors";
-
-/** حراج زنده بخشی از «روز بازار» است؛ پیشنهاد فقط در همین فاز مجاز است. */
-async function auctionPhaseError(): Promise<string | null> {
-  const { phase } = await getPhase();
-  return phase === "MARKET" ? null : "حراج زنده فقط در «روز بازار» باز است";
-}
 
 const bidSchema = z.object({
   auctionId: z.string().min(1),
@@ -25,8 +19,9 @@ export async function placeBidAction(auctionId: string, amount: number) {
   if (!limit.ok) return { error: rateLimitMessage(limit.retryAfterSec) };
   const parsed = bidSchema.safeParse({ auctionId, amount });
   if (!parsed.success) return { error: "مبلغ پیشنهاد نامعتبر است" };
-  const phaseError = await auctionPhaseError();
-  if (phaseError) return { error: phaseError };
+  // حراج زنده بخشی از بازار است؛ پیشنهاد فقط وقتی بازار باز است.
+  const gate = await moduleGate("market", user.teamId);
+  if (gate) return { error: gate };
   // بودجهٔ تازهٔ کاربر (موجودی/رزرو/قابل‌خرج) همراه نتیجه برمی‌گردد تا ردیف کیف بدون درخواست جدا تازه شود.
   // (پیشنهاد روی محصول تیم خود را placeBid رد می‌کند.)
   try {

@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { getPhase } from "@/lib/phase";
+import { getModuleStatus } from "@/lib/module-state";
 import { PageHeader, Container, Locked } from "@/components/ui";
 import { RegisterWizard } from "./RegisterWizard";
 import { smsEnabled } from "@/lib/sms";
@@ -13,14 +13,15 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
   const user = await getCurrentUser();
   if (user) redirect(safeNext(next) ?? "/team");
 
-  const { phase } = await getPhase();
-  if (phase !== "REGISTRATION") {
+  const status = await getModuleStatus("registration");
+  if (status === "hidden") notFound();
+  if (status !== "open") {
     return (
       <>
         <PageHeader eyebrow="ثبت‌نام" title="خودت را کد بزن" desc="شخصیت بازی‌ات را بساز و وارد میدان شو." />
         <Container>
           <h2 className="sr-only">وضعیت ثبت‌نام</h2>
-          <Locked title="ثبت‌نام بسته است" desc="فاز ثبت‌نام به پایان رسیده؛ دیگر امکان ساخت شخصیت جدید نیست." />
+          <Locked title="ثبت‌نام بسته است" desc="ثبت‌نام الان بسته است و امکان ساخت شخصیت جدید نیست." />
         </Container>
       </>
     );

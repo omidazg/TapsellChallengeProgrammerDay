@@ -1,8 +1,8 @@
 /**
- * دود-تست حراج زنده در «روز بازار».
+ * دود-تست حراج زنده.
  * اجرا: npx tsx scripts/smoke-auction.ts
  *
- * پوشش: فرستادن محصول به صف حراج توسط تیم (enqueueAuction) فقط در روز بازار، بستن صف در
+ * پوشش: فرستادن محصول به صف حراج توسط تیم (enqueueAuction) فقط وقتی بخش بازار باز است، بستن صف در
  * دقایق پایانی (auction_enqueue_cutoff_min)، شروع/پیشنهاد/ضد-اسنایپ/تسویه، شروع خودکار حراج
  * بعدی پس از تسویه (auto_auction)، رزرو سکهٔ پیشتاز، ابزار برگزارکننده ensureAuctions و
  * بسته شدن حراج‌ها در پایان بازی (transitionTo("CLOSED") → closeAuctionsForGameEnd).
@@ -92,6 +92,7 @@ async function main() {
     const product = await prisma.product.create({
       data: {
         teamId: team.id,
+        slug: `smoke-auc-${key}-general`,
         name: `محصول ${key}`,
         specialName: `ویژهٔ ${key}`,
         specialStart,
@@ -138,27 +139,30 @@ async function main() {
     const x2 = await mkUser("x2", X.team.id);
     const free = await mkUser("free", null);
 
-    // ---------- صف حراج فقط در روز بازار ----------
-    for (const phase of ["BUILD", "SEED_ROUND"] as const) {
-      await setPhase(phase, null);
-      const r = await enqueueAuction(a1.id);
-      check(`enqueueAuction: در فاز ${phase} رد می‌شود`, !r.ok && r.error.includes("روز بازار"), r);
+    // ---------- صف حراج فقط وقتی بخش بازار باز است ----------
+    const { setModuleStatus } = await import("../src/lib/module-state");
+    await setPhase("LIVE", null);
+    for (const status of ["ro", "closed", "hidden"] as const) {
+      await setModuleStatus("market", status);
+      const r = await enqueueAuction(a1.id, "general");
+      check(`enqueueAuction: در وضعیت ${status} رد می‌شود`, !r.ok && r.error.includes("فعلاً باز نیست"), r);
     }
-    eq("بیرون از روز بازار هیچ حراجی ساخته نشد", await prisma.auction.count(), 0);
+    eq("وقتی بخش بازار باز نیست هیچ حراجی ساخته نشد", await prisma.auction.count(), 0);
+    await setModuleStatus("market", "open");
 
-    await setPhase("MARKET", null);
-    const noTeam = await enqueueAuction(free.id);
+    await setPhase("LIVE", null);
+    const noTeam = await enqueueAuction(free.id, "general");
     check("enqueueAuction: کاربر بی‌تیم رد می‌شود", !noTeam.ok && noTeam.error.includes("عضو یک تیم"), noTeam);
-    const draft = await enqueueAuction(x1.id);
+    const draft = await enqueueAuction(x1.id, "general");
     check("enqueueAuction: محصول ثبت‌نشده رد می‌شود", !draft.ok && draft.error.includes("ثبت نهایی"), draft);
 
-    const qA = await enqueueAuction(a1.id);
+    const qA = await enqueueAuction(a1.id, "general");
     check("enqueueAuction: تیم الف وارد صف شد (جایگاه ۱)", qA.ok && qA.position === 1, qA);
-    const qA2 = await enqueueAuction(a2.id);
+    const qA2 = await enqueueAuction(a2.id, "general");
     check("enqueueAuction: عضو دیگر همان تیم دوباره نمی‌تواند بفرستد", !qA2.ok && qA2.error.includes("قبلاً"), qA2);
-    const qB = await enqueueAuction(b1.id);
+    const qB = await enqueueAuction(b1.id, "general");
     check("enqueueAuction: تیم ب جایگاه ۲", qB.ok && qB.position === 2, qB);
-    const qC = await enqueueAuction(c1.id);
+    const qC = await enqueueAuction(c1.id, "general");
     check("enqueueAuction: شرکت فردی هم می‌تواند بفرستد (جایگاه ۳)", qC.ok && qC.position === 3, qC);
 
     const queue = await prisma.auction.findMany({ orderBy: { order: "asc" } });
@@ -168,23 +172,23 @@ async function main() {
     eq("صف: specialStart صفر → startPrice حداقل ۱", queue[2]?.startPrice, 1);
     check("صف: همه SCHEDULED", queue.every((a) => a.status === "SCHEDULED"));
 
-    // ---------- بستن صف در دقایق پایانی روز بازار ----------
+    // ---------- بستن صف در دقایق پایانی مسابقه ----------
     const E = await mkTeamWithProduct("E", 10);
     const e1 = await mkUser("e1", E.team.id);
-    await setPhase("MARKET", new Date(Date.now() + 10 * 60_000)); // ۱۰ دقیقه مانده؛ پیش‌فرض cutoff = ۲۰
-    const late = await enqueueAuction(e1.id);
+    await setPhase("LIVE", new Date(Date.now() + 10 * 60_000)); // ۱۰ دقیقه مانده؛ پیش‌فرض cutoff = ۲۰
+    const late = await enqueueAuction(e1.id, "general");
     check(
       `enqueueAuction: در ${DEFAULTS.auctionEnqueueCutoffMin} دقیقهٔ پایانی صف بسته است`,
       !late.ok && late.error.includes("صف حراج بسته است"),
       late
     );
     await setSetting("auction_enqueue_cutoff_min", "5");
-    const lateOk = await enqueueAuction(e1.id);
+    const lateOk = await enqueueAuction(e1.id, "general");
     check("enqueueAuction: با cutoff=۵ دقیقه، ۱۰ دقیقه مانده پذیرفته می‌شود", lateOk.ok && lateOk.position === 4, lateOk);
     await prisma.setting.delete({ where: { key: "auction_enqueue_cutoff_min" } });
-    await setPhase("MARKET", new Date(Date.now() + 60 * 60_000)); // یک ساعت مانده
-    eq("enqueueAuction: با زمان کافی صف باز است (تکرار رد می‌شود چون قبلاً رفته)", (await enqueueAuction(e1.id)).ok, false);
-    await setPhase("MARKET", null);
+    await setPhase("LIVE", new Date(Date.now() + 60 * 60_000)); // یک ساعت مانده
+    eq("enqueueAuction: با زمان کافی صف باز است (تکرار رد می‌شود چون قبلاً رفته)", (await enqueueAuction(e1.id, "general")).ok, false);
+    await setPhase("LIVE", null);
 
     // ---------- startNextAuction ----------
     eq("currentOrNextAuctionId: پیش از شروع، اولین حراج صف", await currentOrNextAuctionId(), queue[0]!.id);
@@ -260,10 +264,10 @@ async function main() {
     eq("auto_auction=0: حراج بعدی SCHEDULED ماند", (await prisma.auction.findUniqueOrThrow({ where: { id: queue[2]!.id } })).status, "SCHEDULED");
     eq("auto_auction=0: هیچ حراج زنده‌ای نیست", await prisma.auction.count({ where: { status: "LIVE" } }), 0);
 
-    // ---------- مدت حراج با زمان باقی‌ماندهٔ روز بازار کلمپ می‌شود ----------
+    // ---------- مدت حراج با زمان باقی‌ماندهٔ مسابقه کلمپ می‌شود ----------
     {
       await setSetting("auction_duration_sec", "300");
-      await setPhase("MARKET", new Date(Date.now() + 100_000)); // ۱۰۰ ثانیه تا پایان روز بازار
+      await setPhase("LIVE", new Date(Date.now() + 100_000)); // ۱۰۰ ثانیه تا ددلاین
       const scheduledBefore = await prisma.auction.count({ where: { status: "SCHEDULED" } });
       const startedFit = await startNextAuction();
       check("startNextAuction: بدون durationSec صریح، حراج بعدی زنده شد", !!startedFit?.startsAt && !!startedFit?.endsAt);
@@ -277,7 +281,7 @@ async function main() {
         await settleIfEnded(startedFit.id);
       }
       await prisma.setting.deleteMany({ where: { key: { in: ["auction_duration_sec", "auto_auction"] } } });
-      await setPhase("MARKET", null);
+      await setPhase("LIVE", null);
     }
 
     // ---------- ابزار برگزارکننده ensureAuctions + رزرو سکهٔ پیشتاز ----------
@@ -338,7 +342,7 @@ async function main() {
       await placeBid(eAuction.id, free.id, eAuction.startPrice);
       const F = await mkTeamWithProduct("F", 10);
       const f1 = await mkUser("f1", F.team.id);
-      const qF = await enqueueAuction(f1.id);
+      const qF = await enqueueAuction(f1.id, "general");
       check("صف: تیم F پشت حراج زنده در صف است", qF.ok && qF.position === 2, qF);
 
       const tr = await transitionTo("CLOSED", null);
@@ -349,10 +353,10 @@ async function main() {
       eq("پایان بازی: حراج اجرانشدهٔ صف حذف شد", await prisma.auction.count({ where: { productId: F.product.id } }), 0);
       eq("پایان بازی: هیچ حراج LIVE یا SCHEDULED نماند", await prisma.auction.count({ where: { status: { in: ["LIVE", "SCHEDULED"] } } }), 0);
       check("پایان بازی: تسویهٔ نهایی هم انجام شد", (await getSettledAt()) !== null);
-      const scoreE = await prisma.teamScore.findUniqueOrThrow({ where: { teamId: E.team.id } });
+      const scoreE = await prisma.teamScore.findUniqueOrThrow({ where: { teamId_trackId: { teamId: E.team.id, trackId: "general" } } });
       check("پایان بازی: خرید حراج در حمایت مردمی تیم E حساب شد", scoreE.supporters === 1 && scoreE.coinsReceived === eAuction.startPrice, { supporters: scoreE.supporters, coins: scoreE.coinsReceived });
-      const afterClose = await enqueueAuction(f1.id);
-      check("enqueueAuction: پس از پایان بازی رد می‌شود", !afterClose.ok && afterClose.error.includes("روز بازار"), afterClose);
+      const afterClose = await enqueueAuction(f1.id, "general");
+      check("enqueueAuction: پس از پایان بازی رد می‌شود", !afterClose.ok, afterClose);
       eq("پس از پایان بازی startNextAuction کاری نمی‌کند", await startNextAuction(5), null);
     }
   } finally {

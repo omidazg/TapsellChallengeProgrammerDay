@@ -1,38 +1,26 @@
-/** ثابت‌های فاز — بدون وابستگی به دیتابیس (قابل استفاده در کامپوننت‌های کلاینت) */
-
-export const PHASES = [
-  "REGISTRATION",
-  "IDEATION",
-  "SEED_ROUND",
-  "BUILD",
-  "MARKET",
-  "CLOSED",
-] as const;
+/**
+ * وضعیت کلی مسابقه — بدون وابستگی به دیتابیس (قابل استفاده در کامپوننت‌های کلاینت).
+ * مرحلهٔ سراسری دیگر وجود ندارد: مسابقه یا در جریان است یا تمام شده، و هر بخش وضعیت خودش را
+ * دارد (./modules.ts). تنها زمان‌بندی باقی‌مانده ددلاین نهایی است که مسابقه را خودکار می‌بندد.
+ */
+export const PHASES = ["LIVE", "CLOSED"] as const;
 export type Phase = (typeof PHASES)[number];
 
 export const PHASE_LABEL: Record<Phase, string> = {
-  REGISTRATION: "ثبت‌نام و تیم",
-  IDEATION: "اتاق ایده",
-  SEED_ROUND: "دور حمایت",
-  BUILD: "ساخت محصول",
-  MARKET: "روز بازار",
-  CLOSED: "پایان بازی",
+  LIVE: "مسابقه در جریان است",
+  CLOSED: "پایان مسابقه",
 };
 
 export const PHASE_DESC: Record<Phase, string> = {
-  REGISTRATION: "ثبت‌نام کن؛ تنها یا با یک تا دو هم‌تیمی.",
-  IDEATION: "ایده‌ات را ثبت کن.",
-  SEED_ROUND: "با سکه‌هایت از ایده‌های دیگران حمایت کن.",
-  BUILD: "محصول، تیزر و صفحهٔ محصول را بساز.",
-  MARKET: "از محصولات دیگران بخر، در حراج زنده شرکت کن و محصولت را به حراج بفرست.",
-  CLOSED: "بازی تمام شد. نتایج را ببین.",
+  LIVE: "همهٔ مراحل باز است؛ هر تیم با سرعت خودش جلو می‌رود.",
+  CLOSED: "مسابقه تمام شد. نتایج را ببین.",
 };
 
 export function phaseIndex(p: Phase) {
   return PHASES.indexOf(p);
 }
 
-/** آیا فاز جاری حداقل به فاز داده‌شده رسیده است */
+/** آیا وضعیت جاری حداقل به وضعیت داده‌شده رسیده است */
 export function phaseAtLeast(current: Phase, target: Phase) {
   return phaseIndex(current) >= phaseIndex(target);
 }

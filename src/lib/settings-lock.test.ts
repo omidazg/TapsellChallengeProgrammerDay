@@ -3,15 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 // settings-schema از ./admin ایمپورت می‌کند؛ این تست پایگاه‌داده لازم ندارد.
 vi.mock("./db", () => ({ prisma: {} }));
 
-import { PHASES } from "./phases";
 import {
   LOCKED_AFTER_START_KEYS,
-  areEconomySettingsLocked,
   isLockedSettingKey,
   lockedSettingChanges,
   withoutLockedKeys,
 } from "./settings-lock";
-import { gameSettingsSchema } from "./settings-schema";
+import { SCHEDULER_SETTING_KEYS, SETTING_KEYS } from "./admin";
+import { gameSettingsSchema, schedulerSettingsSchema } from "./settings-schema";
 
 // مقادیر فعلی دیتابیس (ستون Setting.value همیشه رشته است)
 const before = {
@@ -61,64 +60,72 @@ describe("LOCKED_AFTER_START_KEYS", () => {
   it("keeps operational keys editable", () => {
     expect(isLockedSettingKey("market_starts_at")).toBe(false);
     expect(isLockedSettingKey("auction_duration_sec")).toBe(false);
-    expect(isLockedSettingKey("auto_advance")).toBe(false);
+    expect(isLockedSettingKey("auto_auction")).toBe(false);
+    expect(isLockedSettingKey("adslot_hours")).toBe(false);
     expect(isLockedSettingKey("starting_coins")).toBe(true);
     expect(isLockedSettingKey("support_cap")).toBe(true);
   });
 
   it("legacy keys are no longer known", () => {
-    for (const legacy of ["seed_wallet", "buy_wallet", "max_per_target", "penalty_per_coin", "solo_boost_pct", "duo_boost_pct"]) {
+    for (const legacy of [
+      "seed_wallet",
+      "buy_wallet",
+      "max_per_target",
+      "penalty_per_coin",
+      "solo_boost_pct",
+      "duo_boost_pct",
+      "auto_advance",
+      "phase_hours_MARKET",
+    ]) {
       expect(isLockedSettingKey(legacy)).toBe(false);
       expect(Object.keys(gameSettingsSchema.shape)).not.toContain(legacy);
+      expect(Object.keys(schedulerSettingsSchema.shape)).not.toContain(legacy);
     }
   });
-});
 
-describe("areEconomySettingsLocked", () => {
-  it("is unlocked only during REGISTRATION", () => {
-    for (const phase of PHASES) expect(areEconomySettingsLocked(phase)).toBe(phase !== "REGISTRATION");
+  it("فرم تنظیمات و اسکیمای اعتبارسنجی همان کلیدها را دارند", () => {
+    expect(Object.keys(gameSettingsSchema.shape).sort()).toEqual([...SETTING_KEYS].sort());
+    expect(Object.keys(schedulerSettingsSchema.shape).sort()).toEqual([...SCHEDULER_SETTING_KEYS].sort());
   });
 });
 
 describe("lockedSettingChanges", () => {
-  it("allows any change during REGISTRATION", () => {
+  it("allows any change while not locked (no coin spent yet)", () => {
     const after = { ...unchanged, starting_coins: 5000, support_cap: 10 };
-    expect(lockedSettingChanges("REGISTRATION", before, after)).toEqual([]);
+    expect(lockedSettingChanges(false, before, after)).toEqual([]);
   });
 
-  it("reports every changed economy key in every phase after start (in LOCKED_AFTER_START_KEYS order)", () => {
+  it("reports every changed economy key once locked (in LOCKED_AFTER_START_KEYS order)", () => {
     const after = { ...unchanged, bid_increment: 25, starting_coins: 5000 };
-    for (const phase of PHASES.filter((p) => p !== "REGISTRATION")) {
-      expect(lockedSettingChanges(phase, before, after)).toEqual(["starting_coins", "bid_increment"]);
-    }
+    expect(lockedSettingChanges(true, before, after)).toEqual(["starting_coins", "bid_increment"]);
   });
 
   it("accepts re-submission of the current values (the form submits all fields)", () => {
-    expect(lockedSettingChanges("MARKET", before, unchanged)).toEqual([]);
+    expect(lockedSettingChanges(true, before, unchanged)).toEqual([]);
     // رشته‌های معادل عددی هم تغییر حساب نمی‌شوند
-    expect(lockedSettingChanges("MARKET", { ...before, support_cap: "50.0" }, unchanged)).toEqual([]);
-    expect(lockedSettingChanges("MARKET", before, { ...unchanged, starting_coins: " 200 " })).toEqual([]);
+    expect(lockedSettingChanges(true, { ...before, support_cap: "50.0" }, unchanged)).toEqual([]);
+    expect(lockedSettingChanges(true, before, { ...unchanged, starting_coins: " 200 " })).toEqual([]);
   });
 
   it("ignores changes to operational keys while locked", () => {
     const after = { ...unchanged, auction_duration_sec: 120, market_starts_at: "2026-10-01T10:00" };
-    expect(lockedSettingChanges("MARKET", before, after)).toEqual([]);
+    expect(lockedSettingChanges(true, before, after)).toEqual([]);
   });
 
   it("treats locked keys missing from the submission as unchanged", () => {
     const after = { auction_duration_sec: 90, market_starts_at: "" };
-    expect(lockedSettingChanges("BUILD", before, after)).toEqual([]);
+    expect(lockedSettingChanges(true, before, after)).toEqual([]);
   });
 
   it("flags a change when the stored value is missing", () => {
     const { starting_coins: _omit, ...partialBefore } = before;
     void _omit;
-    expect(lockedSettingChanges("IDEATION", partialBefore, unchanged)).toEqual(["starting_coins"]);
+    expect(lockedSettingChanges(true, partialBefore, unchanged)).toEqual(["starting_coins"]);
   });
 
   it("detects small numeric changes", () => {
-    expect(lockedSettingChanges("CLOSED", before, { ...unchanged, support_cap: 51 })).toEqual(["support_cap"]);
-    expect(lockedSettingChanges("SEED_ROUND", before, { ...unchanged, adslot_max_per_team: 3, adslot_price_push: 81 })).toEqual([
+    expect(lockedSettingChanges(true, before, { ...unchanged, support_cap: 51 })).toEqual(["support_cap"]);
+    expect(lockedSettingChanges(true, before, { ...unchanged, adslot_max_per_team: 3, adslot_price_push: 81 })).toEqual([
       "adslot_price_push",
       "adslot_max_per_team",
     ]);
@@ -126,11 +133,11 @@ describe("lockedSettingChanges", () => {
 });
 
 describe("withoutLockedKeys", () => {
-  it("keeps everything during REGISTRATION", () => {
-    expect(withoutLockedKeys("REGISTRATION", unchanged)).toEqual(unchanged);
+  it("keeps everything while not locked", () => {
+    expect(withoutLockedKeys(false, unchanged)).toEqual(unchanged);
   });
 
-  it("drops economy keys after start, keeping operational ones", () => {
-    expect(withoutLockedKeys("SEED_ROUND", unchanged)).toEqual({ auction_duration_sec: 300, market_starts_at: "" });
+  it("drops economy keys once locked, keeping operational ones", () => {
+    expect(withoutLockedKeys(true, unchanged)).toEqual({ auction_duration_sec: 300, market_starts_at: "" });
   });
 });

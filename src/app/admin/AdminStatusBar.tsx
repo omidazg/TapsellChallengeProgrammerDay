@@ -14,23 +14,19 @@ function asPhase(p: string): Phase | null {
 }
 
 /**
- * نوار وضعیت زندهٔ بازی بالای همهٔ صفحه‌های پنل: فاز جاری، شمارش معکوس تا پایان فاز،
- * روشن/خاموش بودن پیشروی خودکار و وضعیت تسویهٔ نهایی.
+ * نوار وضعیت زندهٔ مسابقه بالای صفحه‌های پنل: در جریان یا پایان‌یافته، شمارش معکوس تا ددلاین نهایی و وضعیت تسویه.
  * - hydration-safe: زمان فقط پس از mount محاسبه می‌شود (رندر سرور «…» نشان می‌دهد).
- * - هر ۳۰ ثانیه `/api/phase` پرسیده می‌شود تا تغییر فاز (دستی یا زمان‌بند) بدون رفرش دیده شود؛
+ * - هر ۳۰ ثانیه `/api/phase` پرسیده می‌شود تا پایان مسابقه (دستی یا زمان‌بند) بدون رفرش دیده شود؛
  *   اختلاف ساعت کلاینت/سرور از `serverNow` اصلاح می‌شود.
- * - اگر فاز از سمت سرور عوض شد یا شمارش به صفر رسید، یک‌بار `router.refresh()` تا بقیهٔ صفحه
- *   (فرم فاز، وضعیت تسویه) هم تازه شود.
+ * - اگر وضعیت از سمت سرور عوض شد یا شمارش به صفر رسید، یک‌بار `router.refresh()` تا بقیهٔ صفحه هم تازه شود.
  */
 export function AdminStatusBar({
   phase: initialPhase,
   endsAt: initialEndsAt,
-  autoAdvance,
   settledAt,
 }: {
   phase: Phase;
   endsAt: string | null;
-  autoAdvance: boolean;
   settledAt: string | null;
 }) {
   const router = useRouter();
@@ -73,65 +69,47 @@ export function AdminStatusBar({
   const remaining = now !== null && endsAt ? new Date(endsAt).getTime() - now : null;
   const expired = remaining !== null && remaining <= 0;
 
-  // فاز روی سرور عوض شده (مثلاً زمان‌بند خودکار) → یک‌بار کل صفحه تازه شود.
-  // شمارش به صفر رسید و پیشروی خودکار روشن است → یک‌بار رفرش (فاز تازه ظرف چند ثانیه می‌رسد).
   useEffect(() => {
     let reason: string | null = null;
     if (phase !== initialPhase) reason = `phase:${phase}`;
-    else if (expired && autoAdvance) reason = `expired:${endsAt}`;
+    else if (expired && phase !== "CLOSED") reason = `expired:${endsAt}`;
     if (reason && refreshedForRef.current !== reason) {
       refreshedForRef.current = reason;
       router.refresh();
     }
-  }, [phase, initialPhase, expired, autoAdvance, endsAt, router]);
+  }, [phase, initialPhase, expired, endsAt, router]);
 
-  const idx = PHASES.indexOf(phase);
-  const next = idx >= 0 && idx < PHASES.length - 1 ? PHASES[idx + 1] : null;
   const closed = phase === "CLOSED";
 
   let countdown: React.ReactNode;
-  if (closed) countdown = <span className="text-brand-slate">بازی تمام شده</span>;
-  else if (!endsAt) countdown = <span className="text-brand-slate">بدون زمان پایان</span>;
+  if (closed) countdown = <span className="text-brand-slate">مسابقه تمام شده</span>;
+  else if (!endsAt) countdown = <span className="text-brand-slate">ددلاین نهایی تعیین نشده</span>;
   else if (now === null) countdown = <span className="text-brand-slate">…</span>;
-  else if (expired)
-    countdown = (
-      <span className="font-black text-brand-red">
-        زمان تمام شد{autoAdvance ? " — در انتظار پیشروی خودکار" : " — فاز را دستی جلو ببر"}
-      </span>
-    );
+  else if (expired) countdown = <span className="font-black text-brand-red">ددلاین گذشت؛ مسابقه به‌زودی خودکار بسته می‌شود</span>;
   else
     countdown = (
       <span>
-        <span className="text-brand-slate">تا پایان: </span>
+        <span className="text-brand-slate">تا ددلاین نهایی: </span>
         <span className="fa-num font-black text-brand-red">{duration(remaining ?? 0)}</span>
       </span>
     );
 
   return (
     // aria-live عمداً ندارد: شمارش معکوس هر ثانیه عوض می‌شود و صفحه‌خوان را پر می‌کرد.
-    <section aria-label="وضعیت زندهٔ بازی" className="card px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+    <section aria-label="وضعیت زندهٔ مسابقه" className="card px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
       <div className="flex items-center gap-2 min-w-0">
         <span className="relative flex size-2.5 shrink-0" aria-hidden>
           {!closed && <span className="absolute inline-flex size-full rounded-full bg-emerald-400 opacity-60 animate-ping motion-reduce:animate-none" />}
           <span className={`relative inline-flex size-2.5 rounded-full ${closed ? "bg-brand-slate" : "bg-emerald-500"}`} />
         </span>
-        <span className="text-brand-slate">فاز:</span>
-        <Link href="/admin#phase-control" className="font-black text-brand-navy hover:underline">
+        <Link href="/admin/control" className="font-black text-brand-navy hover:underline">
           {PHASE_LABEL[phase]}
         </Link>
-        {next && <span className="text-xs text-brand-slate whitespace-nowrap">(بعدی: {PHASE_LABEL[next]})</span>}
       </div>
 
       <div className="min-w-0">{countdown}</div>
 
       <div className="flex flex-wrap items-center gap-2 ms-auto">
-        <Link
-          href="/admin#scheduler"
-          className={autoAdvance ? "chip-ok" : "chip-navy"}
-          title="تنظیمات زمان‌بند خودکار"
-        >
-          پیشروی خودکار: {autoAdvance ? "روشن" : "خاموش"}
-        </Link>
         <Link
           href="/admin/settlement"
           className={settledAt ? "chip-ok" : closed ? "chip-red" : "chip-navy"}

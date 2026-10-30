@@ -6,10 +6,12 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { teamManageError } from "@/lib/team-access";
 import { requestGoLive, cancelGoLive } from "@/lib/studio";
-import { getPhase, phaseIndex } from "@/lib/phase";
+import { getPhase } from "@/lib/phase";
+import { moduleGate, trackGate } from "@/lib/module-state";
 import { DEFAULTS } from "@/lib/constants";
-import { serializeImages, missingForSubmit, MAX_IMAGES, effectiveMaxPrice, imageUrlError } from "@/lib/product";
-import { runJuryAi } from "@/lib/jury-ai";
+import { serializeImages, missingForSubmit, MAX_IMAGES, effectiveMaxPrice, imageUrlError, productSlug } from "@/lib/product";
+import { requestAiRecheck, runJuryAi } from "@/lib/jury-ai";
+import { getTrack } from "@/lib/track-data";
 import { fa } from "@/lib/persian";
 import { AI_SUBMIT_COOLDOWN_MS, aiEvalCapMessage, aiSubmitCooldownMessage, runCappedAiEval } from "@/lib/ai";
 import { rateLimit } from "@/lib/rate-limit";
@@ -75,21 +77,29 @@ const productSchema = z.object({
   specialName: z.string().trim().max(80, "نام نسخهٔ ویژه خیلی طولانی است").optional().default(""),
   specialDesc: z.string().trim().max(400, "توضیح نسخهٔ ویژه خیلی طولانی است").optional().default(""),
   specialStart: z.coerce.number().int().min(5, "قیمت شروع حداقل ۵ است").max(100, "قیمت شروع حداکثر ۱۰۰ است"),
+  category: z.enum(["", "TECH", "NON_TECH"]).optional().default(""),
+  deliverableUrl: z
+    .string()
+    .trim()
+    .max(500, "لینک تحویل خیلی طولانی است")
+    .optional()
+    .default("")
+    .refine(isHttpOrEmpty, "لینک تحویل باید با http:// یا https:// شروع شود"),
+  contentType: z.string().trim().max(80, "نوع محتوا خیلی طولانی است").optional().default(""),
+  osIssueId: z.string().trim().max(40).optional().default(""),
+  preExistingNote: z.string().trim().max(1000, "توضیح کار پیشین خیلی طولانی است").optional().default(""),
 });
 
-async function assertEditable() {
-  const { phase } = await getPhase();
-  // هم‌راستا با صفحهٔ /build که پیش از «اتاق ایده» قفل است
-  if (phaseIndex(phase) < phaseIndex("IDEATION")) {
-    return "مرکز ساخت از فاز «اتاق ایده» باز می‌شود";
-  }
-  if (phaseIndex(phase) >= phaseIndex("MARKET")) {
-    return "مرکز ساخت از فاز «روز بازار» قفل شده است";
-  }
+/** مرکز ساخت برای هر تیم پس از ثبت ایده در همان محور باز است (ترتیب داخلی تیم حفظ می‌شود). */
+async function assertEditable(teamId: string, trackId: string) {
+  const gate = (await moduleGate("build", teamId)) ?? (await trackGate(trackId, teamId));
+  if (gate) return gate;
+  const idea = await prisma.idea.findUnique({ where: { teamId_trackId: { teamId, trackId } }, select: { submittedAt: true } });
+  if (!idea?.submittedAt) return "اول ایده‌ات را در همین محور ثبت نهایی کن، بعد سراغ ساخت برو";
   return null;
 }
 
-/** ذخیرهٔ پیش‌نویس یا ثبت نهایی محصول (upsert بر اساس teamId) */
+/** ذخیرهٔ پیش‌نویس یا ثبت نهایی محصول تیم در یک محور */
 export async function saveProductAction(prevState: ProductActionState, formData: FormData): Promise<ProductActionState> {
   const user = await requireUser();
   if (!user.teamId) return { error: "ابتدا باید عضو یک تیم باشی" };
@@ -97,10 +107,11 @@ export async function saveProductAction(prevState: ProductActionState, formData:
   if (accessError) return { error: accessError };
 
   const values = Object.fromEntries(
-    ["name", "tagline", "description", "demoUrl", "specialName", "specialDesc"].map((k) => [k, String(formData.get(k) ?? "")])
+    ["name", "tagline", "description", "demoUrl", "specialName", "specialDesc", "deliverableUrl", "contentType", "preExistingNote", "category", "osIssueId"].map((k) => [k, String(formData.get(k) ?? "")])
   );
 
-  const editError = await assertEditable();
+  const trackId = String(formData.get("trackId") ?? "");
+  const editError = await assertEditable(user.teamId, trackId);
   if (editError) return { error: editError, values };
 
   const intent = String(formData.get("intent") ?? "draft");
@@ -108,7 +119,7 @@ export async function saveProductAction(prevState: ProductActionState, formData:
   // محصول ثبت‌نهایی‌شده فقط پس از «بازکردن برای ویرایش» با پیش‌نویس عوض می‌شود؛
   // وگرنه یک تب قدیمی می‌تواند محتوا را بی‌صدا و بدون داوری دوباره تغییر دهد.
   if (intent !== "submit") {
-    const existing = await prisma.product.findUnique({ where: { teamId: user.teamId }, select: { submittedAt: true } });
+    const existing = await prisma.product.findUnique({ where: { teamId_trackId: { teamId: user.teamId, trackId } }, select: { submittedAt: true } });
     if (existing?.submittedAt) {
       return { error: "محصول ثبت نهایی شده است؛ برای تغییر، صفحه را تازه کن و ابتدا «بازکردن برای ویرایش» را بزن", values };
     }
@@ -127,6 +138,11 @@ export async function saveProductAction(prevState: ProductActionState, formData:
     specialName: formData.get("specialName") ?? "",
     specialDesc: formData.get("specialDesc") ?? "",
     specialStart: formData.get("specialStart"),
+    category: formData.get("category") ?? "",
+    deliverableUrl: formData.get("deliverableUrl") ?? "",
+    contentType: formData.get("contentType") ?? "",
+    osIssueId: formData.get("osIssueId") ?? "",
+    preExistingNote: formData.get("preExistingNote") ?? "",
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "ورودی نامعتبر است", values };
@@ -134,6 +150,9 @@ export async function saveProductAction(prevState: ProductActionState, formData:
 
   const data = parsed.data;
   const imagesJson = serializeImages(data.images);
+  const track = await getTrack(trackId);
+  if (!track) return { error: "محور پیدا نشد", values };
+  const osIssueId = track.kind === "OS" && data.osIssueId ? data.osIssueId : null;
 
   // zod فقط سقف ثابت DEFAULTS.maxPrice را چک می‌کند؛ سقف مؤثر (همان که فرم و چک‌لیست نشان می‌دهند) اینجا بررسی می‌شود.
   const maxPrice = await effectiveMaxPrice();
@@ -144,6 +163,10 @@ export async function saveProductAction(prevState: ProductActionState, formData:
   if (intent === "submit") {
     const missing = missingForSubmit(
       {
+        trackKind: track.kind,
+        trackCategory: track.category,
+        category: data.category,
+        deliverableUrl: data.deliverableUrl,
         name: data.name,
         tagline: data.tagline,
         description: data.description,
@@ -171,9 +194,15 @@ export async function saveProductAction(prevState: ProductActionState, formData:
     if (!cooldown.ok) return { error: aiSubmitCooldownMessage(cooldown.retryAfterSec), values };
   }
 
+  const team = await prisma.team.findUniqueOrThrow({ where: { id: user.teamId }, select: { slug: true } });
   const product = await prisma.product.upsert({
-    where: { teamId: user.teamId },
+    where: { teamId_trackId: { teamId: user.teamId, trackId } },
     update: {
+      category: data.category,
+      deliverableUrl: data.deliverableUrl,
+      contentType: data.contentType,
+      osIssueId,
+      preExistingNote: data.preExistingNote,
       name: data.name,
       tagline: data.tagline,
       description: data.description,
@@ -188,6 +217,13 @@ export async function saveProductAction(prevState: ProductActionState, formData:
     },
     create: {
       teamId: user.teamId,
+      trackId,
+      slug: productSlug(team.slug, trackId),
+      category: data.category,
+      deliverableUrl: data.deliverableUrl,
+      contentType: data.contentType,
+      osIssueId,
+      preExistingNote: data.preExistingNote,
       name: data.name,
       tagline: data.tagline,
       description: data.description,
@@ -204,7 +240,7 @@ export async function saveProductAction(prevState: ProductActionState, formData:
 
   let notice: string | undefined;
   if (intent === "submit") {
-    // حداکثر AI_EVAL_CAP_PER_PHASE داوری واقعی هوش مصنوعی برای هر محصول در هر فاز؛ پس از آن نمرهٔ قبلی می‌ماند.
+    // حداکثر AI_EVAL_CAP_PER_PHASE بازخورد واقعی هوش مصنوعی برای هر محصول؛ پس از آن نمرهٔ قبلی می‌ماند.
     const { phase } = await getPhase();
     const res = await runCappedAiEval({
       kind: "jury",
@@ -221,19 +257,36 @@ export async function saveProductAction(prevState: ProductActionState, formData:
 }
 
 /** بازکردن قفل محصول برای ویرایش دوباره (پاک‌کردن submittedAt) */
-export async function unsubmitProductAction(): Promise<ProductActionState> {
+export async function unsubmitProductAction(trackId: string): Promise<ProductActionState> {
   const user = await requireUser();
   if (!user.teamId) return { error: "ابتدا باید عضو یک تیم باشی" };
   const accessError = await teamManageError(user);
   if (accessError) return { error: accessError };
 
-  const editError = await assertEditable();
+  const editError = await assertEditable(user.teamId, trackId);
   if (editError) return { error: editError };
 
-  const product = await prisma.product.findUnique({ where: { teamId: user.teamId } });
+  const product = await prisma.product.findUnique({ where: { teamId_trackId: { teamId: user.teamId, trackId } } });
   if (!product) return { error: "هنوز محصولی ثبت نکرده‌ای" };
 
   await prisma.product.update({ where: { id: product.id }, data: { submittedAt: null } });
+  revalidatePath("/build");
+  return { ok: true };
+}
+
+/** یک بار درخواست ارزیابی مجدد هوش مصنوعی */
+export async function requestAiRecheckAction(trackId: string): Promise<ProductActionState> {
+  const user = await requireUser();
+  if (!user.teamId) return { error: "ابتدا باید عضو یک تیم باشی" };
+  const accessError = await teamManageError(user);
+  if (accessError) return { error: accessError };
+  const gate = await moduleGate("ai", user.teamId);
+  if (gate) return { error: gate };
+
+  const product = await prisma.product.findUnique({ where: { teamId_trackId: { teamId: user.teamId, trackId } }, select: { id: true } });
+  if (!product) return { error: "هنوز محصولی ثبت نکرده‌ای" };
+  const res = await requestAiRecheck(product.id);
+  if (res.error) return { error: res.error };
   revalidatePath("/build");
   return { ok: true };
 }
@@ -246,9 +299,10 @@ export async function requestGoLiveAction(_prev: StudioActionState, formData: Fo
   const accessError = await teamManageError(user);
   if (accessError) return { error: accessError };
 
-  const result = await requestGoLive(user, {
+  const result = await requestGoLive(user, String(formData.get("trackId") ?? ""), {
     sourceUrl: String(formData.get("sourceUrl") ?? ""),
     note: String(formData.get("note") ?? ""),
+    bazaarPackage: String(formData.get("bazaarPackage") ?? ""),
   });
   if (result.error) return { error: result.error };
   revalidatePath("/build");
@@ -256,12 +310,12 @@ export async function requestGoLiveAction(_prev: StudioActionState, formData: Fo
 }
 
 /** لغو درخواست انتشار (تا پیش از شروع انتشار) */
-export async function cancelGoLiveAction(): Promise<StudioActionState> {
+export async function cancelGoLiveAction(trackId: string): Promise<StudioActionState> {
   const user = await requireUser();
   const accessError = await teamManageError(user);
   if (accessError) return { error: accessError };
 
-  const result = await cancelGoLive(user);
+  const result = await cancelGoLive(user, trackId);
   if (result.error) return { error: result.error };
   revalidatePath("/build");
   return { ok: true };

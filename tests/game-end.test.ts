@@ -1,8 +1,8 @@
 /**
  * تست واحد پایان بازی و زمان‌بند روی یک پایگاه‌دادهٔ SQLite موقت:
- *  - phase_hours_X = 0 یعنی «بدون زمان پایان» (scheduler.phaseEndsAtFromHours / autoAdvancePhase)
+ *  - ددلاین نهایی تنها زمان‌بندی است و با رسیدنش مسابقه خودکار بسته می‌شود (scheduler)
  *  - زمان آخرین تیک زمان‌بند روی globalThis (برای /api/health)
- *  - بازه‌های واقعی روز بازار و بازپرداخت جایگاه‌های تبلیغاتی تحویل‌نشده (adslots.ts)
+ *  - بازپرداخت جایگاه‌های تبلیغاتی تحویل‌نشده و برداشت نهایی آمار بازار
  *  - تسویهٔ زودهنگام که با رسیدن به CLOSED دوباره و قطعی انجام می‌شود (settlement / phase-transition)
  * سناریو ترتیبی است (تسویه در کل پایگاه‌داده محاسبه می‌شود).
  */
@@ -16,6 +16,7 @@ let scheduler: typeof import("../src/lib/scheduler");
 let adslots: typeof import("../src/lib/adslots");
 let settlement: typeof import("../src/lib/settlement");
 let transition: typeof import("../src/lib/phase-transition");
+let modules: typeof import("../src/lib/module-state");
 
 beforeAll(async () => {
   db = createTempDb("game-end-test");
@@ -25,6 +26,7 @@ beforeAll(async () => {
   adslots = await import("../src/lib/adslots");
   settlement = await import("../src/lib/settlement");
   transition = await import("../src/lib/phase-transition");
+  modules = await import("../src/lib/module-state");
 });
 
 afterAll(async () => {
@@ -54,14 +56,14 @@ async function makeTeam(members = 1, buyWallet = 100) {
       })
     );
   }
-  await prisma.product.create({ data: { teamId: team.id, name: `محصول ${counter}`, submittedAt: new Date() } });
-  return { team, users };
+  const product = await prisma.product.create({ data: { teamId: team.id, slug: `end-team-${counter}-general`, name: `محصول ${counter}`, submittedAt: new Date() } });
+  return { team, users, product };
 }
 
-/** یک جایگاه فروخته‌شده، درست مثل buyAdSlot (کسر از کیف + ردیف ADSLOT دفتر کل) */
-async function makeSoldSlot(kind: "BANNER" | "FEATURED" | "PUSH", hourStart: Date, buyer: { id: string; teamId: string | null }, price: number) {
+/** یک جایگاه با بالاترین پیشنهاد، درست مثل bidAdSlot (کسر از کیف + ردیف ADSLOT دفتر کل) */
+async function makeWonSlot(kind: "BANNER" | "FEATURED" | "PUSH", hourStart: Date, buyer: { id: string; teamId: string | null }, productId: string, price: number) {
   const slot = await prisma.adSlot.create({
-    data: { kind, hourStart, status: "CLOSED", winnerTeamId: buyer.teamId, pricePaid: price },
+    data: { kind, hourStart, winnerTeamId: buyer.teamId, winnerUserId: buyer.id, winnerProductId: productId, pricePaid: price },
   });
   await prisma.user.update({ where: { id: buyer.id }, data: { buyWallet: { decrement: price } } });
   await prisma.ledgerEntry.create({
@@ -70,58 +72,31 @@ async function makeSoldSlot(kind: "BANNER" | "FEATURED" | "PUSH", hourStart: Dat
   return slot;
 }
 
-describe("scheduler: phaseEndsAtFromHours (phase_hours = 0 یعنی بدون زمان پایان)", () => {
-  it("صفر، منفی، null و نامعتبر → null؛ مثبت → now + hours", () => {
-    const now = Date.UTC(2026, 9, 10, 8, 0, 0);
-    expect(scheduler.phaseEndsAtFromHours(0, now)).toBeNull();
-    expect(scheduler.phaseEndsAtFromHours(-3, now)).toBeNull();
-    expect(scheduler.phaseEndsAtFromHours(null, now)).toBeNull();
-    expect(scheduler.phaseEndsAtFromHours(Number.NaN, now)).toBeNull();
-    expect(scheduler.phaseEndsAtFromHours(8, now)?.getTime()).toBe(now + 8 * HOUR);
-    expect(scheduler.phaseEndsAtFromHours(0.5, now)?.getTime()).toBe(now + HOUR / 2);
-  });
-});
-
 describe("adslots: isAdSlotDelivered (خالص)", () => {
   const now = Date.UTC(2026, 9, 10, 18, 0, 0);
   const at = (h: number, m = 0) => new Date(Date.UTC(2026, 9, 10, h, m, 0));
-  const windows = [{ start: at(10, 30).toISOString(), end: at(12).toISOString() }];
 
-  it("بنر/کارت ویژه: هم‌پوشانی حتی بخشی از ساعت با روز بازار یعنی تحویل", () => {
-    expect(adslots.isAdSlotDelivered({ kind: "BANNER", hourStart: at(10) }, windows, null, now)).toBe(true);
-    expect(adslots.isAdSlotDelivered({ kind: "FEATURED", hourStart: at(11) }, windows, null, now)).toBe(true);
-    expect(adslots.isAdSlotDelivered({ kind: "BANNER", hourStart: at(12) }, windows, null, now)).toBe(false);
-    expect(adslots.isAdSlotDelivered({ kind: "BANNER", hourStart: at(9) }, windows, null, now)).toBe(false);
-    expect(adslots.isAdSlotDelivered({ kind: "BANNER", hourStart: at(10) }, [], null, now)).toBe(false);
-  });
-
-  it("بازهٔ باز تا nowMs حساب می‌شود", () => {
-    const open = [{ start: at(16).toISOString(), end: null }];
-    expect(adslots.isAdSlotDelivered({ kind: "BANNER", hourStart: at(17) }, open, null, now)).toBe(true);
-    expect(adslots.isAdSlotDelivered({ kind: "BANNER", hourStart: at(18) }, open, null, now)).toBe(false);
+  it("بنر/کارت ویژه: اگر بازه‌اش تا این لحظه شروع شده باشد تحویل شده است", () => {
+    expect(adslots.isAdSlotDelivered({ kind: "BANNER", hourStart: at(10) }, null, now)).toBe(true);
+    expect(adslots.isAdSlotDelivered({ kind: "FEATURED", hourStart: at(18) }, null, now)).toBe(true);
+    expect(adslots.isAdSlotDelivered({ kind: "BANNER", hourStart: at(18, 1) }, null, now)).toBe(false);
   });
 
   it("اعلان: فقط با علامت ارسال واقعی (نه «skipped» و نه بدون علامت)", () => {
-    expect(adslots.isAdSlotDelivered({ kind: "PUSH", hourStart: at(11) }, windows, at(11, 1).toISOString(), now)).toBe(true);
-    expect(adslots.isAdSlotDelivered({ kind: "PUSH", hourStart: at(11) }, windows, "skipped", now)).toBe(false);
-    expect(adslots.isAdSlotDelivered({ kind: "PUSH", hourStart: at(11) }, windows, null, now)).toBe(false);
+    expect(adslots.isAdSlotDelivered({ kind: "PUSH", hourStart: at(11) }, at(11, 1).toISOString(), now)).toBe(true);
+    expect(adslots.isAdSlotDelivered({ kind: "PUSH", hourStart: at(11) }, "skipped", now)).toBe(false);
+    expect(adslots.isAdSlotDelivered({ kind: "PUSH", hourStart: at(11) }, null, now)).toBe(false);
   });
 });
 
 describe("پایان بازی (سناریوی ترتیبی)", () => {
-  it("زمان‌بند با phase_hours_MARKET=0 به روز بازار بدون زمان پایان می‌رود و زمان تیک را روی globalThis ثبت می‌کند", async () => {
+  it("بدون ددلاین یا پیش از ددلاین، زمان‌بند مسابقه را نمی‌بندد و زمان تیک را روی globalThis ثبت می‌کند", async () => {
     (globalThis as { __arenaLastTickAt?: number | null }).__arenaLastTickAt = null;
     expect(scheduler.getLastSchedulerTickAt()).toBeNull();
 
-    await prisma.setting.create({ data: { key: "auto_advance", value: "1" } });
-    await prisma.setting.create({ data: { key: "phase_hours_MARKET", value: "0" } });
-    await phase.setPhase("BUILD", new Date(Date.now() - 1_000));
-
     const before = Date.now();
     await scheduler.runScheduledTasks();
-    const p = await phase.getPhase();
-    expect(p.phase).toBe("MARKET");
-    expect(p.endsAt).toBeNull();
+    expect((await phase.getPhase()).phase).toBe("LIVE");
 
     // همان مقدار از globalThis خوانده می‌شود (نمونهٔ دیگری از ماژول هم همین را می‌بیند)
     const tick = scheduler.getLastSchedulerTickAt();
@@ -129,37 +104,24 @@ describe("پایان بازی (سناریوی ترتیبی)", () => {
     expect(tick!).toBeGreaterThanOrEqual(before);
     expect((globalThis as { __arenaLastTickAt?: number | null }).__arenaLastTickAt).toBe(tick);
 
-    // ورود به MARKET (از هر مسیری) یک بازهٔ باز روز بازار ثبت می‌کند
-    const windows = await adslots.getMarketWindows();
-    expect(windows).toHaveLength(1);
-    expect(windows[0].end).toBeNull();
-  });
-
-  it("recordMarketWindow idempotent است: MARKET تکراری بازهٔ تازه باز نمی‌کند و فاز دیگر آن را می‌بندد", async () => {
-    await adslots.recordMarketWindow("MARKET");
-    expect(await adslots.getMarketWindows()).toHaveLength(1);
-
-    const closeAt = new Date(Date.now() + 1_000);
-    await adslots.recordMarketWindow("BUILD", closeAt);
-    await adslots.recordMarketWindow("CLOSED", new Date(Date.now() + 5_000)); // بازهٔ بازی نیست؛ بی‌اثر
-    let windows = await adslots.getMarketWindows();
-    expect(windows).toHaveLength(1);
-    expect(windows[0].end).toBe(closeAt.toISOString());
-
-    await adslots.recordMarketWindow("MARKET", new Date(Date.now() + 2_000));
-    windows = await adslots.getMarketWindows();
-    expect(windows).toHaveLength(2);
-    expect(windows[1].end).toBeNull();
+    const future = new Date(Date.now() + HOUR);
+    await phase.setPhase("LIVE", future);
+    await scheduler.runScheduledTasks();
+    const p = await phase.getPhase();
+    expect(p.phase).toBe("LIVE");
+    expect(p.endsAt?.toISOString()).toBe(future.toISOString());
   });
 
   let early: Awaited<ReturnType<typeof settlement.settleGame>>;
   let buyer: { id: string; teamId: string | null };
+  let buyerProductId: string;
   let refundedSlots: string[];
   let deliveredSlots: string[];
 
-  it("تسویهٔ زودهنگام در روز بازار ثبت می‌شود ولی قطعی نیست", async () => {
-    const { users } = await makeTeam(2, 100);
+  it("تسویهٔ زودهنگام ثبت می‌شود ولی قطعی نیست", async () => {
+    const { users, product } = await makeTeam(2, 100);
     buyer = users[0];
+    buyerProductId = product.id;
     early = await settlement.settleGame();
     expect(early.alreadySettled).toBe(false);
     expect(await settlement.isFinalSettled()).toBe(false);
@@ -168,36 +130,36 @@ describe("پایان بازی (سناریوی ترتیبی)", () => {
     expect((await settlement.settleGame()).alreadySettled).toBe(true);
   });
 
-  it("رفتن به CLOSED: جایگاه‌های تحویل‌نشده بازپرداخت و تسویه دوباره و قطعی انجام می‌شود", async () => {
-    // بازهٔ روز بازار را به یک بازهٔ مشخص بازنویسی می‌کنیم: [T, T+2h) که T = دو ساعت پیش (باز تا اکنون)
+  it("ددلاین نهایی: جایگاه‌های تحویل‌نشده بازپرداخت، آمار بازار برداشت، و تسویه دوباره و قطعی انجام می‌شود", async () => {
     const T = new Date(Date.now() - 2 * HOUR);
     T.setMinutes(0, 0, 0);
-    await prisma.setting.update({
-      where: { key: adslots.MARKET_WINDOWS_KEY },
-      data: { value: JSON.stringify([{ start: T.toISOString(), end: null }]) },
-    });
 
-    const delivered = await makeSoldSlot("BANNER", T, buyer, 10); // در روز بازار نمایش داده شد
-    const pushSent = await makeSoldSlot("PUSH", new Date(T.getTime() + HOUR), buyer, 15);
+    const delivered = await makeWonSlot("BANNER", T, buyer, buyerProductId, 10); // بازه‌اش شروع شد و نمایش داده شد
+    const pushSent = await makeWonSlot("PUSH", new Date(T.getTime() - HOUR), buyer, buyerProductId, 15);
     await prisma.setting.create({ data: { key: `adslot_push_sent:${pushSent.id}`, value: new Date().toISOString() } });
-    const lateBanner = await makeSoldSlot("FEATURED", new Date(T.getTime() + 5 * HOUR), buyer, 7); // ساعتش هرگز نرسید
-    const earlyBanner = await makeSoldSlot("BANNER", new Date(T.getTime() - 3 * HOUR), buyer, 8); // پیش از شروع روز بازار
-    const pushSkipped = await makeSoldSlot("PUSH", new Date(T.getTime() - 2 * HOUR), buyer, 5);
+    const lateBanner = await makeWonSlot("FEATURED", new Date(Date.now() + 5 * HOUR), buyer, buyerProductId, 7); // بازه‌اش هرگز نرسید
+    const pushSkipped = await makeWonSlot("PUSH", new Date(T.getTime() - 2 * HOUR), buyer, buyerProductId, 5);
     await prisma.setting.create({ data: { key: `adslot_push_sent:${pushSkipped.id}`, value: "skipped" } });
-    const pushNever = await makeSoldSlot("PUSH", new Date(T.getTime() + 6 * HOUR), buyer, 4);
-    refundedSlots = [lateBanner.id, earlyBanner.id, pushSkipped.id, pushNever.id];
+    const pushNever = await makeWonSlot("PUSH", new Date(Date.now() + 6 * HOUR), buyer, buyerProductId, 4);
+    refundedSlots = [lateBanner.id, pushSkipped.id, pushNever.id];
     deliveredSlots = [delivered.id, pushSent.id];
     const walletBefore = (await prisma.user.findUniqueOrThrow({ where: { id: buyer.id } })).buyWallet;
 
+    // آمار بازار پیش از ددلاین برداشت نشده است
+    await prisma.bazaarStat.create({ data: { productId: buyerProductId, activeInstalls: 5 } });
+
     // تیم تازه پس از تسویهٔ زودهنگام: در بازتسویهٔ CLOSED باید وارد نتیجه شود
     const late = await makeTeam(1);
-    expect(await prisma.teamScore.findUnique({ where: { teamId: late.team.id } })).toBeNull();
+    const lateKey = { teamId_trackId: { teamId: late.team.id, trackId: "general" } };
+    expect(await prisma.teamScore.findUnique({ where: lateKey })).toBeNull();
 
-    const res = await transition.transitionTo("CLOSED", null);
-    expect(res.settleFailed).toBeUndefined();
+    // ددلاین گذشته: تیک زمان‌بند خودش مسابقه را می‌بندد
+    await phase.setPhase("LIVE", new Date(Date.now() - 1_000));
+    await scheduler.runScheduledTasks();
+    expect((await phase.getPhase()).phase).toBe("CLOSED");
 
-    // بازپرداخت: ۷ + ۸ + ۵ + ۴ = ۲۴ سکه به همان خریدار
-    expect((await prisma.user.findUniqueOrThrow({ where: { id: buyer.id } })).buyWallet).toBe(walletBefore + 24);
+    // بازپرداخت: ۷ + ۵ + ۴ = ۱۶ سکه به همان پیشنهاددهنده
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: buyer.id } })).buyWallet).toBe(walletBefore + 16);
     for (const id of refundedSlots) {
       expect((await prisma.adSlot.findUniqueOrThrow({ where: { id } })).status).toBe("REFUNDED");
       const rows = await prisma.ledgerEntry.findMany({ where: { reason: adslots.ADSLOT_REFUND_REASON, refId: id } });
@@ -206,20 +168,27 @@ describe("پایان بازی (سناریوی ترتیبی)", () => {
       expect(rows[0].delta).toBeGreaterThan(0);
     }
     for (const id of deliveredSlots) {
-      expect((await prisma.adSlot.findUniqueOrThrow({ where: { id } })).status).toBe("CLOSED");
+      expect((await prisma.adSlot.findUniqueOrThrow({ where: { id } })).status).toBe("OPEN");
       expect(await prisma.ledgerEntry.count({ where: { reason: adslots.ADSLOT_REFUND_REASON, refId: id } })).toBe(0);
     }
     expect(await prisma.notification.count({ where: { kind: "adslot_refund", user: { teamId: buyer.teamId } } })).toBe(2);
 
-    // بازه پس از CLOSED بسته است
-    const windows = await adslots.getMarketWindows();
-    expect(windows[windows.length - 1].end).not.toBeNull();
+    // برداشت نهایی آمار
+    expect((await prisma.bazaarStat.findUniqueOrThrow({ where: { productId: buyerProductId } })).snapshotAt).not.toBeNull();
 
     // تسویه دوباره و قطعی
     expect(await settlement.isFinalSettled()).toBe(true);
-    expect(await prisma.teamScore.findUnique({ where: { teamId: late.team.id } })).not.toBeNull();
+    expect(await prisma.teamScore.findUnique({ where: lateKey })).not.toBeNull();
     const settledAt = await settlement.getSettledAt();
     expect(settledAt!.getTime()).toBeGreaterThanOrEqual(early.settledAt.getTime());
+  });
+
+  it("پس از پایان، بخش‌های بازی فقط‌خواندنی می‌شوند ولی داوری و نتایج وضعیت خودشان را دارند", async () => {
+    const statuses = await modules.getModuleStatuses();
+    for (const key of modules.MODULES_FROZEN_AT_END) expect(statuses[key]).toBe("ro");
+    expect(statuses.jury).toBe(modules.MODULE_DEFAULTS.jury);
+    expect(statuses.results).toBe(modules.MODULE_DEFAULTS.results);
+    expect(await modules.moduleOpen("invest")).toBe(false);
   });
 
   it("پس از تسویهٔ قطعی، تسویه و بازپرداخت دوباره کاری نمی‌کنند (idempotent)", async () => {
@@ -233,5 +202,11 @@ describe("پایان بازی (سناریوی ترتیبی)", () => {
     expect(await adslots.refundUndeliveredAdSlots()).toEqual({ refunded: 0, coins: 0 });
     expect(await prisma.ledgerEntry.count({ where: { reason: adslots.ADSLOT_REFUND_REASON } })).toBe(ledgerBefore);
     expect((await prisma.user.findUniqueOrThrow({ where: { id: buyer.id } })).buyWallet).toBe(walletBefore);
+  });
+
+  it("transitionTo(CLOSED) دوباره هم امن است", async () => {
+    const res = await transition.transitionTo("CLOSED", null);
+    expect(res.settleFailed).toBeUndefined();
+    expect(await settlement.isFinalSettled()).toBe(true);
   });
 });

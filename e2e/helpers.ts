@@ -1,5 +1,5 @@
 import { expect, type Browser, type Page } from "@playwright/test";
-import type { Phase } from "../src/lib/phases";
+import { MODULE_LABEL, type ModuleKey, type ModuleStatus } from "../src/lib/modules";
 
 /** ایمیل و رمز یکتا برای هر اجرا (جلوگیری از برخورد در سرور در حال اجرا) */
 export function uniqueEmail(tag: string) {
@@ -95,27 +95,24 @@ export async function login(page: Page, email: string, password: string) {
 }
 
 /**
- * فاز بازی را از طریق پنل برگزارکننده (/admin) تغییر می‌دهد؛ فرض بر این است که صفحه از قبل به‌عنوان ادمین لاگین است.
- * فازها: REGISTRATION → IDEATION → SEED_ROUND → BUILD → MARKET → CLOSED (فاز جدای «حراج زنده» دیگر نیست؛
- * حراج داخل «روز بازار» برگزار می‌شود). گزینه با `value` (کلید فاز) انتخاب می‌شود، نه برچسب فارسی.
+ * وضعیت یک بخش را از مرکز کنترل برگزارکننده (/admin/control) عوض می‌کند؛
+ * فرض بر این است که `page` با حساب ادمین وارد شده است.
  */
-export async function setPhaseViaAdmin(page: Page, phase: Phase) {
-  // فرم فاز پیش از ارسال confirm می‌پرسد
-  acceptDialogs(page);
-  await page.goto("/admin");
-  // exact: true لازم است — کارت زمان‌بندی چند فیلد دیگر هم دارد که برچسبشان
-  // شامل «فاز» است («پیشروی خودکار فاز»، «مدت فاز ... (ساعت)») و بدون آن
-  // strict mode با چند تطبیق می‌شکند.
-  const select = page.getByLabel("فاز", { exact: true });
-  await select.selectOption(phase);
-  // زمان پایان را خالی می‌گذاریم: وگرنه مقدار فاز قبلی در فرم می‌ماند و ممکن است
-  // پیشروی خودکار فاز را راه بیندازد یا صف حراج را در «دقایق پایانی روز بازار» ببندد.
-  await page.locator("#endsAt").fill("");
-  await page.getByRole("button", { name: "اعمال" }).click();
-  // تا وقتی سرور فاز را ذخیره نکرده برنگرد؛ کانتکست‌های دیگر بلافاصله بعد از
-  // این تابع به صفحه‌های قفل‌شده با فاز می‌روند. (ورود به CLOSED تسویه را هم اجرا می‌کند و کندتر است.)
-  await expect(page.getByRole("status").filter({ hasText: "فاز به‌روزرسانی شد" })).toBeVisible({ timeout: 30_000 });
-  await expect(select).toHaveValue(phase);
+export async function setModuleViaAdmin(page: Page, key: ModuleKey, status: ModuleStatus) {
+  await page.goto("/admin/control");
+  const select = page.getByLabel(MODULE_LABEL[key], { exact: true });
+  await select.selectOption(status);
+  await page.locator("li").filter({ has: select }).getByRole("button", { name: "اعمال" }).click();
+  await expect(page.getByLabel(MODULE_LABEL[key], { exact: true })).toHaveValue(status, { timeout: 30_000 });
+}
+
+/** پایان دستی مسابقه از مرکز کنترل؛ خودش تسویهٔ نهایی را هم اجرا می‌کند. */
+export async function endContestViaAdmin(page: Page) {
+  await page.goto("/admin/control");
+  await page.getByRole("button", { name: "پایان مسابقه" }).click();
+  // پنجرهٔ تأیید هم دکمه‌ای با همین نام دارد.
+  await page.getByRole("dialog").getByRole("button", { name: "پایان مسابقه" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "مسابقه تمام شد" })).toBeVisible({ timeout: 60_000 });
 }
 
 /**

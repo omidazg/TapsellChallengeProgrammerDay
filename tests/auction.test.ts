@@ -1,7 +1,7 @@
 /**
  * تست واحد src/lib/auction.ts روی یک پایگاه‌دادهٔ SQLite موقت:
  *  - placeBid (قیمت پایه، گام، موجودی قابل‌خرج، رزرو، تیم خود)
- *  - صف حراج روز بازار: enqueueAuction، شروع/تسویهٔ خودکار، زمان‌بند و پایان بازی.
+ *  - صف حراج: enqueueAuction، شروع/تسویهٔ خودکار، زمان‌بند و پایان بازی.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTempDb, type TempDb } from "../scripts/lib/temp-db";
@@ -50,7 +50,7 @@ async function makeAuction(opts: { status?: "SCHEDULED" | "LIVE" | "ENDED"; star
   counter++;
   const team = await prisma.team.create({ data: { name: `تیم حراج ${counter}`, slug: `auction-team-${counter}` } });
   const product = await prisma.product.create({
-    data: { teamId: team.id, name: `محصول ${counter}`, submittedAt: new Date(), specialStart: opts.startPrice ?? 20 },
+    data: { teamId: team.id, slug: `auction-team-${counter}-general`, name: `محصول ${counter}`, submittedAt: new Date(), specialStart: opts.startPrice ?? 20 },
   });
   const status = opts.status ?? "LIVE";
   const now = new Date();
@@ -67,7 +67,7 @@ async function makeAuction(opts: { status?: "SCHEDULED" | "LIVE" | "ENDED"; star
   return { team, product, auction: row };
 }
 
-/** تیم با محصول (ثبت‌نهایی‌شده یا نه) و اعضایش، برای صف حراج روز بازار */
+/** تیم با محصول (ثبت‌نهایی‌شده یا نه) و اعضایش، برای صف حراج */
 async function makeTeamWithProduct(opts: { members?: number; submitted?: boolean; specialStart?: number; withProduct?: boolean } = {}) {
   counter++;
   const team = await prisma.team.create({ data: { name: `تیم صف ${counter}`, slug: `queue-team-${counter}` } });
@@ -79,6 +79,7 @@ async function makeTeamWithProduct(opts: { members?: number; submitted?: boolean
       : await prisma.product.create({
           data: {
             teamId: team.id,
+            slug: `queue-team-${counter}-general`,
             name: `محصول صف ${counter}`,
             submittedAt: opts.submitted === false ? null : new Date(),
             specialStart: opts.specialStart ?? 20,
@@ -217,7 +218,7 @@ describe("auction.ts: nextMinBid / getAuctionState integration", () => {
 });
 
 // ---------------------------------------------------------------------------
-// صف حراج روز بازار
+// صف حراج
 // ---------------------------------------------------------------------------
 
 const HOUR = 3600_000;
@@ -226,16 +227,17 @@ const HOUR = 3600_000;
 async function resetQueue() {
   await prisma.bid.deleteMany();
   await prisma.auction.deleteMany();
-  await prisma.setting.deleteMany({ where: { key: { in: ["auto_auction", "last_auction_ended_at", "auction_gap_sec"] } } });
-  await phase.setPhase("MARKET", new Date(Date.now() + 2 * HOUR));
+  await prisma.setting.deleteMany({ where: { key: { in: ["auto_auction", "last_auction_ended_at", "auction_gap_sec", "module_market"] } } });
+  await prisma.moduleException.deleteMany();
+  await phase.setPhase("LIVE", new Date(Date.now() + 2 * HOUR));
 }
 
-describe("auction.ts: enqueueAuction (فرستادن نسخهٔ ویژه به صف در روز بازار)", () => {
+describe("auction.ts: enqueueAuction (فرستادن نسخهٔ ویژه به صف؛ حراج بخشی از بازار است)", () => {
   beforeEach(resetQueue);
 
   it("هر عضو تیم می‌تواند محصول ثبت‌شده را به صف بفرستد", async () => {
     const { product, members } = await makeTeamWithProduct({ members: 2, specialStart: 35 });
-    const res = await auction.enqueueAuction(members[1].id); // عضو دوم، نه سازنده
+    const res = await auction.enqueueAuction(members[1].id, "general"); // عضو دوم، نه سازنده
     expect(res).toMatchObject({ ok: true, position: 1 });
     if (!res.ok) return;
     const row = await prisma.auction.findUniqueOrThrow({ where: { id: res.auctionId } });
@@ -246,18 +248,18 @@ describe("auction.ts: enqueueAuction (فرستادن نسخهٔ ویژه به ص
     const t1 = await makeTeamWithProduct();
     const t2 = await makeTeamWithProduct();
     const t3 = await makeTeamWithProduct();
-    const r1 = await auction.enqueueAuction(t1.members[0].id);
-    const r2 = await auction.enqueueAuction(t2.members[0].id);
+    const r1 = await auction.enqueueAuction(t1.members[0].id, "general");
+    const r2 = await auction.enqueueAuction(t2.members[0].id, "general");
     expect(r1).toMatchObject({ ok: true, position: 1 });
     expect(r2).toMatchObject({ ok: true, position: 2 });
 
     // حراج اول زنده و سپس تمام می‌شود؛ جایگاه فقط حراج‌های زنده/در صف را می‌شمارد
     await auction.startNextAuction();
-    const r3 = await auction.enqueueAuction(t3.members[0].id);
+    const r3 = await auction.enqueueAuction(t3.members[0].id, "general");
     expect(r3).toMatchObject({ ok: true, position: 3 });
     await prisma.auction.updateMany({ where: { status: "LIVE" }, data: { status: "ENDED" } });
     const t4 = await makeTeamWithProduct();
-    expect(await auction.enqueueAuction(t4.members[0].id)).toMatchObject({ ok: true, position: 3 });
+    expect(await auction.enqueueAuction(t4.members[0].id, "general")).toMatchObject({ ok: true, position: 3 });
 
     const queue = await auction.listAuctions();
     expect(queue.map((q) => q.product.teamId)).toEqual([t1.team.id, t2.team.id, t3.team.id, t4.team.id]);
@@ -266,8 +268,8 @@ describe("auction.ts: enqueueAuction (فرستادن نسخهٔ ویژه به ص
 
   it("هر محصول فقط یک‌بار به صف می‌رود (حتی از طرف عضو دیگر)", async () => {
     const { members } = await makeTeamWithProduct({ members: 2 });
-    expect((await auction.enqueueAuction(members[0].id)).ok).toBe(true);
-    const dup = await auction.enqueueAuction(members[1].id);
+    expect((await auction.enqueueAuction(members[0].id, "general")).ok).toBe(true);
+    const dup = await auction.enqueueAuction(members[1].id, "general");
     expect(dup.ok).toBe(false);
     if (!dup.ok) expect(dup.error).toContain("قبلاً");
     expect(await prisma.auction.count()).toBe(1);
@@ -275,56 +277,81 @@ describe("auction.ts: enqueueAuction (فرستادن نسخهٔ ویژه به ص
 
   it("قیمت پایهٔ صفر به یک سکه گرد می‌شود", async () => {
     const { members } = await makeTeamWithProduct({ specialStart: 0 });
-    const res = await auction.enqueueAuction(members[0].id);
+    const res = await auction.enqueueAuction(members[0].id, "general");
     expect(res.ok).toBe(true);
     if (res.ok) expect((await prisma.auction.findUniqueOrThrow({ where: { id: res.auctionId } })).startPrice).toBe(1);
   });
 
-  it("فقط در روز بازار ممکن است", async () => {
-    const { members } = await makeTeamWithProduct();
-    for (const p of ["REGISTRATION", "IDEATION", "SEED_ROUND", "BUILD", "CLOSED"] as const) {
-      await phase.setPhase(p, null);
-      const res = await auction.enqueueAuction(members[0].id);
+  it("حراج جزو بخش بازار است: وقتی بازار باز نیست صف بسته است، مگر استثنای همان تیم", async () => {
+    const { team, members } = await makeTeamWithProduct();
+    for (const status of ["ro", "closed", "hidden"]) {
+      await prisma.setting.upsert({ where: { key: "module_market" }, update: { value: status }, create: { key: "module_market", value: status } });
+      const res = await auction.enqueueAuction(members[0].id, "general");
       expect(res.ok).toBe(false);
-      if (!res.ok) expect(res.error).toContain("روز بازار");
+      if (!res.ok) expect(res.error).toContain("فعلاً باز نیست");
     }
+    expect(await prisma.auction.count()).toBe(0);
+
+    await prisma.moduleException.create({ data: { moduleKey: "market", teamId: team.id, createdBy: "test" } });
+    expect((await auction.enqueueAuction(members[0].id, "general")).ok).toBe(true);
+  });
+
+  it("پس از پایان مسابقه صف بسته است", async () => {
+    const { members } = await makeTeamWithProduct();
+    await phase.setPhase("CLOSED", null);
+    expect((await auction.enqueueAuction(members[0].id, "general")).ok).toBe(false);
     expect(await prisma.auction.count()).toBe(0);
   });
 
-  it("فاز قدیمی «AUCTION» همان روز بازار خوانده می‌شود", async () => {
+  it("هر فاز قدیمی ذخیره‌شده (مثل AUCTION) یعنی مسابقه در جریان است", async () => {
     await prisma.setting.update({ where: { key: "phase" }, data: { value: "AUCTION" } });
     const { members } = await makeTeamWithProduct();
-    expect((await auction.enqueueAuction(members[0].id)).ok).toBe(true);
+    expect((await auction.enqueueAuction(members[0].id, "general")).ok).toBe(true);
   });
 
-  it("در ۲۰ دقیقهٔ پایانی روز بازار صف بسته است", async () => {
+  it("یک تیم می‌تواند محصول هر محورش را جدا به صف بفرستد و محور بی‌محصول رد می‌شود", async () => {
+    const { team, members, product } = await makeTeamWithProduct();
+    const content = await prisma.product.create({
+      data: { teamId: team.id, trackId: "content", slug: `${team.slug}-content`, name: "محتوا", submittedAt: new Date(), specialStart: 12 },
+    });
+    expect((await auction.enqueueAuction(members[0].id, "os")).ok).toBe(false);
+    const first = await auction.enqueueAuction(members[0].id, "general");
+    const second = await auction.enqueueAuction(members[0].id, "content");
+    expect(first).toMatchObject({ ok: true, position: 1 });
+    expect(second).toMatchObject({ ok: true, position: 2 });
+    const rows = await prisma.auction.findMany({ orderBy: { order: "asc" } });
+    expect(rows.map((r) => r.productId)).toEqual([product!.id, content.id]);
+    expect(rows[1].startPrice).toBe(12);
+  });
+
+  it("در ۲۰ دقیقهٔ پایانی مسابقه صف بسته است", async () => {
     const { members } = await makeTeamWithProduct();
-    await phase.setPhase("MARKET", new Date(Date.now() + 19 * 60_000));
-    const late = await auction.enqueueAuction(members[0].id);
+    await phase.setPhase("LIVE", new Date(Date.now() + 19 * 60_000));
+    const late = await auction.enqueueAuction(members[0].id, "general");
     expect(late.ok).toBe(false);
     if (!late.ok) expect(late.error).toContain("پایانی");
 
-    await phase.setPhase("MARKET", new Date(Date.now() + 25 * 60_000));
-    expect((await auction.enqueueAuction(members[0].id)).ok).toBe(true);
+    await phase.setPhase("LIVE", new Date(Date.now() + 25 * 60_000));
+    expect((await auction.enqueueAuction(members[0].id, "general")).ok).toBe(true);
   });
 
-  it("بدون زمان پایان روز بازار، صف باز است", async () => {
-    await phase.setPhase("MARKET", null);
+  it("بدون ددلاین نهایی، صف باز است", async () => {
+    await phase.setPhase("LIVE", null);
     const { members } = await makeTeamWithProduct();
-    expect((await auction.enqueueAuction(members[0].id)).ok).toBe(true);
+    expect((await auction.enqueueAuction(members[0].id, "general")).ok).toBe(true);
   });
 
   it("کاربر بی‌تیم، تیم بدون محصول و محصول ثبت‌نهایی‌نشده رد می‌شوند", async () => {
     const teamless = await makeBidder(100, null);
-    expect((await auction.enqueueAuction(teamless.id)).ok).toBe(false);
+    expect((await auction.enqueueAuction(teamless.id, "general")).ok).toBe(false);
 
     const noProduct = await makeTeamWithProduct({ withProduct: false });
-    const r1 = await auction.enqueueAuction(noProduct.members[0].id);
+    const r1 = await auction.enqueueAuction(noProduct.members[0].id, "general");
     expect(r1.ok).toBe(false);
     if (!r1.ok) expect(r1.error).toContain("ثبت نهایی");
 
     const draft = await makeTeamWithProduct({ submitted: false });
-    expect((await auction.enqueueAuction(draft.members[0].id)).ok).toBe(false);
+    expect((await auction.enqueueAuction(draft.members[0].id, "general")).ok).toBe(false);
     expect(await prisma.auction.count()).toBe(0);
   });
 });
@@ -336,7 +363,7 @@ describe("auction.ts: اجرای صف (شروع و تسویهٔ خودکار)", 
     const teams = [];
     for (let i = 0; i < n; i++) {
       const t = await makeTeamWithProduct();
-      const res = await auction.enqueueAuction(t.members[0].id);
+      const res = await auction.enqueueAuction(t.members[0].id, "general");
       if (!res.ok) throw new Error(res.error);
       teams.push({ ...t, auctionId: res.auctionId });
     }
@@ -432,7 +459,7 @@ describe("auction.ts: اجرای صف (شروع و تسویهٔ خودکار)", 
     expect((await prisma.auction.findUniqueOrThrow({ where: { id: a.auctionId } })).status).toBe("ENDED");
   });
 
-  it("زمان‌بند در روز بازار حراج بعدی صف را شروع و حراج تمام‌شده را تسویه می‌کند", async () => {
+  it("زمان‌بند حراج بعدی صف را شروع و حراج تمام‌شده را تسویه می‌کند", async () => {
     const [a, b] = await queueOf(2);
 
     await scheduler.runScheduledTasks();
@@ -463,9 +490,19 @@ describe("auction.ts: اجرای صف (شروع و تسویهٔ خودکار)", 
     expect((await prisma.auction.findUniqueOrThrow({ where: { id: b.auctionId } })).status).toBe("LIVE");
   });
 
-  it("زمان‌بند بیرون از روز بازار حراجی شروع نمی‌کند", async () => {
+  it("وقتی بازار باز نیست زمان‌بند حراج تازه‌ای شروع نمی‌کند ولی حراج زندهٔ تمام‌شده را تسویه می‌کند", async () => {
+    const [a, b] = await queueOf(2);
+    await auction.startNextAuction();
+    await prisma.auction.update({ where: { id: a.auctionId }, data: { endsAt: new Date(Date.now() - 1_000) } });
+    await prisma.setting.create({ data: { key: "module_market", value: "closed" } });
+    await scheduler.runScheduledTasks();
+    expect((await prisma.auction.findUniqueOrThrow({ where: { id: a.auctionId } })).status).toBe("ENDED");
+    expect((await prisma.auction.findUniqueOrThrow({ where: { id: b.auctionId } })).status).toBe("SCHEDULED");
+  });
+
+  it("پس از پایان مسابقه زمان‌بند حراجی شروع نمی‌کند", async () => {
     const [a] = await queueOf(1);
-    await phase.setPhase("BUILD", null);
+    await phase.setPhase("CLOSED", null);
     await scheduler.runScheduledTasks();
     expect((await prisma.auction.findUniqueOrThrow({ where: { id: a.auctionId } })).status).toBe("SCHEDULED");
   });
@@ -537,7 +574,7 @@ describe("auction.ts: پایان بازی — سربار، اعلان و قفل 
     const teams = [];
     for (let i = 0; i < n; i++) {
       const t = await makeTeamWithProduct();
-      const res = await auction.enqueueAuction(t.members[0].id);
+      const res = await auction.enqueueAuction(t.members[0].id, "general");
       if (!res.ok) throw new Error(res.error);
       teams.push({ ...t, auctionId: res.auctionId });
     }
@@ -547,8 +584,8 @@ describe("auction.ts: پایان بازی — سربار، اعلان و قفل 
   it("startNextAuction مدت را با احتساب سربار فاصله/تیک/تمدید برازش می‌کند", async () => {
     await queueOf(4);
     await prisma.setting.create({ data: { key: "anti_snipe_extend_sec", value: "30" } });
-    // صف پس از ۲۰ دقیقهٔ پایانی بسته است، ولی حراج‌های صف‌شده می‌مانند؛ ۱۰۰۰ ثانیه تا پایان روز بازار
-    await phase.setPhase("MARKET", new Date(Date.now() + 1000_000));
+    // صف پس از ۲۰ دقیقهٔ پایانی بسته است، ولی حراج‌های صف‌شده می‌مانند؛ ۱۰۰۰ ثانیه تا ددلاین نهایی
+    await phase.setPhase("LIVE", new Date(Date.now() + 1000_000));
     const started = await auction.startNextAuction(300);
     // floor(1000 × 0.85 / 4 − (60 + 30 + 30)) = 92 (999 ثانیه هم همان 92 می‌دهد)
     expect(started!.endsAt!.getTime() - started!.startsAt!.getTime()).toBe(92_000);
@@ -590,7 +627,7 @@ describe("auction.ts: پایان بازی — سربار، اعلان و قفل 
     await auction.startNextAuction();
     await prisma.auction.update({ where: { id: a.auctionId }, data: { endsAt: new Date(Date.now() - 1_000) } });
 
-    // تسویهٔ زودهنگام (settled_final = 0) در روز بازار جلوی تسویهٔ حراج را نمی‌گیرد
+    // تسویهٔ زودهنگام (settled_final = 0) جلوی تسویهٔ حراج را نمی‌گیرد
     await prisma.setting.create({ data: { key: "settled_at", value: new Date().toISOString() } });
     await prisma.setting.create({ data: { key: "settled_final", value: "0" } });
     const [b] = await queueOf(1);

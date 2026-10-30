@@ -14,8 +14,8 @@ function Submit() {
   );
 }
 
-export function UnsubmitButton() {
-  const [state, formAction] = useActionState<ProductActionState, FormData>(async () => unsubmitProductAction(), {});
+export function UnsubmitButton({ trackId }: { trackId: string }) {
+  const [state, formAction] = useActionState<ProductActionState, FormData>(async () => unsubmitProductAction(trackId), {});
   return (
     <form action={formAction} className="space-y-2">
       {state.error && <Alert kind="error">{state.error}</Alert>}

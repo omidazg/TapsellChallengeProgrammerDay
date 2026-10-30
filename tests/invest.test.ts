@@ -16,13 +16,23 @@ beforeAll(async () => {
   db = createTempDb("invest-test");
   ({ prisma } = await import("../src/lib/db"));
   invest = await import("../src/lib/invest");
-  await setPhaseRow("SEED_ROUND");
+  await setPhaseRow("LIVE");
 });
 
 afterAll(async () => {
   await prisma.$disconnect();
   db.cleanup();
 });
+
+/** اجرای fn وقتی بخش حمایت در وضعیت status است */
+async function withInvestModule<T>(status: string, fn: () => Promise<T>): Promise<T> {
+  await prisma.setting.upsert({ where: { key: "module_invest" }, update: { value: status }, create: { key: "module_invest", value: status } });
+  try {
+    return await fn();
+  } finally {
+    await prisma.setting.deleteMany({ where: { key: "module_invest" } });
+  }
+}
 
 let counter = 0;
 async function makeTeamWithIdea(opts: { submitted?: boolean } = {}) {
@@ -173,20 +183,43 @@ describe("invest.ts: investCore — محدودیت‌ها", () => {
     expect(res.ok).toBe(false);
   });
 
-  it("بیرون از «دور حمایت» رد می‌شود", async () => {
+  it("وقتی بخش حمایت باز نیست یا مسابقه تمام شده رد می‌شود", async () => {
     const { idea } = await makeTeamWithIdea();
     const supporter = await makeSupporter(100);
+    for (const status of ["ro", "closed", "hidden"]) {
+      const res = await withInvestModule(status, () => invest.investCore(prisma, supporter.id, idea.id, 10));
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.error).toContain("فعلاً باز نیست");
+    }
     try {
-      for (const phase of ["REGISTRATION", "IDEATION", "BUILD", "MARKET", "CLOSED"]) {
-        await setPhaseRow(phase);
-        const res = await invest.investCore(prisma, supporter.id, idea.id, 10);
-        expect(res.ok).toBe(false);
-        if (!res.ok) expect(res.error).toContain("دور حمایت");
-      }
+      await setPhaseRow("CLOSED");
+      expect((await invest.investCore(prisma, supporter.id, idea.id, 10)).ok).toBe(false);
     } finally {
-      await setPhaseRow("SEED_ROUND");
+      await setPhaseRow("LIVE");
     }
     expect(await walletOf(supporter.id)).toBe(100);
+  });
+
+  it("استثنای بخش برای تیم حامی کار می‌کند؛ حامی بی‌تیم و تیم دیگر رد می‌شوند", async () => {
+    const { idea } = await makeTeamWithIdea();
+    const special = await prisma.team.create({ data: { name: "تیم استثنای حمایت", slug: "invest-exception" } });
+    const member = await makeSupporter(100, special.id);
+    const teamless = await makeSupporter(100);
+    await prisma.moduleException.create({ data: { moduleKey: "invest", teamId: special.id, createdBy: "test" } });
+    await withInvestModule("closed", async () => {
+      expect((await invest.investCore(prisma, member.id, idea.id, 10)).ok).toBe(true);
+      expect((await invest.investCore(prisma, teamless.id, idea.id, 10)).ok).toBe(false);
+    });
+  });
+
+  it("حمایت از ایدهٔ هر محور جدا ثبت می‌شود", async () => {
+    const { team } = await makeTeamWithIdea();
+    const contentIdea = await prisma.idea.create({
+      data: { teamId: team.id, trackId: "content", title: "ایدهٔ محتوا", oneLiner: "x", problem: "x", audience: "x", buildPlan: "x", fundingCap: 0, revenueShare: 0, submittedAt: new Date() },
+    });
+    const supporter = await makeSupporter(100);
+    expect((await invest.investCore(prisma, supporter.id, contentIdea.id, 10)).ok).toBe(true);
+    expect(await invest.investedByUserOnIdea(supporter.id, contentIdea.id)).toBe(10);
   });
 });
 
@@ -198,7 +231,7 @@ describe("invest.ts: investCore — سکه‌های رزروشدهٔ حراج", 
     // supporter بالاترین پیشنهاد یک حراج زنده است → ۶۰ سکه رزرو
     counter++;
     const otherTeam = await prisma.team.create({ data: { name: `تیم حراج ${counter}`, slug: `invest-auction-${counter}` } });
-    const product = await prisma.product.create({ data: { teamId: otherTeam.id, name: "محصول", submittedAt: new Date() } });
+    const product = await prisma.product.create({ data: { teamId: otherTeam.id, slug: `${otherTeam.slug}-general`, name: "محصول", submittedAt: new Date() } });
     const auction = await prisma.auction.create({
       data: { productId: product.id, startPrice: 20, status: "LIVE", startsAt: new Date(), endsAt: new Date(Date.now() + 60_000) },
     });
@@ -247,5 +280,138 @@ describe("invest.ts: investCore — اتمی بودن", () => {
     const rejected = await invest.investCore(prisma, supporter.id, idea.id, 11);
     expect(rejected.ok).toBe(false);
     expect(await walletOf(supporter.id)).toBe(before);
+  });
+});
+
+describe("invest.ts: پس‌گرفتن حمایت (فقط حمایتی که پیش از آخرین ویرایش ایده ثبت شده)", () => {
+  const T0 = new Date("2026-10-01T10:00:00Z");
+  const T1 = new Date("2026-10-02T10:00:00Z");
+  const T2 = new Date("2026-10-03T10:00:00Z");
+
+  /** حمایت در زمان مشخص، درست مثل investCore (کسر از کیف) */
+  async function backdatedSupport(ideaId: string, userId: string, amount: number, createdAt: Date) {
+    await prisma.investment.create({ data: { ideaId, userId, amount, createdAt } });
+    await prisma.user.update({ where: { id: userId }, data: { buyWallet: { decrement: amount } } });
+  }
+
+  describe("canWithdrawInvestment", () => {
+    it("ایدهٔ ویرایش‌نشده: حمایت قابل پس‌گرفتن نیست", () => {
+      expect(invest.canWithdrawInvestment(T0, null)).toBe(false);
+    });
+    it("حمایت پیش از ویرایش قابل پس‌گرفتن است", () => {
+      expect(invest.canWithdrawInvestment(T0, T1)).toBe(true);
+    });
+    it("حمایت بعد از ویرایش یا هم‌زمان با آن قابل پس‌گرفتن نیست", () => {
+      expect(invest.canWithdrawInvestment(T2, T1)).toBe(false);
+      expect(invest.canWithdrawInvestment(T1, T1)).toBe(false);
+    });
+  });
+
+  describe("withdrawInvestment", () => {
+    it("سکه کامل برمی‌گردد، حمایت پاک می‌شود و دفتر کل ثبت می‌شود", async () => {
+      const { idea, team } = await makeTeamWithIdea();
+      const supporter = await makeSupporter(100);
+      await backdatedSupport(idea.id, supporter.id, 30, T0);
+      await prisma.idea.update({ where: { id: idea.id }, data: { editedAt: T1 } });
+
+      const res = await invest.withdrawInvestment(prisma, supporter.id, idea.id);
+      expect(res).toEqual({ ok: true, refunded: 30 });
+      expect(await walletOf(supporter.id)).toBe(100);
+      expect(await invest.investedByUserOnIdea(supporter.id, idea.id)).toBe(0);
+      const ledger = await prisma.ledgerEntry.findMany({ where: { userId: supporter.id, reason: "INVEST_WITHDRAW" } });
+      expect(ledger).toHaveLength(1);
+      expect(ledger[0]).toMatchObject({ teamId: team.id, wallet: "BUY", delta: 30, refId: idea.id });
+    });
+
+    it("ایدهٔ ویرایش‌نشده: رد می‌شود و چیزی تغییر نمی‌کند", async () => {
+      const { idea } = await makeTeamWithIdea();
+      const supporter = await makeSupporter(100);
+      expect((await invest.investCore(prisma, supporter.id, idea.id, 20)).ok).toBe(true);
+      const res = await invest.withdrawInvestment(prisma, supporter.id, idea.id);
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.error).toContain("پیش از ویرایش");
+      expect(await walletOf(supporter.id)).toBe(80);
+      expect(await invest.investedByUserOnIdea(supporter.id, idea.id)).toBe(20);
+    });
+
+    it("حمایت بعد از آخرین ویرایش برگشت‌پذیر نیست؛ فقط بخش قبل از ویرایش برمی‌گردد", async () => {
+      const { idea } = await makeTeamWithIdea();
+      const supporter = await makeSupporter(100);
+      await backdatedSupport(idea.id, supporter.id, 10, T0);
+      await backdatedSupport(idea.id, supporter.id, 25, T2);
+      await prisma.idea.update({ where: { id: idea.id }, data: { editedAt: T1 } });
+
+      const res = await invest.withdrawInvestment(prisma, supporter.id, idea.id);
+      expect(res).toEqual({ ok: true, refunded: 10 });
+      expect(await walletOf(supporter.id)).toBe(75);
+      expect(await invest.investedByUserOnIdea(supporter.id, idea.id)).toBe(25);
+
+      // بار دوم چیزی برای پس‌گرفتن نمانده است
+      expect((await invest.withdrawInvestment(prisma, supporter.id, idea.id)).ok).toBe(false);
+      expect(await walletOf(supporter.id)).toBe(75);
+    });
+
+    it("فقط حمایت همان کاربر برمی‌گردد و حمایت دیگران دست نمی‌خورد", async () => {
+      const { idea } = await makeTeamWithIdea();
+      const a = await makeSupporter(100);
+      const b = await makeSupporter(100);
+      await backdatedSupport(idea.id, a.id, 10, T0);
+      await backdatedSupport(idea.id, b.id, 20, T0);
+      await prisma.idea.update({ where: { id: idea.id }, data: { editedAt: T1 } });
+      expect((await invest.withdrawInvestment(prisma, a.id, idea.id)).ok).toBe(true);
+      expect(await invest.investedByUserOnIdea(b.id, idea.id)).toBe(20);
+      expect(await walletOf(b.id)).toBe(80);
+    });
+
+    it("حمایت پس‌گرفته‌شده از امتیاز حمایت کم می‌شود", async () => {
+      const scoring = await import("../src/lib/scoring");
+      const { idea, team } = await makeTeamWithIdea();
+      const a = await makeSupporter(100);
+      const b = await makeSupporter(100);
+      await backdatedSupport(idea.id, a.id, 16, T0);
+      await backdatedSupport(idea.id, b.id, 9, T0);
+      await prisma.idea.update({ where: { id: idea.id }, data: { editedAt: T1 } });
+      const entry = async () => (await scoring.computeScores()).teams.find((t) => t.teamId === team.id)!;
+      expect((await entry()).people).toBeCloseTo(49, 9); // (۴ + ۳)²
+      expect((await invest.withdrawInvestment(prisma, a.id, idea.id)).ok).toBe(true);
+      expect((await entry()).people).toBeCloseTo(9, 9);
+      expect((await entry()).supporters).toBe(1);
+    });
+
+    it("پس از پس‌گرفتن، آن سکه دوباره خرج‌شدنی است", async () => {
+      const { idea } = await makeTeamWithIdea();
+      const supporter = await makeSupporter(50);
+      await backdatedSupport(idea.id, supporter.id, 50, T0);
+      await prisma.idea.update({ where: { id: idea.id }, data: { editedAt: T1 } });
+      expect((await invest.investCore(prisma, supporter.id, idea.id, 1)).ok).toBe(false);
+      expect((await invest.withdrawInvestment(prisma, supporter.id, idea.id)).ok).toBe(true);
+      expect((await invest.investCore(prisma, supporter.id, idea.id, 50)).ok).toBe(true);
+    });
+
+    it("بخش حمایت باید باز باشد؛ کاربر و ایدهٔ ناموجود رد می‌شوند", async () => {
+      const { idea } = await makeTeamWithIdea();
+      const supporter = await makeSupporter(100);
+      await backdatedSupport(idea.id, supporter.id, 10, T0);
+      await prisma.idea.update({ where: { id: idea.id }, data: { editedAt: T1 } });
+      const closed = await withInvestModule("closed", () => invest.withdrawInvestment(prisma, supporter.id, idea.id));
+      expect(closed.ok).toBe(false);
+      if (!closed.ok) expect(closed.error).toContain("فعلاً باز نیست");
+      expect(await walletOf(supporter.id)).toBe(90);
+      expect((await invest.withdrawInvestment(prisma, "no-such-user", idea.id)).ok).toBe(false);
+      expect((await invest.withdrawInvestment(prisma, supporter.id, "no-such-idea")).ok).toBe(false);
+    });
+
+    it("دو پس‌گرفتن هم‌زمان سکه را دوبار برنمی‌گردانند", async () => {
+      const { idea } = await makeTeamWithIdea();
+      const supporter = await makeSupporter(100);
+      await backdatedSupport(idea.id, supporter.id, 40, T0);
+      await prisma.idea.update({ where: { id: idea.id }, data: { editedAt: T1 } });
+      const results = await Promise.all([
+        invest.withdrawInvestment(prisma, supporter.id, idea.id),
+        invest.withdrawInvestment(prisma, supporter.id, idea.id),
+      ]);
+      expect(results.filter((r) => r.ok)).toHaveLength(1);
+      expect(await walletOf(supporter.id)).toBe(100);
+    });
   });
 });

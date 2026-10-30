@@ -1,6 +1,7 @@
 import { randomInt } from "node:crypto";
 import { prisma } from "./db";
 import { getPhase, getSetting, getSettingInt } from "./phase";
+import { moduleGate } from "./module-state";
 import { DEFAULTS } from "./constants";
 import { fa } from "./persian";
 import { notifyTeam, notifyUser } from "./notifications";
@@ -63,17 +64,19 @@ export function auctionOverheadSec(gapSec: number, antiSnipeExtendSec: number): 
 export type EnqueueResult = { ok: true; auctionId: string; position: number } | { ok: false; error: string };
 
 /**
- * تیم (هر عضوی) نسخهٔ ویژهٔ محصولش را در روز بازار به صف حراج زنده می‌فرستد.
- * هر محصول فقط یک‌بار حراج می‌شود؛ ترتیب صف همان ترتیب ثبت است. در دقایق پایانی روز بازار
+ * تیم (هر عضوی) نسخهٔ ویژهٔ محصولش را به صف حراج زنده می‌فرستد (حراج بخشی از بازار است).
+ * هر محصول فقط یک‌بار حراج می‌شود؛ ترتیب صف همان ترتیب ثبت است. در دقایق پایانی مسابقه
  * (auction_enqueue_cutoff_min) دیگر محصول تازه‌ای وارد صف نمی‌شود تا صف پیش از پایان تمام شود.
  */
-export async function enqueueAuction(userId: string): Promise<EnqueueResult> {
-  const { phase, endsAt } = await getPhase();
-  if (phase !== "MARKET") return { ok: false, error: "فرستادن به حراج فقط در «روز بازار» ممکن است" };
+export async function enqueueAuction(userId: string, trackId: string): Promise<EnqueueResult> {
+  const { endsAt } = await getPhase();
+  const teamRow = await prisma.user.findUnique({ where: { id: userId }, select: { teamId: true } });
+  const gate = await moduleGate("market", teamRow?.teamId);
+  if (gate) return { ok: false, error: gate };
   if (endsAt) {
     const cutoffMin = await getSettingInt("auction_enqueue_cutoff_min", DEFAULTS.auctionEnqueueCutoffMin);
     if (endsAt.getTime() - Date.now() < cutoffMin * 60_000) {
-      return { ok: false, error: `در ${fa(cutoffMin)} دقیقهٔ پایانی روز بازار صف حراج بسته است` };
+      return { ok: false, error: `در ${fa(cutoffMin)} دقیقهٔ پایانی مسابقه صف حراج بسته است` };
     }
   }
 
@@ -81,7 +84,7 @@ export async function enqueueAuction(userId: string): Promise<EnqueueResult> {
     const user = await tx.user.findUnique({ where: { id: userId }, select: { teamId: true } });
     if (!user?.teamId) return { ok: false, error: "برای فرستادن محصول به حراج باید عضو یک تیم (یا شرکت‌کنندهٔ فردی) باشی" };
     const product = await tx.product.findUnique({
-      where: { teamId: user.teamId },
+      where: { teamId_trackId: { teamId: user.teamId, trackId } },
       select: { id: true, submittedAt: true, auction: { select: { id: true } } },
     });
     if (!product?.submittedAt) return { ok: false, error: "اول محصولت را ثبت نهایی کن" };
@@ -144,7 +147,7 @@ export async function closeAuctionsForGameEnd() {
     await notifyTeam(teamId, {
       kind: "auction_unrun",
       title: "حراج محصولتان برگزار نشد",
-      body: "روز بازار پیش از رسیدن نوبت محصول شما در صف حراج تمام شد و حراج آن برگزار نشد.",
+      body: "مسابقه پیش از رسیدن نوبت محصول شما در صف حراج تمام شد و حراج آن برگزار نشد.",
       href: "/auction",
     }).catch((e) => console.error("notify leftover auction team failed", e));
   }
@@ -157,7 +160,7 @@ export async function closeAuctionsForGameEnd() {
  */
 async function resolveAuctionDuration(configuredDuration: number): Promise<number> {
   const { phase, endsAt } = await getPhase();
-  if (phase !== "MARKET" || !endsAt) return configuredDuration;
+  if (phase === "CLOSED" || !endsAt) return configuredDuration;
   const secondsLeftInPhase = Math.max(0, Math.floor((endsAt.getTime() - Date.now()) / 1000));
   // شامل همین حراجی که قرار است زنده شود، به‌علاوهٔ بقیهٔ صف (SCHEDULED فعلی).
   const [remainingCount, gapSec, extendSec] = await Promise.all([
@@ -282,7 +285,7 @@ async function settleCore(id: string, opts: { startNext?: boolean; gameEnd?: boo
     if (opts.startNext !== true) return settled;
     const { phase } = await getPhase().catch(() => ({ phase: null as string | null }));
     const autoAuction = await getSetting("auto_auction", "1").catch(() => "0");
-    if (phase === "MARKET" && autoAuction === "1") {
+    if (phase === "LIVE" && autoAuction === "1") {
       await startNextAuction();
     }
   }

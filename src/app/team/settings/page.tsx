@@ -14,7 +14,7 @@ export default async function TeamSettingsPage() {
   if (!user.teamId) redirect("/team");
 
   const [open, team] = await Promise.all([
-    isTeamSettingsOpen(),
+    isTeamSettingsOpen(user.teamId),
     prisma.team.findUnique({ where: { id: user.teamId }, select: { name: true, slug: true, logoSeed: true } }),
   ]);
   if (!team) redirect("/team");
@@ -24,18 +24,18 @@ export default async function TeamSettingsPage() {
       <PageHeader
         eyebrow="اتاق تیم"
         title="نام و نشان تیم"
-        desc="هر عضو تیم می‌تواند نام و نشان تیم را تا پایان فاز «اتاق ایده» عوض کند."
+        desc="هر عضو تیم می‌تواند نام و نشان تیم را عوض کند."
         action={<Link href="/team" className="btn-ghost">بازگشت به اتاق تیم</Link>}
       />
       <Container>
         <div className="max-w-xl space-y-6">
           {open ? (
             <Alert kind="info">
-              نام و نشان تیم روی ایده و محصول نمایش داده می‌شوند؛ پس از پایان «اتاق ایده» قفل می‌شوند. مهارت خودت را از{" "}
+              نام و نشان تیم روی ایده و محصول نمایش داده می‌شوند. مهارت خودت را از{" "}
               <Link href="/profile#skill" className="font-bold underline underline-offset-2">پروفایل</Link> عوض کن.
             </Alert>
           ) : (
-            <Alert kind="info">🔒 فاز «اتاق ایده» تمام شده و نام و نشان تیم دیگر قفل‌اند.</Alert>
+            <Alert kind="info">🔒 بخش تیم فعلاً باز نیست و نام و نشان تیم قابل تغییر نیستند.</Alert>
           )}
 
           <div className="card p-5 anim-rise">

@@ -3,10 +3,14 @@ import Image from "next/image";
 import { isLocalUploadUrl } from "@/lib/product-utils";
 import { thumbUrl } from "@/lib/thumb";
 import { requireUser } from "@/lib/auth";
-import { getPhase, phaseIndex, PHASE_LABEL } from "@/lib/phase";
+import { moduleStatusFor } from "@/lib/module-state";
+import { listVisibleTracks } from "@/lib/track-data";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { productAiTag, type AiTagInfo } from "@/lib/ai-tag";
-import { PageHeader, Container, Empty, Locked, Coin } from "@/components/ui";
+import { PageHeader, Container, Empty, Coin } from "@/components/ui";
+import { ModuleClosed, ModuleReadOnly } from "@/components/ModuleState";
+import { TrackSwitcher } from "@/components/TrackSwitcher";
 import { AiTag } from "@/components/AiTag";
 import { fa, coins } from "@/lib/persian";
 import { getMarketProducts, getCurrentAdSlotWinners, MARKET_CACHE_PREFIX, type MarketSort } from "@/lib/market";
@@ -22,61 +26,56 @@ const SORTS: { key: MarketSort; label: string }[] = [
   { key: "cheap", label: "ارزان" },
 ];
 
-export default async function MarketPage({ searchParams }: { searchParams: Promise<{ sort?: string }> }) {
+export default async function MarketPage({ searchParams }: { searchParams: Promise<{ sort?: string; track?: string }> }) {
   const user = await requireUser();
-  const { phase } = await getPhase();
   const sp = await searchParams;
 
-  if (phaseIndex(phase) < phaseIndex("BUILD")) {
-    return (
-      <>
-        <PageHeader
-          eyebrow={`از فاز «${PHASE_LABEL.BUILD}» باز می‌شود`}
-          title="بازار"
-          desc="از تیم‌های دیگر بخر، قلب بده و محصول ویژه‌شان را ببین."
-          action={
-            <Link href="/" className="btn-ghost">
-              الان چه کنم؟
-            </Link>
-          }
-        />
-        <Container>
-          <h2 className="sr-only">وضعیت بازار</h2>
-          <Locked title="بازار هنوز باز نشده" desc="بازار از فاز «ساخت محصول» به‌صورت پیش‌نمایش، و از فاز «روز بازار» برای خرید باز می‌شود." />
-        </Container>
-      </>
-    );
-  }
+  const status = await moduleStatusFor("market", user.teamId);
+  if (status === "hidden") notFound();
+  if (status === "closed") return <ModuleClosed moduleKey="market" title="بازار" />;
 
-  const browsingOnly = phase === "BUILD";
-  const closed = phaseIndex(phase) > phaseIndex("MARKET");
-  const readOnly = browsingOnly || closed;
+  const readOnly = status !== "open";
   const sort = (SORTS.find((s) => s.key === sp.sort)?.key ?? "all") as MarketSort;
-  const [products, adWinners, aiRows] = await Promise.all([
+  const [allProducts, adWinners, aiRows, tracks] = await Promise.all([
     getMarketProducts(sort, { userId: user.id }),
     readOnly ? Promise.resolve([]) : getCurrentAdSlotWinners(),
     // برچسب هوش مصنوعی کارت‌ها (نمرهٔ داور هوش مصنوعی) — MarketCard این دو فیلد را ندارد.
     // کش کوتاه مشترک (مثل کارت‌های بازار) تا هر بازدید یک کوئری تازه نسازد.
     cached(`${MARKET_CACHE_PREFIX}ai`, 3_000, () =>
-      prisma.product.findMany({ where: { submittedAt: { not: null } }, select: { id: true, aiQuality: true, aiNotes: true } })
+      prisma.product.findMany({ where: { submittedAt: { not: null } }, select: { id: true, aiQuality: true, aiNotes: true, aiFinal: true, aiFinalNotes: true } })
     ),
+    listVisibleTracks(),
   ]);
-  const aiTagById = new Map<string, AiTagInfo | null>(aiRows.map((r) => [r.id, productAiTag(r)]));
+  // نمرهٔ نمایشی: ارزیابی نهایی اگر انجام شده، وگرنه بازخورد اولیه
+  const aiTagById = new Map<string, AiTagInfo | null>(
+    aiRows.map((r) => [r.id, productAiTag({ aiQuality: r.aiFinal ?? r.aiQuality, aiNotes: r.aiFinalNotes ?? r.aiNotes })])
+  );
+  const trackId = tracks.find((t) => t.id === sp.track)?.id ?? null;
+  const visibleIds = new Set(tracks.map((t) => t.id));
+  const trackName = new Map(tracks.map((t) => [t.id, t.name]));
+  const products = allProducts.filter((p) => visibleIds.has(p.trackId) && (!trackId || p.trackId === trackId));
+  const hrefFor = (nextTrack: string | null, nextSort: MarketSort = sort) => {
+    const q = new URLSearchParams();
+    if (nextSort !== "all") q.set("sort", nextSort);
+    if (nextTrack) q.set("track", nextTrack);
+    const s = q.toString();
+    return s ? `/market?${s}` : "/market";
+  };
 
   const banner = adWinners.find((w) => w.kind === "BANNER");
   const featured = adWinners.find((w) => w.kind === "FEATURED");
   const ordered = featured
-    ? [...products].sort((a, b) => Number(b.teamId === featured.teamId) - Number(a.teamId === featured.teamId))
+    ? [...products].sort((a, b) => Number(b.slug === featured.productSlug) - Number(a.slug === featured.productSlug))
     : products;
 
   return (
     <>
       <PageHeader
-        eyebrow="فاز فعلی"
         title="بازار"
-        desc={browsingOnly ? "پیش‌نمایش محصولات؛ خرید از فاز «روز بازار» باز می‌شود." : closed ? "روز بازار تمام شد؛ محصولات فقط برای تماشا باز هستند." : "با سکه‌هایت از تیم‌های دیگر بخر و قلب بده؛ هر خرید یعنی حمایت از آن تیم."}
+        desc={readOnly ? "محصولات فعلاً فقط برای تماشا باز هستند." : "با سکه‌هایت از تیم‌های دیگر بخر و قلب بده؛ هر خرید یعنی حمایت از آن تیم."}
       />
       <Container className="space-y-6">
+        {status === "ro" && <ModuleReadOnly moduleKey="market" />}
         {banner && (
           <Link href={`/market/${banner.productSlug}`} className="card relative overflow-hidden flex items-center gap-4 p-4 sm:p-6 anim-rise hover:shadow-lift transition">
             <div className="relative size-16 sm:size-20 rounded-2xl overflow-hidden shrink-0">
@@ -92,12 +91,14 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
 
         {!readOnly && <SalesTicker buyWallet={user.buyWallet} />}
 
+        <TrackSwitcher tracks={tracks} current={trackId} hrefFor={(id) => hrefFor(id)} allLabel="همهٔ محورها" />
+
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap gap-2">
             {SORTS.map((s) => (
               <Link
                 key={s.key}
-                href={s.key === "all" ? "/market" : `/market?sort=${s.key}`}
+                href={hrefFor(trackId, s.key)}
                 className={sort === s.key ? "chip bg-brand-navy text-white" : "chip-navy hover:bg-brand-mist"}
               >
                 {s.label}
@@ -116,7 +117,7 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 stagger">
             {ordered.map((p) => {
-              const isFeatured = featured?.teamId === p.teamId;
+              const isFeatured = featured?.productSlug === p.slug;
               const isOwnTeam = user.teamId === p.teamId;
               return (
                 <Link
@@ -133,6 +134,7 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
                   <div className="p-4 space-y-2">
                     <div className="flex flex-wrap items-center gap-2 text-xs text-brand-slate">
                       <span className="font-bold text-brand-navy">{p.teamName}</span>
+                      {!trackId && tracks.length > 1 && <span className="chip-cyan">{trackName.get(p.trackId)}</span>}
                       <AiTag tag={aiTagById.get(p.id) ?? null} compact />
                       {p.bought && <span className="chip-ok">✓ خریدی</span>}
                     </div>
@@ -145,10 +147,8 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
                         <span>❤️ {fa(p.hearts)}</span>
                       </div>
                     </div>
-                    {browsingOnly ? (
-                      <span className="chip-cyan w-full justify-center mt-1">به‌زودی</span>
-                    ) : closed ? (
-                      <span className="chip-navy w-full justify-center mt-1">بازار بسته شد</span>
+                    {readOnly ? (
+                      <span className="chip-navy w-full justify-center mt-1">فقط تماشا</span>
                     ) : isOwnTeam ? (
                       <span className="chip-navy w-full justify-center mt-1">تیم خودت</span>
                     ) : (

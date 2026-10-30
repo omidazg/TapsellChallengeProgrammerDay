@@ -98,10 +98,10 @@ async function main() {
     check("notifyAll به هر دو کاربر رسید", (await unreadCount(u1.id)) === beforeAll1 + 1 && (await unreadCount(u2.id)) === beforeAll2 + 1);
 
     const beforePhase1 = await unreadCount(u1.id);
-    await notifyPhaseChange("BUILD");
+    await notifyPhaseChange("CLOSED");
     allTestEnd = new Date();
     const afterPhase = await listNotifications(u1.id, 1);
-    check("notifyPhaseChange عنوان فاز را می‌فرستد", (await unreadCount(u1.id)) === beforePhase1 + 1 && afterPhase[0].href === "/build", JSON.stringify(afterPhase[0]));
+    check("notifyPhaseChange عنوان فاز را می‌فرستد", (await unreadCount(u1.id)) === beforePhase1 + 1 && afterPhase[0].href === "/results", JSON.stringify(afterPhase[0]));
 
     console.log("\n# ۵ — اطلاعیه‌ها (Announcement)");
     await createAnnouncement(`اطلاعیهٔ ${TAG}`, "warning");

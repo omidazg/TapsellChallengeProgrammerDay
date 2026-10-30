@@ -72,6 +72,10 @@ async function main() {
       adslot_price_featured: "40",
       adslot_price_push: "80",
       adslot_max_per_team: "2",
+      adslot_hours: "24",
+      rating_min_comments: "10",
+      prize_min_entries: "3",
+      prize_min_jury: "50",
       market_starts_at: "",
     };
     eq("فرم آزمون همهٔ کلیدهای SETTING_KEYS را دارد", JSON.stringify(Object.keys(baseGame).sort()), JSON.stringify([...SETTING_KEYS].sort()));
@@ -105,13 +109,8 @@ async function main() {
 
     // ---------- تنظیمات زمان‌بند: ورودی معتبر، شامل چک‌باکس غایب ----------
     const validScheduler = formDataOf({
-      auto_advance: "1",
       // auto_auction عمداً غایب است ← باید "0" شود
       auction_gap_sec: "60.9", // باید truncate شود به ۶۰
-      phase_hours_IDEATION: "24",
-      phase_hours_SEED_ROUND: "24",
-      phase_hours_BUILD: "48",
-      phase_hours_MARKET: "6",
     });
     const parsedScheduler = parseSchedulerSettings(validScheduler);
     check("تنظیمات زمان‌بند معتبر: بدون خطا", parsedScheduler.ok, parsedScheduler);
@@ -122,13 +121,8 @@ async function main() {
 
     // ---------- تنظیمات زمان‌بند: عدد منفی رد می‌شود ----------
     const negativeScheduler = formDataOf({
-      auto_advance: "0",
       auto_auction: "0",
       auction_gap_sec: "-5",
-      phase_hours_IDEATION: "24",
-      phase_hours_SEED_ROUND: "24",
-      phase_hours_BUILD: "48",
-      phase_hours_MARKET: "6",
     });
     const parsedNegative = parseSchedulerSettings(negativeScheduler);
     check("تنظیمات زمان‌بند: عدد منفی رد می‌شود", !parsedNegative.ok, parsedNegative);

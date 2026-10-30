@@ -27,19 +27,18 @@ export const settingsSchema = z.object({
   adslot_price_push: z.coerce.number().int().min(1),
   adslot_max_per_team: z.coerce.number().int().min(0),
   auction_duration_sec: z.coerce.number().int().min(10),
+  adslot_hours: z.coerce.number().int().min(1),
+  rating_min_comments: z.coerce.number().int().min(0),
+  prize_min_entries: z.coerce.number().int().min(0),
+  prize_min_jury: z.coerce.number().int().min(0).max(100),
   market_starts_at: z
     .string()
     .optional()
     .default("")
-    .refine((v) => v === "" || !Number.isNaN(new Date(v).getTime()), "زمان شروع روز بازار نامعتبر است"),
+    .refine((v) => v === "" || !Number.isNaN(new Date(v).getTime()), "زمان شروع نخستین جایگاه تبلیغاتی نامعتبر است"),
   // تنظیمات زمان‌بند خودکار
-  auto_advance: numeric01,
   auto_auction: numeric01,
   auction_gap_sec: nonNegativeInt,
-  phase_hours_IDEATION: nonNegativeInt,
-  phase_hours_SEED_ROUND: nonNegativeInt,
-  phase_hours_BUILD: nonNegativeInt,
-  phase_hours_MARKET: nonNegativeInt,
 });
 
 export const gameSettingsSchema = settingsSchema.pick({
@@ -52,18 +51,17 @@ export const gameSettingsSchema = settingsSchema.pick({
   adslot_price_push: true,
   adslot_max_per_team: true,
   auction_duration_sec: true,
+  adslot_hours: true,
   market_starts_at: true,
+  rating_min_comments: true,
+  prize_min_entries: true,
+  prize_min_jury: true,
 });
 export type GameSettingsInput = z.infer<typeof gameSettingsSchema>;
 
 export const schedulerSettingsSchema = settingsSchema.pick({
-  auto_advance: true,
   auto_auction: true,
   auction_gap_sec: true,
-  phase_hours_IDEATION: true,
-  phase_hours_SEED_ROUND: true,
-  phase_hours_BUILD: true,
-  phase_hours_MARKET: true,
 });
 export type SchedulerSettingsInput = z.infer<typeof schedulerSettingsSchema>;
 

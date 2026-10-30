@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { hashPassword, createSession, getSessionUserId } from "@/lib/auth";
 import { accessState, canRegister, type AccessState } from "@/lib/whitelist";
-import { getPhase, getSettingInt } from "@/lib/phase";
+import { getSettingInt } from "@/lib/phase";
+import { moduleOpen } from "@/lib/module-state";
 import { DEFAULTS, ROLES } from "@/lib/constants";
 import {
   rateLimit,
@@ -144,8 +145,7 @@ export async function registerAction(input: RegisterInput): Promise<RegisterFail
     return { error: "از قبل وارد شده‌ای." };
   }
 
-  const { phase } = await getPhase();
-  if (phase !== "REGISTRATION") {
+  if (!(await moduleOpen("registration"))) {
     return { error: "ثبت‌نام بسته شده است." };
   }
 

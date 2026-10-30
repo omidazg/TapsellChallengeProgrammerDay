@@ -6,8 +6,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { PHASE_LABEL, type Phase } from "@/lib/phases";
 import { fa, duration } from "@/lib/persian";
-import { isActive, navFor, navState, WALLET_ITEMS, type NavItem } from "./NavConfig";
-import { NavBottomBar, NavPhaseMark } from "./NavBottomBar";
+import { isActive, navFor, visibleItems, WALLET_ITEMS, type ModuleStatuses, type NavItem } from "./NavConfig";
+import { NavBottomBar } from "./NavBottomBar";
 import { Avatar } from "./Avatar";
 import { NotificationBell } from "./NotificationBell";
 import { ThemeToggle } from "./ThemeToggle";
@@ -18,14 +18,14 @@ import { ConfirmProvider } from "./ConfirmDialog";
 import { GROUP_NAME } from "@/lib/pillars";
 
 /** buyWallet همان «کیف سکه» است (تنها کیف بازی) */
-type ShellUser = { id: string; nickname: string; isAdmin: boolean; buyWallet: number; teamName: string | null; avatarSeed: string };
+type ShellUser = { id: string; nickname: string; panelHref: string | null; buyWallet: number; teamName: string | null; avatarSeed: string };
 
-// فهرست مقصدها، فاز بازشدن و فاز «زنده»ٔ هر آیتم در NavConfig.ts است (مشترک با نوار پایین موبایل).
+// فهرست مقصدها و بخش وابستهٔ هر آیتم در NavConfig.ts است (مشترک با نوار پایین موبایل).
 const EXTRA_MOBILE: NavItem[] = [...WALLET_ITEMS, { href: "/profile", label: "پروفایل", icon: "🙂" }];
 const ADMIN_ITEM: NavItem = { href: "/admin", label: "برگزارکننده", icon: "🎛️" };
 
 /** aiOff: کلید هوش مصنوعی روی سرور نیست (از layout)؛ دستیار به‌جای گفت‌وگو کارت توضیح نشان می‌دهد */
-type ShellProps = { user: ShellUser | null; phase: Phase; phaseEndsAt: string | null; aiOff?: boolean; children: React.ReactNode };
+type ShellProps = { user: ShellUser | null; phase: Phase; phaseEndsAt: string | null; modules: ModuleStatuses; aiOff?: boolean; children: React.ReactNode };
 
 /** پوستهٔ برنامه؛ ConfirmProvider (پنجرهٔ تأیید جایگزین confirm()) یک‌بار همین‌جا برای کل سایت نصب می‌شود. */
 export function AppShell(props: ShellProps) {
@@ -36,8 +36,9 @@ export function AppShell(props: ShellProps) {
   );
 }
 
-function Shell({ user, phase, phaseEndsAt, aiOff = false, children }: ShellProps) {
+function Shell({ user, phase, phaseEndsAt, modules, aiOff = false, children }: ShellProps) {
   const path = usePathname();
+  const coinsVisible = modules.coins !== "hidden";
   // دکمه‌ای که منو را باز کرده («بیشتر» نوار پایین) تا فوکوس با Escape به همان برگردد
   const menuOpenerRef = useRef<HTMLButtonElement | null>(null);
   // منو فقط در مسیری که باز شده باز می‌ماند؛ با تغییر مسیر خودبه‌خود بسته می‌شود (بدون effect)
@@ -71,7 +72,7 @@ function Shell({ user, phase, phaseEndsAt, aiOff = false, children }: ShellProps
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setOpen هر بار از setOpenAt بازساخته می‌شود اما پایدار است
   }, [open]);
 
-  // بنر «نظرسنجی پایان بازی»: فقط وقتی فاز CLOSED است و کاربر هنوز پاسخ نداده.
+  // بنر «نظرسنجی پایان بازی»: فقط وقتی بازی بسته شده و کاربر هنوز پاسخ نداده.
   // وضعیت به‌جای صفرشدن داخل افکت، از روی user/phase محاسبه می‌شود؛ هم setState همگام
   // داخل افکت (هشدار react-hooks) حذف می‌شود و هم بنر قبل از رسیدن پاسخ سرور پرش نمی‌کند.
   const [surveyAnswered, setSurveyAnswered] = useState<boolean | null>(null);
@@ -109,7 +110,7 @@ function Shell({ user, phase, phaseEndsAt, aiOff = false, children }: ShellProps
           </Link>
 
           <div className="mr-auto flex items-center gap-1.5 sm:gap-2 min-w-0">
-            {/* برای مهمان روی موبایل جا تنگ است و خود صفحهٔ فرود فاز را نشان می‌دهد */}
+            {/* برای مهمان روی موبایل جا تنگ است و خود صفحهٔ فرود وضعیت را نشان می‌دهد */}
             <span className={user ? "contents" : "hidden sm:contents"}>
               <PhasePill phase={phase} endsAt={phase === "CLOSED" ? null : phaseEndsAt} />
             </span>
@@ -120,9 +121,11 @@ function Shell({ user, phase, phaseEndsAt, aiOff = false, children }: ShellProps
                     <span aria-hidden>🪙</span> <span className="fa-num">{fa(user.buyWallet)}</span>
                     <span className="sr-only"> سکه در کیف</span>
                   </Link>
-                  <Link href="/coins" className="rounded-pill px-2.5 py-1.5 text-brand-cyan-dark hover:bg-brand-mist" title="خرید سکه">
-                    + خرید سکه
-                  </Link>
+                  {coinsVisible && (
+                    <Link href="/coins" className="rounded-pill px-2.5 py-1.5 text-brand-cyan-dark hover:bg-brand-mist" title="خرید سکه">
+                      + خرید سکه
+                    </Link>
+                  )}
                 </span>
                 <NotificationBell phase={phase} />
                 <ThemeToggle className="hidden lg:inline-flex" />
@@ -140,7 +143,7 @@ function Shell({ user, phase, phaseEndsAt, aiOff = false, children }: ShellProps
                 <ThemeToggle className="hidden sm:inline-flex" />
                 <Link href="/guide" className="hidden sm:inline-flex btn-ghost !py-1.5 !px-4">راهنمای بازی</Link>
                 <Link href="/login" className="btn-ghost !py-1.5 !px-4">ورود</Link>
-                <Link href="/register" className="btn-primary !py-1.5 !px-4">ثبت‌نام</Link>
+                {modules.registration !== "hidden" && <Link href="/register" className="btn-primary !py-1.5 !px-4">ثبت‌نام</Link>}
               </>
             )}
           </div>
@@ -150,27 +153,24 @@ function Shell({ user, phase, phaseEndsAt, aiOff = false, children }: ShellProps
         {user && (
           <nav className="hidden lg:block border-t border-brand-mist/70" aria-label="ناوبری اصلی">
             <div className="mx-auto max-w-7xl px-4 h-11 flex items-center gap-1 overflow-x-auto no-scrollbar">
-              {navFor(phase).map((n) => {
+              {navFor(modules).map((n) => {
                 const active = isActive(path, n.href);
-                const { live, locked, lockHint } = navState(n, phase);
                 return (
                   <Link
                     key={n.href}
                     href={n.href}
-                    title={lockHint ?? (live ? "فاز جاری" : undefined)}
                     aria-current={active ? "page" : undefined}
-                    className={`inline-flex items-center gap-1.5 rounded-pill px-3.5 py-1.5 text-sm font-bold whitespace-nowrap transition ${active ? "bg-brand-navy text-white" : locked ? "text-brand-slate hover:bg-brand-ice hover:text-brand-navy" : "text-brand-navy hover:bg-brand-ice"}`}
+                    className={`inline-flex items-center gap-1.5 rounded-pill px-3.5 py-1.5 text-sm font-bold whitespace-nowrap transition ${active ? "bg-brand-navy text-white" : "text-brand-navy hover:bg-brand-ice"}`}
                   >
                     {n.label}
-                    <NavPhaseMark live={live} lockHint={lockHint} />
                   </Link>
                 );
               })}
-              {user.isAdmin && (
+              {user.panelHref && (
                 <Link
-                  href="/admin"
-                  aria-current={isActive(path, "/admin") ? "page" : undefined}
-                  className={`mr-auto rounded-pill px-3.5 py-1.5 text-sm font-bold whitespace-nowrap ${isActive(path, "/admin") ? "bg-brand-red text-white" : "text-brand-red hover:bg-red-50"}`}
+                  href={user.panelHref}
+                  aria-current={isActive(path, user.panelHref) ? "page" : undefined}
+                  className={`mr-auto rounded-pill px-3.5 py-1.5 text-sm font-bold whitespace-nowrap ${isActive(path, user.panelHref) ? "bg-brand-red text-white" : "text-brand-red hover:bg-red-50"}`}
                 >
                   برگزارکننده
                 </Link>
@@ -187,32 +187,29 @@ function Shell({ user, phase, phaseEndsAt, aiOff = false, children }: ShellProps
               className="absolute inset-x-0 z-40 border-t border-brand-mist bg-white px-3 py-3 shadow-lift max-h-[calc(100dvh-3.5rem-var(--bottom-nav-h,0px))] overflow-y-auto overscroll-contain"
             >
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {[...navFor(phase), ...EXTRA_MOBILE, ...(user.isAdmin ? [ADMIN_ITEM] : [])].map((n) => {
+                {[...navFor(modules), ...visibleItems(EXTRA_MOBILE, modules), ...(user.panelHref ? [{ ...ADMIN_ITEM, href: user.panelHref }] : [])].map((n) => {
                   const active = isActive(path, n.href);
-                  const { live, locked, lockHint } = navState(n, phase);
                   return (
                     <Link
                       key={n.href}
                       href={n.href}
                       onClick={() => setOpen(false)}
-                      title={lockHint ?? undefined}
                       aria-current={active ? "page" : undefined}
-                      className={`flex items-center gap-2 rounded-2xl px-3 py-3 text-sm font-bold min-h-12 ${active ? "bg-brand-navy text-white" : n.href === "/admin" ? "bg-red-50 text-brand-red" : locked ? "bg-brand-ice text-brand-slate" : "bg-brand-ice text-brand-navy"}`}
+                      className={`flex items-center gap-2 rounded-2xl px-3 py-3 text-sm font-bold min-h-12 ${active ? "bg-brand-navy text-white" : n.href === "/admin" ? "bg-red-50 text-brand-red" : "bg-brand-ice text-brand-navy"}`}
                     >
                       <span aria-hidden>{n.icon}</span>
                       <span className="truncate">{n.label}</span>
-                      <span className="mr-auto inline-flex items-center">
-                        <NavPhaseMark live={live} lockHint={lockHint} />
-                      </span>
                     </Link>
                   );
                 })}
               </div>
               <div className="md:hidden mt-3 flex items-center justify-between rounded-2xl border border-brand-mist px-4 py-2.5 text-xs font-bold text-brand-navy">
                 <span>🪙 کیف سکه: <span className="fa-num">{fa(user.buyWallet)}</span></span>
-                <Link href="/coins" onClick={() => setOpen(false)} className="inline-flex items-center min-h-11 -my-2 px-2 -mx-2 text-brand-cyan-dark underline-offset-4 hover:underline">
-                  + خرید سکه
-                </Link>
+                {coinsVisible && (
+                  <Link href="/coins" onClick={() => setOpen(false)} className="inline-flex items-center min-h-11 -my-2 px-2 -mx-2 text-brand-cyan-dark underline-offset-4 hover:underline">
+                    + خرید سکه
+                  </Link>
+                )}
               </div>
               {/* فقط وقتی منو باز است mount می‌شود: وگرنه نسخهٔ دوم زنگ هم هر ۲۰ ثانیه poll می‌کرد */}
               {open && (
@@ -266,7 +263,7 @@ function Shell({ user, phase, phaseEndsAt, aiOff = false, children }: ShellProps
       {user && (
         <NavBottomBar
           path={path}
-          phase={phase}
+          modules={modules}
           menuOpen={open}
           onMore={(button) => {
             menuOpenerRef.current = button;

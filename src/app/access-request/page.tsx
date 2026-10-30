@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { getPhase } from "@/lib/phase";
+import { moduleOpen } from "@/lib/module-state";
 import { PageHeader, Container, Alert } from "@/components/ui";
 import { AccessRequestForm } from "./AccessRequestForm";
 
@@ -9,7 +9,7 @@ export const metadata = { title: "درخواست دسترسی" };
 export default async function AccessRequestPage({ searchParams }: { searchParams: Promise<{ email?: string; phone?: string }> }) {
   const { email, phone } = await searchParams;
   if (await getCurrentUser()) redirect("/team");
-  const { phase } = await getPhase();
+  const registrationOpen = await moduleOpen("registration");
 
   return (
     <>
@@ -20,8 +20,8 @@ export default async function AccessRequestPage({ searchParams }: { searchParams
       />
       <Container>
         <div className="mx-auto max-w-md space-y-4">
-          {phase !== "REGISTRATION" && (
-            <Alert kind="info">فاز ثبت‌نام الان بسته است؛ درخواستت ثبت می‌شود ولی حتی پس از تأیید، ساخت حساب فقط وقتی ممکن است که برگزارکننده ثبت‌نام را دوباره باز کند.</Alert>
+          {!registrationOpen && (
+            <Alert kind="info">ثبت‌نام الان بسته است؛ درخواستت ثبت می‌شود ولی حتی پس از تأیید، ساخت حساب فقط وقتی ممکن است که برگزارکننده ثبت‌نام را دوباره باز کند.</Alert>
           )}
           <p className="text-center text-sm text-brand-slate">
             قبلاً درخواست داده‌ای؟{" "}

@@ -66,7 +66,7 @@ async function main() {
   const createdTeamIds = new Set<string>();
 
   try {
-    await setPhase("REGISTRATION", original.endsAt);
+    await setPhase("LIVE", original.endsAt);
 
     console.log("\n# ۱ — ساخت کاربر و رمز");
     const u1 = await makeUser("a", "BUILDER");
@@ -171,29 +171,27 @@ async function main() {
     );
     createdTeamIds.delete(teamWithInviteId);
 
-    console.log("\n# ۷ — قفل فاز");
-    // سیاست فاز (src/lib/team.ts): «ترک تیم» فقط در فاز ثبت‌نام،
-    // اما «ساخت/دعوت» تا پایان «اتاق ایده» باز می‌ماند.
-    await setPhase("IDEATION", original.endsAt);
-    const lvLate = await leaveTeam(u3.id);
-    check("ترک تیم خارج از فاز ثبت‌نام رد می‌شود", !!lvLate.error, JSON.stringify(lvLate));
-    const mkIdeation = await createTeamForUser(u4.id, "تیم اتاق ایده");
-    check("ساخت تیم در فاز «اتاق ایده» هنوز مجاز است", !mkIdeation.error, JSON.stringify(mkIdeation));
+    console.log("\n# ۷ — قفل بخش تیم");
+    // ساخت، دعوت و ترک تیم فقط وقتی بخش تیم باز است ممکن است.
+    const { setModuleStatus } = await import("../src/lib/module-state");
+    const mkIdeation = await createTeamForUser(u4.id, "تیم بخش باز");
+    check("ساخت تیم وقتی بخش تیم باز است مجاز است", !mkIdeation.error, JSON.stringify(mkIdeation));
     const u4d = await prisma.user.findUnique({ where: { id: u4.id }, select: { teamId: true } });
     if (u4d?.teamId) createdTeamIds.add(u4d.teamId);
     const invIdeation = await inviteToTeam(u4.id, mail("ideation"));
-    check("دعوت در فاز «اتاق ایده» هنوز مجاز است", !invIdeation.error, JSON.stringify(invIdeation));
+    check("دعوت وقتی بخش تیم باز است مجاز است", !invIdeation.error, JSON.stringify(invIdeation));
 
     // دعوت‌ها از تیم تازهٔ u4 فرستاده می‌شود؛ تیم u1 پر است و
-    // خطای «تیم پر است» قبولی جعلی برای آزمون قفل فاز می‌ساخت.
-    // مرز واقعی: از «دور حمایت» به بعد تشکیل تیم بسته است.
-    await setPhase("SEED_ROUND", original.endsAt);
+    // خطای «تیم پر است» قبولی جعلی برای آزمون قفل بخش می‌ساخت.
+    await setModuleStatus("team", "closed");
+    const lvLate = await leaveTeam(u3.id);
+    check("ترک تیم وقتی بخش تیم بسته است رد می‌شود", !!lvLate.error, JSON.stringify(lvLate));
     const u5 = await makeUser("e", "BUILDER");
     const mkLate = await createTeamForUser(u5.id, "تیم دیرهنگام");
-    check("ساخت تیم بعد از «اتاق ایده» رد می‌شود", !!mkLate.error, JSON.stringify(mkLate));
+    check("ساخت تیم وقتی بخش تیم بسته است رد می‌شود", !!mkLate.error, JSON.stringify(mkLate));
     const invLate = await inviteToTeam(u4.id, mail("late"));
-    check("دعوت بعد از «اتاق ایده» رد می‌شود", !!invLate.error, JSON.stringify(invLate));
-    await setPhase("REGISTRATION", original.endsAt);
+    check("دعوت وقتی بخش تیم بسته است رد می‌شود", !!invLate.error, JSON.stringify(invLate));
+    await setModuleStatus("team", "open");
   } finally {
     console.log("\n# پاک‌سازی");
     const users = await prisma.user.findMany({ where: { email: { startsWith: TAG } }, select: { id: true, teamId: true } });

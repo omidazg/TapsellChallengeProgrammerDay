@@ -215,6 +215,11 @@ export type ProductForChecklist = {
   price: number;
   specialName: string;
   submittedAt: Date | null;
+  /** نوع و دستهٔ محور؛ بدون آن همان الزامات ساخت محصول اعمال می‌شود. */
+  trackKind?: string;
+  trackCategory?: string;
+  category?: string;
+  deliverableUrl?: string;
 };
 
 /**
@@ -225,15 +230,39 @@ export type ProductForChecklist = {
 export function buildChecklist(p: ProductForChecklist, maxPrice: number = DEFAULTS.maxPrice): ChecklistItem[] {
   const images = parseImages(p.images);
   const hasName = p.name.trim().length > 0;
+  const nameItem: ChecklistItem = { key: "name", label: "نام و توضیح", done: hasName && p.description.trim().length > 0, fieldId: hasName ? "description" : "name" };
+  const priceItem: ChecklistItem = { key: "price", label: "قیمت", done: p.price >= DEFAULTS.minPrice && p.price <= maxPrice, fieldId: "price" };
+  const submitItem: ChecklistItem = { key: "submit", label: "ثبت نهایی", done: !!p.submittedAt, fieldId: "productFinalSubmit" };
+  const hasDeliverable = (p.deliverableUrl ?? "").trim().length > 0;
+
+  if (p.trackKind === "CONTENT") {
+    return [
+      nameItem,
+      { key: "deliverable", label: "لینک محتوای تولیدشده", done: hasDeliverable, fieldId: "deliverableUrl" },
+      priceItem,
+      submitItem,
+    ];
+  }
+  if (p.trackKind === "OS") {
+    return [
+      nameItem,
+      { key: "deliverable", label: "لینک PR/MR یا تحویل", done: hasDeliverable, fieldId: "deliverableUrl" },
+      priceItem,
+      submitItem,
+    ];
+  }
   return [
     // اگر نام پر است ولی توضیح نه، کلیک به فیلد توضیح می‌رود
-    { key: "name", label: "نام و توضیح", done: hasName && p.description.trim().length > 0, fieldId: hasName ? "description" : "name" },
+    nameItem,
+    ...(p.trackCategory === "MIXED"
+      ? [{ key: "category", label: "دستهٔ فنی یا غیرفنی", done: p.category === "TECH" || p.category === "NON_TECH", fieldId: "category" }]
+      : []),
     { key: "demo", label: "لینک دمو", done: p.demoUrl.trim().length > 0, fieldId: "demoUrl" },
     { key: "teaser", label: "تیزر", done: p.teaserUrl.trim().length > 0, fieldId: "teaserUrl" },
     { key: "images", label: `حداقل ${fa(MIN_IMAGES_FOR_SUBMIT)} تصویر`, done: images.length >= MIN_IMAGES_FOR_SUBMIT, fieldId: "productImageUrl" },
-    { key: "price", label: "قیمت", done: p.price >= DEFAULTS.minPrice && p.price <= maxPrice, fieldId: "price" },
+    priceItem,
     { key: "special", label: "نسخهٔ ویژه", done: p.specialName.trim().length > 0, fieldId: "specialName" },
-    { key: "submit", label: "ثبت نهایی", done: !!p.submittedAt, fieldId: "productFinalSubmit" },
+    submitItem,
   ];
 }
 

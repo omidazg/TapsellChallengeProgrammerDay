@@ -2,8 +2,6 @@ import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { coinSales, getPrizePool } from "@/lib/prize-pool";
-import { formatMillion } from "@/lib/prizes";
 import { getManualInstructions, getPaymentDriver, MANUAL_INSTRUCTIONS_KEY, type CoinOrderStatus } from "@/lib/coins";
 import { COIN_PRICE_TOMAN, DEFAULTS } from "@/lib/constants";
 import { getSettingInt } from "@/lib/phase";
@@ -50,7 +48,7 @@ export default async function AdminCoinsPage({ searchParams }: { searchParams: P
   const where: Prisma.CoinOrderWhereInput = filter === "all" ? {} : { status: filter };
 
   const driver = getPaymentDriver();
-  const [orders, groups, sales, pool, instructions, customInstructions, maxPerUser] = await Promise.all([
+  const [orders, groups, instructions, customInstructions, maxPerUser] = await Promise.all([
     prisma.coinOrder.findMany({
       where,
       include: { user: { select: { nickname: true, email: true, phone: true } } },
@@ -58,9 +56,7 @@ export default async function AdminCoinsPage({ searchParams }: { searchParams: P
       orderBy: { createdAt: filter === "PENDING" ? "asc" : "desc" },
       take: PAGE_LIMIT,
     }),
-    prisma.coinOrder.groupBy({ by: ["status"], _count: true, _sum: { coins: true } }),
-    coinSales(),
-    getPrizePool(),
+    prisma.coinOrder.groupBy({ by: ["status"], _count: true, _sum: { coins: true, amountRial: true } }),
     getManualInstructions(),
     prisma.setting.findUnique({ where: { key: MANUAL_INSTRUCTIONS_KEY } }),
     getSettingInt("max_bought_coins_per_user", DEFAULTS.maxBoughtCoinsPerUser),
@@ -68,6 +64,7 @@ export default async function AdminCoinsPage({ searchParams }: { searchParams: P
 
   const countOf = (s: string) => groups.find((g) => g.status === s)?._count ?? 0;
   const pendingCoins = groups.find((g) => g.status === "PENDING")?._sum.coins ?? 0;
+  const paid = groups.find((g) => g.status === "PAID");
   const totalCount = groups.reduce((a, g) => a + g._count, 0);
   const filterCount = (f: Filter) => (f === "all" ? totalCount : countOf(f));
 
@@ -76,18 +73,12 @@ export default async function AdminCoinsPage({ searchParams }: { searchParams: P
       <PageHeader
         eyebrow="پنل برگزارکننده"
         title="سکه و پرداخت"
-        desc={`فروش سکه (هر سکه ${fa(COIN_PRICE_TOMAN)} تومان)، تأیید پرداخت‌ها و راهنمای پرداخت دستی. همهٔ مبلغ فروش به صندوق جایزه اضافه می‌شود.`}
+        desc={`فروش سکه (هر سکه ${fa(COIN_PRICE_TOMAN)} تومان)، تأیید پرداخت‌ها و راهنمای پرداخت دستی.`}
       />
       <Container className="space-y-6">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger">
-          <Stat label="سکهٔ فروخته‌شده" value={fa(sales.coins)} hint={`${fa(sales.orders)} سفارش پرداخت‌شده`} tone="cyan" />
-          <Stat label="مبلغ فروش" value={fa(sales.toman)} hint="تومان" tone="navy" />
-          <Stat
-            label="صندوق جایزه"
-            value={fa(formatMillion(pool.totalMillion))}
-            hint={`میلیون تومان (پایه ${fa(formatMillion(pool.baseMillion))} + ${fa(formatMillion(pool.extraMillion))} از فروش سکه)`}
-            tone="gold"
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 stagger">
+          <Stat label="سکهٔ فروخته‌شده" value={fa(paid?._sum.coins ?? 0)} hint={`${fa(paid?._count ?? 0)} سفارش پرداخت‌شده`} tone="cyan" />
+          <Stat label="مبلغ فروش" value={fa((paid?._sum.amountRial ?? 0) / 10)} hint="تومان" tone="navy" />
           <Stat label="در انتظار پرداخت" value={fa(countOf("PENDING"))} hint={`${fa(pendingCoins)} سکه`} tone="red" />
         </div>
 
@@ -102,8 +93,8 @@ export default async function AdminCoinsPage({ searchParams }: { searchParams: P
           </div>
           {driver.name === "fake" ? (
             <Alert kind="error">
-              ⚠ درگاه آزمایشی فعال است: خریدار فقط دکمهٔ «پرداخت موفق» را می‌زند و پولی دریافت نمی‌شود، ولی سکه به کیفش و مبلغ به
-              صندوق جایزه اضافه می‌شود. پیش از روز بازی متغیر محیطی <code dir="ltr">PAYMENT_DRIVER</code> را روی درگاه واقعی یا{" "}
+              ⚠ درگاه آزمایشی فعال است: خریدار فقط دکمهٔ «پرداخت موفق» را می‌زند و پولی دریافت نمی‌شود، ولی سکه به کیفش
+              اضافه می‌شود. پیش از شروع مسابقه متغیر محیطی <code dir="ltr">PAYMENT_DRIVER</code> را روی درگاه واقعی یا{" "}
               <code dir="ltr">manual</code> بگذار.
             </Alert>
           ) : driver.online ? (

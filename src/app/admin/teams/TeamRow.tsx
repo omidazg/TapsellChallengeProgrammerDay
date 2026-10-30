@@ -118,8 +118,8 @@ export type TeamRowData = {
   members: Member[];
   cheatPenalty: number;
   cheatNote: string;
-  ideaSubmitted: boolean;
-  productSubmitted: boolean;
+  /** وضعیت ایده و محصول در هر محوری که تیم وارد شده است */
+  entries: { trackId: string; trackName: string; ideaSubmitted: boolean; productSubmitted: boolean }[];
 };
 
 /** فرم کسر امتیاز تقلب: عدد صحیح ≥ ۰ و دلیلی که به تیم نشان داده می‌شود */
@@ -233,8 +233,12 @@ export function TeamRow({ team, allTeams }: { team: TeamRowData; allTeams: { id:
         <div className="flex flex-wrap items-center gap-2 text-xs">
           {team.solo && <span className="chip chip-gold">👤 شرکت فردی</span>}
           {team.cheatPenalty > 0 && <span className="chip chip-red fa-num">−{fa(team.cheatPenalty)} تقلب</span>}
-          <span className={`chip ${team.ideaSubmitted ? "chip-ok" : "chip-navy"}`}>{team.ideaSubmitted ? "ایده ثبت شد" : "بدون ایده"}</span>
-          <span className={`chip ${team.productSubmitted ? "chip-ok" : "chip-navy"}`}>{team.productSubmitted ? "محصول ثبت شد" : "بدون محصول"}</span>
+          {team.entries.length === 0 && <span className="chip chip-navy">بدون ایده و محصول</span>}
+          {team.entries.map((e) => (
+            <span key={e.trackId} className={`chip ${e.productSubmitted ? "chip-ok" : e.ideaSubmitted ? "chip-cyan" : "chip-navy"}`}>
+              {e.trackName}: {e.productSubmitted ? "محصول ثبت شد" : e.ideaSubmitted ? "ایده ثبت شد" : "پیش‌نویس"}
+            </span>
+          ))}
           {!renaming && (
             <button type="button" className="btn-ghost !py-1.5 !px-3" onClick={() => setRenaming(true)}>تغییر نام</button>
           )}

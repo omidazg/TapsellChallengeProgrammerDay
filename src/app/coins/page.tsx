@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getPhase, getSettingInt } from "@/lib/phase";
+import { notFound } from "next/navigation";
+import { getSettingInt } from "@/lib/phase";
 import { COIN_PRICE_TOMAN, DEFAULTS } from "@/lib/constants";
 import { boughtOrPendingCoins, coinsToToman, getManualInstructions, getPaymentDriver, type CoinOrderStatus } from "@/lib/coins";
-import { getPrizePoolCached } from "@/lib/prize-pool";
-import { formatMillion } from "@/lib/prizes";
+import { moduleStatusFor } from "@/lib/module-state";
+import { ModuleClosed, ModuleReadOnly } from "@/components/ModuleState";
 import { PageHeader, Container, Stat, Alert, Empty } from "@/components/ui";
 import { fa, coins, jdatetime, toEnDigits } from "@/lib/persian";
 import { BuyCoinsForm } from "./BuyCoinsForm";
@@ -29,16 +30,18 @@ export default async function CoinsPage({
   const sp = await searchParams;
   const driver = getPaymentDriver();
 
-  const [{ phase }, maxPerUser, bought, pool, orders, manualText] = await Promise.all([
-    getPhase(),
+  const status = await moduleStatusFor("coins", user.teamId);
+  if (status === "hidden") notFound();
+  if (status === "closed") return <ModuleClosed moduleKey="coins" title="خرید سکه" eyebrow="کیف سکه" />;
+
+  const [maxPerUser, bought, orders, manualText] = await Promise.all([
     getSettingInt("max_bought_coins_per_user", DEFAULTS.maxBoughtCoinsPerUser),
     boughtOrPendingCoins(user.id),
-    getPrizePoolCached(),
     prisma.coinOrder.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, take: 30 }),
     driver.online ? Promise.resolve("") : getManualInstructions(),
   ]);
   const room = Math.max(0, maxPerUser - bought.paid - bought.pending);
-  const closed = phase === "CLOSED";
+  const closed = status !== "open";
 
   // پیام‌های بازگشت از درگاه/لغو. متن خطا از URL خوانده نمی‌شود (جلوی پیام جعلی در صفحهٔ پرداخت)؛
   // توضیح خطا از یادداشت همان سفارش خودِ کاربر می‌آید.
@@ -50,7 +53,7 @@ export default async function CoinsPage({
       <PageHeader
         eyebrow="کیف سکه"
         title="خرید سکه"
-        desc={`هر سکه ${fa(COIN_PRICE_TOMAN)} تومان است. با سکه از ایده‌ها حمایت می‌کنی، محصول می‌خری، در حراج شرکت می‌کنی و جایگاه تبلیغاتی می‌خری.`}
+        desc={`هر سکه ${fa(COIN_PRICE_TOMAN)} تومان است. با سکه از ایده‌ها حمایت می‌کنی، محصول می‌خری، در حراج شرکت می‌کنی و برای جایگاه تبلیغاتی پیشنهاد می‌دهی.`}
         action={
           <div className="flex flex-wrap gap-3">
             <Stat label="موجودی سکه" value={coins(user.buyWallet)} tone="gold" />
@@ -71,20 +74,7 @@ export default async function CoinsPage({
           </Alert>
         )}
         {sp.canceled && <Alert kind="info">سفارش لغو شد.</Alert>}
-
-        <div className="card p-6 anim-rise space-y-2 border-amber-200 bg-amber-50">
-          <h2 className="text-lg font-black text-brand-navy">💰 همهٔ پولِ خرید سکه به صندوق جایزه می‌رود</h2>
-          <p className="text-sm text-brand-slate leading-7">
-            هر تومانی که برای خرید سکه می‌پردازی، کامل به صندوق جایزه اضافه می‌شود و بین پروژه‌های برنده تقسیم می‌شود.
-          </p>
-          <p className="text-sm text-brand-navy">
-            صندوق جایزه الان: <b className="fa-num">{fa(Number(formatMillion(pool.totalMillion)))} میلیون تومان</b>
-            <span className="text-brand-slate fa-num">
-              {" "}
-              (پایهٔ {fa(Number(formatMillion(pool.baseMillion)))} میلیون + {fa(Number(formatMillion(pool.extraMillion)))} میلیون از خرید سکه)
-            </span>
-          </p>
-        </div>
+        {status === "ro" && <ModuleReadOnly moduleKey="coins" />}
 
         <section className="card p-6 anim-rise space-y-4" aria-labelledby="buy-title">
           <h2 id="buy-title" className="text-lg font-black text-brand-navy">
@@ -99,7 +89,7 @@ export default async function CoinsPage({
             <Alert kind="info">🧪 درگاه پرداخت آزمایشی فعال است؛ پولی جابه‌جا نمی‌شود.</Alert>
           )}
           {closed ? (
-            <Alert kind="info">بازی تمام شده و خرید سکه بسته است.</Alert>
+            <Alert kind="info">خرید سکه الان باز نیست.</Alert>
           ) : room < DEFAULTS.minCoinPurchase ? (
             <Alert kind="info">
               {bought.pending > 0

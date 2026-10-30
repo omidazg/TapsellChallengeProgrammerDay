@@ -1,34 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import type { Phase } from "@/lib/phases";
-import { NAV, isActive, navState, phaseDestination, type NavItem } from "./NavConfig";
-
-/** نشانهٔ فازی کنار آیتم منو: نقطهٔ تپندهٔ «زنده» برای فاز جاری یا قفل برای فازهای نرسیده */
-export function NavPhaseMark({ live, lockHint }: { live: boolean; lockHint: string | null }) {
-  if (live) {
-    return (
-      <>
-        <span aria-hidden className="nav-live-dot shrink-0" />
-        <span className="sr-only">(فاز جاری)</span>
-      </>
-    );
-  }
-  if (lockHint) {
-    return (
-      <>
-        <span aria-hidden className="shrink-0 text-[0.75em] leading-none">🔒</span>
-        <span className="sr-only">({lockHint})</span>
-      </>
-    );
-  }
-  return null;
-}
+import { isActive, navFor, type ModuleStatuses, type NavItem } from "./NavConfig";
 
 const HOME: NavItem = { href: "/", label: "خانه", icon: "🏠" };
-// از NAV برداشته می‌شوند تا فاز «زنده»شان (مثلاً اتاق تیم در ثبت‌نام) هم‌خوان بماند
-const TEAM = NAV.find((n) => n.href === "/team")!;
-const BOARD = NAV.find((n) => n.href === "/leaderboard")!;
+// ترتیب اولویت جایگاه‌های نوار پایین؛ بخش‌های مخفی کنار می‌روند و نفر بعدی جایشان می‌آید.
+const PRIORITY = ["/team", "/build", "/leaderboard", "/market", "/idea", "/invest", "/guide"];
+const BAR_ITEMS = 3;
 
 /**
  * نوار زبانه‌های پایین برای موبایل/تبلت (زیر lg، همان نقطه‌ای که منوی همبرگری ظاهر می‌شود).
@@ -37,23 +15,21 @@ const BOARD = NAV.find((n) => n.href === "/leaderboard")!;
  */
 export function NavBottomBar({
   path,
-  phase,
+  modules,
   menuOpen,
   onMore,
 }: {
   path: string;
-  phase: Phase;
+  modules: ModuleStatuses;
   menuOpen: boolean;
   onMore: (button: HTMLButtonElement) => void;
 }) {
-  const phaseItem = phaseDestination(phase);
-  // برچسب کامل برای جایگاه‌های ثابت؛ برای جایگاه فاز نسخهٔ کوتاه تا در یک‌پنجم عرض جا شود
-  const items = [
-    { ...HOME, text: HOME.label },
-    { ...TEAM, text: TEAM.label },
-    { ...phaseItem, text: phaseItem.short ?? phaseItem.label },
-    { ...BOARD, text: BOARD.label },
-  ];
+  const nav = navFor(modules);
+  const picks = PRIORITY.map((href) => nav.find((n) => n.href === href))
+    .filter((n): n is NavItem => !!n)
+    .slice(0, BAR_ITEMS);
+  // برچسب کوتاه تا در یک‌پنجم عرض جا شود؛ «اتاق تیم» و «جدول» با برچسب کامل هم جا می‌شوند
+  const items = [HOME, ...picks].map((n) => ({ ...n, text: n.href === "/team" ? n.label : (n.short ?? n.label) }));
   const anyActive = items.some((n) => isActive(path, n.href));
 
   return (
@@ -61,7 +37,6 @@ export function NavBottomBar({
       <ul className="mx-auto grid max-w-lg grid-cols-5">
         {items.map((n) => {
           const active = isActive(path, n.href);
-          const { live } = navState(n, phase);
           return (
             <li key={n.href}>
               <Link
@@ -72,10 +47,8 @@ export function NavBottomBar({
               >
                 <span aria-hidden className={`nav-bottom-icon ${active ? "bg-brand-mist" : ""}`}>
                   {n.icon}
-                  {live && <span className="nav-live-dot absolute -top-0.5 -left-0.5" />}
                 </span>
                 <span className="max-w-full truncate px-1">{n.text}</span>
-                {live && <span className="sr-only">(فاز جاری)</span>}
               </Link>
             </li>
           );

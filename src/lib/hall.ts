@@ -4,15 +4,15 @@
  */
 import { prisma } from "./db";
 import { getPhase, PHASE_LABEL } from "./phase";
-import { computeScoresCached } from "./scoring";
-import { getSettledAt, loadSettledOutput } from "./settlement";
+import { scoresForDisplay } from "./public-scores";
+import { getModuleStatuses, statusVisible } from "./module-state";
+import { entryKey } from "./economy/types";
 import { getTicker, type TickerEntry } from "./market";
 import { currentOrNextAuctionId, getPublicAuctionState } from "./auction";
 import { getFeedCached, type FeedEvent } from "./feed";
 import { cached } from "./ttl-cache";
-import type { TeamResult } from "./economy/types";
 
-export type HallTeam = { teamId: string; name: string; logoSeed: string; metric: number };
+export type HallTeam = { key: string; teamId: string; name: string; productName: string; trackName: string; logoSeed: string; metric: number };
 
 export type HallAuction = {
   id: string;
@@ -30,7 +30,7 @@ export type HallPayload = {
   phaseLabel: string;
   endsAt: string | null;
   serverNow: string;
-  /** معیار نمایشی جدول (تعداد حامی پیش از پایان بازی، امتیاز کل پس از آن) — همان قاعدهٔ صفحهٔ جدول */
+  /** معیار نمایشی جدول: امتیاز زنده بدون داوری، و بعد از اعلام نتایج امتیاز کل — همان قاعدهٔ صفحهٔ جدول */
   metricLabel: string;
   topTeams: HallTeam[];
   auction: HallAuction;
@@ -42,28 +42,37 @@ const HALL_CACHE_KEY = "hall:payload";
 const HALL_CACHE_TTL_MS = 2_000;
 const TOP_TEAMS_COUNT = 5;
 
-async function buildTopTeams(closed: boolean): Promise<{ teams: HallTeam[]; metricLabel: string }> {
-  // «closed» مثل صفحهٔ جدول از فاز می‌آید (نه از تسویه)؛ وگرنه بین پایان بازی و تسویه، جدول امتیاز کل
-  // و سالن هنوز معیار عمومی را نشان می‌داد. دادهٔ تسویه‌شده، اگر باشد، ملاک است.
-  const settledAt = await getSettledAt();
-  const [output, teams] = await Promise.all([
-    settledAt ? loadSettledOutput() : computeScoresCached(),
+async function buildTopTeams(): Promise<{ teams: HallTeam[]; metricLabel: string }> {
+  const modules = await getModuleStatuses();
+  const revealed = statusVisible(modules.results);
+  const metricLabel = revealed ? "امتیاز کل" : "امتیاز زنده";
+  // جدول بسته یا مخفی روی پروژکتور هم نباید دیده شود.
+  if (!statusVisible(modules.leaderboard)) return { teams: [], metricLabel };
+
+  const [{ output }, teams, tracks] = await Promise.all([
+    scoresForDisplay(revealed),
     prisma.team.findMany({ select: { id: true, name: true, logoSeed: true } }),
+    prisma.track.findMany({ where: { status: { not: "hidden" } }, select: { id: true, name: true } }),
   ]);
   const teamMap = new Map(teams.map((t) => [t.id, t]));
+  const trackName = new Map(tracks.map((t) => [t.id, t.name]));
 
-  // همان قاعدهٔ صفحهٔ جدول امتیازات: پیش از پایان بازی فقط تعداد حامی (عمومی)، پس از آن امتیاز کل.
-  const metricOf = (t: TeamResult) => (closed ? t.total : t.supporters);
-  const metricLabel = closed ? "امتیاز کل" : "تعداد حامی";
-
-  const ranked = closed
-    ? [...output.teams].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
-    : [...output.teams].sort((a, b) => b.supporters - a.supporters || b.coinsReceived - a.coinsReceived);
-
-  const topTeams: HallTeam[] = ranked.slice(0, TOP_TEAMS_COUNT).map((t) => {
-    const team = teamMap.get(t.teamId);
-    return { teamId: t.teamId, name: team?.name ?? "—", logoSeed: team?.logoSeed || t.teamId, metric: metricOf(t) };
-  });
+  // output.teams به ترتیب رتبهٔ کلی است؛ هر ثبت (تیم در یک محور) یک ردیف دارد.
+  const topTeams: HallTeam[] = output.teams
+    .filter((t) => trackName.has(t.trackId))
+    .slice(0, TOP_TEAMS_COUNT)
+    .map((t) => {
+      const team = teamMap.get(t.teamId);
+      return {
+        key: entryKey(t),
+        teamId: t.teamId,
+        name: team?.name ?? "—",
+        productName: t.productName,
+        trackName: trackName.get(t.trackId) ?? "",
+        logoSeed: team?.logoSeed || t.teamId,
+        metric: t.total,
+      };
+    });
 
   return { teams: topTeams, metricLabel };
 }
@@ -90,7 +99,7 @@ async function buildLiveAuction(): Promise<HallAuction> {
 async function buildHallPayload(): Promise<HallPayload> {
   const { phase, endsAt } = await getPhase();
   const [{ teams, metricLabel }, auction, ticker, feed] = await Promise.all([
-    buildTopTeams(phase === "CLOSED"),
+    buildTopTeams(),
     buildLiveAuction(),
     getTicker(15),
     getFeedCached(),

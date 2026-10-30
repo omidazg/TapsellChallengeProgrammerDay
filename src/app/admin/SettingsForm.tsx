@@ -34,7 +34,7 @@ export function SettingsForm({
   title?: string;
 }) {
   const serverAction = action ?? updateSettingsAction;
-  // فیلدهای datetime (مثل زمان شروع روز بازار) به وقت مرورگر وارد می‌شوند؛ پیش از ارسال
+  // فیلدهای datetime (مثل زمان شروع نخستین جایگاه) به وقت مرورگر وارد می‌شوند؛ پیش از ارسال
   // به ISO تبدیل می‌شوند تا سرور (کانتینر UTC) آن‌ها را چند ساعت جابه‌جا تفسیر نکند.
   const [state, formAction] = useActionState<AdminActionState, FormData>(async (prev, formData) => {
     for (const f of fields) {
@@ -57,8 +57,8 @@ export function SettingsForm({
       {state.ok && <Alert kind="ok">تنظیمات ذخیره شد.</Alert>}
       {hasLocked && (
         <Alert kind="info">
-          🔒 بازی شروع شده است؛ مقادیر اقتصادی (سکهٔ اولیه، سقف حمایت، قیمت‌ها و گام حراج) قفل‌اند
-          تا قوانین برای همه ثابت و شفاف بماند. فقط تنظیمات زمان‌بندی قابل تغییرند.
+          🔒 خرج سکه شروع شده است؛ مقادیر اقتصادی (سکهٔ اولیه، سقف حمایت، قیمت‌ها و گام حراج) قفل‌اند
+          تا قوانین برای همه ثابت و شفاف بماند. بقیهٔ تنظیمات قابل تغییرند.
         </Alert>
       )}
       <div className="grid sm:grid-cols-2 gap-4">
@@ -109,7 +109,7 @@ export function SettingsForm({
                     defaultValue={f.value}
                     readOnly={f.locked}
                     aria-readonly={f.locked || undefined}
-                    title={f.locked ? "پس از شروع بازی قفل است" : undefined}
+                    title={f.locked ? "پس از اولین خرج سکه قفل است" : undefined}
                     className={`input ${f.locked ? lockedCls : ""}`}
                   />
                 )}

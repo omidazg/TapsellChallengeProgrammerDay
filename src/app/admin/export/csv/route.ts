@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { computeScores, LEDGER_REASON_LABEL, WALLET_LABEL } from "@/lib/scoring";
-import { getSettledAt, loadSettledOutput } from "@/lib/settlement";
-import { SCORE_CATEGORY_ORDER, SCORE_CATEGORY_LABELS } from "@/lib/score-labels";
+import { LEDGER_REASON_LABEL, WALLET_LABEL } from "@/lib/scoring";
+import { ENTRY_COLUMNS, loadEntryRows } from "../entries";
 
 // BOM تا اکسل فارسی فایل را UTF-8 بخواند
 const BOM = "﻿";
@@ -40,9 +39,7 @@ function csvResponse(body: string, filename: string) {
   });
 }
 
-const r1 = (n: number) => Math.round(n * 10) / 10;
-
-/** خروجی CSV امتیاز تیم‌ها، دفتر کل کامل یا سفارش‌های سکه، برای پنل برگزارکننده. */
+/** خروجی CSV امتیاز ثبت‌ها، دفتر کل کامل یا سفارش‌های سکه، برای پنل برگزارکننده. */
 export async function GET(req: NextRequest) {
   await requireAdmin();
   const type = req.nextUrl.searchParams.get("type") ?? "teams";
@@ -94,61 +91,7 @@ export async function GET(req: NextRequest) {
     return csvResponse(toCsv(rows), "coin-orders.csv");
   }
 
-  // بعد از تسویه همان عددهای ثبت‌شده؛ پیش از آن محاسبهٔ زنده
-  const [output, teams, products] = await Promise.all([
-    getSettledAt().then((at) => (at ? loadSettledOutput() : computeScores())),
-    prisma.team.findMany({ select: { id: true, name: true, solo: true, cheatNote: true } }),
-    prisma.product.findMany({ select: { teamId: true, juryWorks: true, juryValue: true, juryPitch: true, liveStatus: true } }),
-  ]);
-  const teamById = new Map(teams.map((t) => [t.id, t]));
-  const productByTeam = new Map(products.map((p) => [p.teamId, p]));
-  const opt = (v: number | null | undefined) => (v === null || v === undefined ? "" : v);
-
-  const rows: (string | number)[][] = [
-    [
-      "رتبه",
-      "تیم",
-      "تعداد اعضا",
-      "شرکت فردی",
-      "داوری: کار می‌کند؟ (۰..۱۰)",
-      "داوری: ارزش واقعی (۰..۱۰)",
-      "داوری: تیزر و ارائه (۰..۱۰)",
-      "داوری انسانی (۰..۱۰۰)",
-      "حمایت مردمی (خام)",
-      "تعداد حامیان",
-      "سکهٔ دریافتی",
-      "داوری هوش مصنوعی (۰..۱۰۰)",
-      "لایو روی بازار استودیو",
-      ...SCORE_CATEGORY_ORDER.map((k) => `امتیاز ${SCORE_CATEGORY_LABELS[k].label}`),
-      "کسر تقلب",
-      "توضیح کسر تقلب",
-      "امتیاز کل",
-    ],
-    ...[...output.teams]
-      .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
-      .map((t) => {
-        const team = teamById.get(t.teamId);
-        const p = productByTeam.get(t.teamId);
-        return [
-          t.rank ?? "",
-          team?.name ?? t.teamId,
-          t.memberCount,
-          team?.solo ? "بله" : "خیر",
-          opt(p?.juryWorks),
-          opt(p?.juryValue),
-          opt(p?.juryPitch),
-          t.juryRaw === null ? "" : r1(t.juryRaw),
-          r1(t.people),
-          t.supporters,
-          t.coinsReceived,
-          t.ai === null ? "" : r1(t.ai),
-          p?.liveStatus === "LIVE" ? "بله" : "خیر",
-          ...SCORE_CATEGORY_ORDER.map((k) => r1(t.pts[k])),
-          t.cheatPenalty,
-          team?.cheatNote ?? "",
-          r1(t.total),
-        ];
-      }),
-  ];
+  const { rows: entries } = await loadEntryRows();
+  const rows: (string | number)[][] = [ENTRY_COLUMNS.map((col) => col.header), ...entries.map((e) => ENTRY_COLUMNS.map((col) => e[col.key]))];
   return csvResponse(toCsv(rows), "team-scores.csv");
 }

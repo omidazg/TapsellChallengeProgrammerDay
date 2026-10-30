@@ -3,7 +3,7 @@ import { fa, coins, jdatetime } from "@/lib/persian";
 
 type InvestorRow = { id: string; userId: string; nickname: string; avatarSeed: string; amount: number; createdAt: Date };
 
-/** فهرست حمایت‌های یک ایده؛ تا پایان «دور حمایت» مبلغ‌ها (جز برای اعضای تیم) پنهان است. */
+/** فهرست حمایت‌های یک ایده؛ تا وقتی حمایت باز است مبلغ‌ها (جز برای اعضای تیم) پنهان است. */
 export function InvestorList({ investments, revealed }: { investments: InvestorRow[]; revealed: boolean }) {
   return (
     <div className="card p-6 anim-rise">

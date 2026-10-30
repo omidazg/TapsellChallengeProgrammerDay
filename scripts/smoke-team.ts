@@ -64,13 +64,14 @@ async function main() {
   const createdTeamIds = new Set<string>();
 
   try {
-    // ---------- joinByInviteToken: موفق، تا پایان فاز اتاق ایده ----------
-    console.log("\n# ۱ — joinByInviteToken در فاز اتاق ایده");
-    await setPhase("IDEATION", original.endsAt);
+    // ---------- joinByInviteToken: موفق، وقتی بخش تیم باز است ----------
+    console.log("\n# ۱ — joinByInviteToken وقتی بخش تیم باز است");
+    const { setModuleStatus } = await import("../src/lib/module-state");
+    await setPhase("LIVE", original.endsAt);
 
     const h1 = await makeUser("host1", "BUILDER");
     const created1 = await createTeamForUser(h1.id, `تیم ${TAG} ۱`);
-    check("ساخت تیم در فاز اتاق ایده مجاز است", !!created1.ok, JSON.stringify(created1));
+    check("ساخت تیم وقتی بخش تیم باز است مجاز است", !!created1.ok, JSON.stringify(created1));
     const host1 = await prisma.user.findUniqueOrThrow({ where: { id: h1.id }, include: { team: true } });
     if (host1.teamId) createdTeamIds.add(host1.teamId);
     const token1 = host1.team!.inviteToken!;
@@ -99,7 +100,7 @@ async function main() {
     check("لینک نامعتبر رد می‌شود", !joinGhost.ok && !!joinGhost.error, JSON.stringify(joinGhost));
 
     // ---------- joinByInviteToken: خارج از فاز مجاز ----------
-    console.log("\n# ۳ — joinByInviteToken خارج از فاز اتاق ایده");
+    console.log("\n# ۳ — joinByInviteToken وقتی بخش تیم بسته است");
     const h2 = await makeUser("host2", "BUILDER");
     const created2 = await createTeamForUser(h2.id, `تیم ${TAG} ۲`);
     check("ساخت تیم دوم موفق", !!created2.ok, JSON.stringify(created2));
@@ -107,14 +108,14 @@ async function main() {
     if (host2.teamId) createdTeamIds.add(host2.teamId);
     const token2 = host2.team!.inviteToken!;
 
-    await setPhase("BUILD", original.endsAt);
+    await setModuleStatus("team", "closed");
     const joinLatePhase = await joinByInviteToken(j4.id, token2);
     check(
-      "پیوستن بعد از پایان فاز اتاق ایده رد می‌شود",
-      !joinLatePhase.ok && joinLatePhase.error === "این کار فقط تا پایان فاز «اتاق ایده» ممکن است.",
+      "پیوستن وقتی بخش تیم بسته است رد می‌شود",
+      !joinLatePhase.ok && joinLatePhase.error === "بخش تیم فعلاً باز نیست.",
       JSON.stringify(joinLatePhase)
     );
-    await setPhase("IDEATION", original.endsAt);
+    await setModuleStatus("team", "open");
 
     // ---------- ادغام تیم‌ها: موفق ----------
     console.log("\n# ۴ — ادغام تیم‌ها (موفق)");
@@ -245,10 +246,10 @@ async function main() {
     const keeperTeamId = (await prisma.user.findUniqueOrThrow({ where: { id: soloKeeper.id } })).teamId!;
     createdTeamIds.add(keeperTeamId);
 
-    await setPhase("BUILD", original.endsAt);
+    await setModuleStatus("team", "closed");
     const lateSolo = await goSolo(strayUser.id);
-    check("goSolo بعد از پایان اتاق ایده رد می‌شود", !lateSolo.ok && lateSolo.error === "این کار فقط تا پایان فاز «اتاق ایده» ممکن است.", JSON.stringify(lateSolo));
-    await setPhase("IDEATION", original.endsAt);
+    check("goSolo وقتی بخش تیم بسته است رد می‌شود", !lateSolo.ok && lateSolo.error === "بخش تیم فعلاً باز نیست.", JSON.stringify(lateSolo));
+    await setModuleStatus("team", "open");
 
     // ---------- autoComposeTeams ----------
     console.log("\n# ۹ — تشکیل خودکار تیم‌ها");

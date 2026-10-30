@@ -2,10 +2,14 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { getPhase, getSettingInt, phaseIndex } from "@/lib/phase";
+import { getPhase, getSettingInt } from "@/lib/phase";
+import { moduleStatusFor } from "@/lib/module-state";
+import { getTrack } from "@/lib/track-data";
+import { TRACK_KIND_LABEL } from "@/lib/tracks";
+import { ModuleClosed, ModuleReadOnly } from "@/components/ModuleState";
 import { DEFAULTS } from "@/lib/constants";
 import { productAiTag } from "@/lib/ai-tag";
-import { Container, PageHeader, Locked, Alert } from "@/components/ui";
+import { Container, PageHeader, Alert } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { AiTag } from "@/components/AiTag";
 import { fa, coins } from "@/lib/persian";
@@ -39,7 +43,7 @@ async function auctionInfo(productId: string): Promise<AuctionInfo> {
   return { status: "SCHEDULED", ahead };
 }
 
-/** آیا صف حراج به‌خاطر دقایق پایانی روز بازار بسته است (همان قاعدهٔ enqueueAuction) */
+/** آیا صف حراج به‌خاطر دقایق پایانی مسابقه بسته است (همان قاعدهٔ enqueueAuction) */
 function enqueueCutoffPassed(endsAt: Date | null, cutoffMin: number): boolean {
   return !!endsAt && endsAt.getTime() - Date.now() < cutoffMin * 60_000;
 }
@@ -58,17 +62,15 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   // پیش‌نویس محصول (هنوز ثبت نهایی نشده) فقط برای اعضای همان تیم قابل مشاهده است.
   if (!product || (!product.submittedAt && user.teamId !== product.teamId)) notFound();
 
-  const { phase, endsAt } = await getPhase();
-  if (phaseIndex(phase) < phaseIndex("BUILD")) {
-    return (
-      <>
-        <PageHeader eyebrow="فاز فعلی" title="بازار" />
-        <Container>
-          <Locked title="بازار هنوز باز نشده" desc="صفحهٔ محصول از فاز «ساخت محصول» قابل مشاهده می‌شود." />
-        </Container>
-      </>
-    );
-  }
+  const status = await moduleStatusFor("market", user.teamId);
+  const ownProduct = user.teamId === product.teamId;
+  // پیش‌نمایش تیم صاحب محصول همیشه باز است؛ بقیه طبق وضعیت بخش بازار و محور.
+  if (!ownProduct && status === "hidden") notFound();
+  if (!ownProduct && status === "closed") return <ModuleClosed moduleKey="market" title="بازار" />;
+  const track = await getTrack(product.trackId);
+  if (!ownProduct && track?.status === "hidden") notFound();
+
+  const { endsAt } = await getPhase();
 
   const [summary, buyers, alreadyHearted, alreadySpent, walletBalance, live, auction, cutoffMin] = await Promise.all([
     salesSummary(product.id),
@@ -81,21 +83,26 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
     getSettingInt("auction_enqueue_cutoff_min", DEFAULTS.auctionEnqueueCutoffMin),
   ]);
 
-  const isOwnTeam = user.teamId === product.teamId;
+  const isOwnTeam = ownProduct;
   const teaser = parseTeaser(product.teaserUrl);
   const hasPurchasedAny = buyers.some((b) => b.userId === user.id);
   const aiTag = productAiTag(product);
   const isLive = live?.liveStatus === "LIVE";
   const liveUrl = isLive && live && /^https?:\/\//i.test(live.liveUrl) ? live.liveUrl : null;
   const hasDemo = !!product.demoUrl && /^https?:\/\//i.test(product.demoUrl);
-  const isMarket = phase === "MARKET";
+  const marketOpen = status === "open";
   const specialName = product.specialName || product.name;
-  // کارت حراج: برای همه وقتی نسخهٔ ویژه تعریف شده یا حراجی ثبت شده؛ برای اعضای تیم در روز بازار همیشه.
-  const showAuctionCard = !!product.specialName || auction.status !== "NONE" || (isOwnTeam && isMarket);
+  // کارت حراج فقط وقتی نسخهٔ ویژه تعریف شده یا حراجی ثبت شده (محورهای محتوا و OS نسخهٔ ویژه ندارند).
+  const showAuctionCard = !!product.specialName || auction.status !== "NONE";
 
   return (
     <>
-      <PageHeader eyebrow={product.teamName} title={product.name} desc={product.tagline} />
+      <PageHeader eyebrow={`${product.teamName} · ${product.trackName}`} title={product.name} desc={product.tagline} />
+      {status === "ro" && (
+        <Container className="mb-6">
+          <ModuleReadOnly moduleKey="market" />
+        </Container>
+      )}
       <Container className="grid lg:grid-cols-[1.4fr_1fr] gap-6 items-start">
         <div className="space-y-6">
           <Gallery images={product.images} seed={product.teamSlug} name={product.name} />
@@ -141,6 +148,25 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               </div>
             )}
 
+            {track && track.kind !== "PRODUCT" && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="chip-cyan">{TRACK_KIND_LABEL[track.kind]}</span>
+                {product.contentType && <span className="chip-navy">{product.contentType}</span>}
+                {/^https?:\/\//i.test(product.deliverableUrl) && (
+                  <a href={product.deliverableUrl} target="_blank" rel="noopener noreferrer nofollow" className="btn-navy inline-flex">
+                    {track.kind === "OS" ? "مشاهدهٔ PR یا MR ↗" : "مشاهدهٔ محتوا ↗"}
+                  </a>
+                )}
+              </div>
+            )}
+
+            {product.preExistingNote && (
+              <div className="rounded-2xl bg-brand-ice px-4 py-3">
+                <div className="text-xs font-bold text-brand-slate mb-1">کد متن‌باز یا کار پیش از مسابقه</div>
+                <p className="text-sm text-brand-navy leading-6 whitespace-pre-line break-words">{product.preExistingNote}</p>
+              </div>
+            )}
+
             {(liveUrl || hasDemo) && (
               <div className="flex flex-wrap gap-2">
                 {liveUrl && (
@@ -183,9 +209,9 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         <div className="space-y-6 lg:sticky lg:top-20">
           <PurchasePanel
             productId={product.id}
-            slug={product.teamSlug}
+            slug={product.slug}
             price={product.price}
-            phaseIsMarket={isMarket}
+            marketOpen={marketOpen}
             isOwnTeam={isOwnTeam}
             alreadySpent={alreadySpent}
             walletBalance={walletBalance}
@@ -224,19 +250,15 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
                     ? `حراج شد: ${auction.winnerNickname} با ${coins(auction.finalPrice ?? 0)}`
                     : "حراج بدون برنده تمام شد"}
                 </span>
-              ) : isOwnTeam && isMarket ? (
+              ) : isOwnTeam && marketOpen ? (
                 !product.submittedAt ? (
                   <Alert kind="info">برای فرستادن به حراج، اول محصولت را ثبت نهایی کن.</Alert>
                 ) : enqueueCutoffPassed(endsAt, cutoffMin) ? (
-                  <Alert kind="info">صف حراج در {fa(cutoffMin)} دقیقهٔ پایانی روز بازار بسته است.</Alert>
+                  <Alert kind="info">صف حراج در {fa(cutoffMin)} دقیقهٔ پایانی مسابقه بسته است.</Alert>
                 ) : (
-                  <AuctionEnqueue slug={product.teamSlug} cutoffMin={cutoffMin} />
+                  <AuctionEnqueue slug={product.slug} cutoffMin={cutoffMin} options={[{ trackId: product.trackId, label: product.name }]} />
                 )
-              ) : isOwnTeam && phaseIndex(phase) < phaseIndex("MARKET") ? (
-                <p className="text-xs text-brand-slate leading-6">
-                  در «روز بازار» می‌توانی همین‌جا نسخهٔ ویژه را به صف حراج زنده بفرستی.
-                </p>
-              ) : isMarket ? (
+              ) : marketOpen ? (
                 <p className="text-xs text-brand-slate leading-6">تیم هنوز نسخهٔ ویژه‌اش را به صف حراج نفرستاده است.</p>
               ) : null}
             </div>

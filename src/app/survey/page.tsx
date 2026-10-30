@@ -1,28 +1,12 @@
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getPhase } from "@/lib/phase";
-import { PageHeader, Container, Locked } from "@/components/ui";
+import { PageHeader, Container } from "@/components/ui";
 import { SurveyForm } from "./SurveyForm";
 
 export const metadata = { title: "نظرسنجی پایان بازی" };
 
 export default async function SurveyPage() {
   const user = await requireUser();
-  const { phase } = await getPhase();
-  const open = phase === "MARKET" || phase === "CLOSED";
-
-  if (!open) {
-    return (
-      <>
-        <PageHeader eyebrow="نظرسنجی" title="نظرسنجی پایان بازی" />
-        <Container>
-          <h2 className="sr-only">وضعیت نظرسنجی</h2>
-          <Locked title="هنوز زود است" desc="نظرسنجی از فاز «روز بازار» باز می‌شود." />
-        </Container>
-      </>
-    );
-  }
-
   const existing = await prisma.surveyResponse.findUnique({ where: { userId: user.id } });
 
   return (

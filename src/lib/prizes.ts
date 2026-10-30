@@ -1,62 +1,116 @@
 /**
- * جوایز نقدی مسابقه — پنج جایزه، هر کدام درصدی از «صندوق جایزه».
- * صندوق = پایهٔ ثابت + کل مبلغی که شرکت‌کننده‌ها برای خرید سکه پرداخت کرده‌اند؛
- * پس با خرید سکه خودکار بزرگ‌تر می‌شود. هر پروژه حداکثر یک جایزه می‌برد.
+ * جوایز مسابقه: هر جایزه مبلغ ثابت دارد و در پنل ادمین تعریف می‌شود (مدل Prize).
+ * هر محور یک جایزهٔ نفر اول دارد؛ جوایز ویژه را کمیته انتخاب می‌کند.
  *
  * این ماژول بدون وابستگی به دیتابیس است (در کامپوننت‌های کلاینت هم استفاده می‌شود).
- * جمع پرداخت‌ها در ./prize-pool.ts (فقط سرور) خوانده می‌شود.
  */
+import type { ScoreOutput, TeamResult } from "./economy/types";
+import { entryKey } from "./economy/types";
 
-/** پایهٔ صندوق جایزه: ۲ میلیارد تومان */
-export const PRIZE_POOL_BASE_MILLION_TOMAN = 2000;
-
-export type PrizeKey = "champion" | "jury" | "ai" | "people" | "live";
-
-export type Prize = {
-  key: PrizeKey;
+export type PrizeRow = {
+  id: string;
+  trackId: string;
+  category: string;
+  kind: string; // RANK | SPECIAL
+  rank: number;
   label: string;
   emoji: string;
-  /** سهم از صندوق جایزه (درصد) */
-  sharePct: number;
-  /** معیار انتخاب برنده */
-  criterion: string;
-  /** auto: از روی امتیازها؛ pick: انتخاب داوران در پنل داوری */
-  how: "auto" | "pick";
+  amountToman: number | null;
+  winnerProductId: string | null;
+  order: number;
 };
 
-/** ترتیب همین آرایه ترتیب اهدای جوایز هم هست (هر پروژه حداکثر یک جایزه). */
-export const PRIZES: readonly Prize[] = [
-  { key: "champion", label: "بنیان‌گذار برتر", emoji: "🏆", sharePct: 35, criterion: "بالاترین امتیاز کل", how: "auto" },
-  { key: "jury", label: "انتخاب داوران", emoji: "🛠️", sharePct: 20, criterion: "بالاترین نمرهٔ داوری انسانی", how: "auto" },
-  { key: "ai", label: "برترین کاربرد هوش مصنوعی", emoji: "🤖", sharePct: 15, criterion: "انتخاب داوران بین پروژه‌های هوش مصنوعی", how: "pick" },
-  { key: "people", label: "انتخاب مردم", emoji: "❤️", sharePct: 15, criterion: "بیشترین حمایت مردمی با سکه", how: "auto" },
-  { key: "live", label: "بهترین محصول لایو", emoji: "🚀", sharePct: 15, criterion: "انتخاب داوران بین محصولات منتشرشده روی بازار استودیو", how: "pick" },
+/** جوایز پیش‌فرض: نفر اول هر محور (محور عمومی دو دستهٔ فنی و غیرفنی دارد). */
+export const DEFAULT_PRIZES: Omit<PrizeRow, "id" | "winnerProductId" | "amountToman">[] = [
+  { trackId: "general", category: "TECH", kind: "RANK", rank: 1, label: "نفر اول ساخت محصول (فنی)", emoji: "🏆", order: 1 },
+  { trackId: "general", category: "NON_TECH", kind: "RANK", rank: 1, label: "نفر اول ساخت محصول (غیرفنی)", emoji: "🏆", order: 2 },
+  { trackId: "content", category: "", kind: "RANK", rank: 1, label: "نفر اول تولید محتوا", emoji: "🎬", order: 3 },
+  { trackId: "os", category: "", kind: "RANK", rank: 1, label: "نفر اول راهکار OS", emoji: "🧩", order: 4 },
 ];
 
-export type PrizePool = {
-  baseMillion: number;
-  /** سهم خرید سکه (میلیون تومان) */
-  extraMillion: number;
-  totalMillion: number;
+/** نمایش مبلغ جایزه؛ مبلغ نهایی‌نشده «به‌زودی اعلام می‌شود». */
+export function formatPrizeAmount(amountToman: number | null): string {
+  if (amountToman == null) return "به‌زودی اعلام می‌شود";
+  return `${amountToman.toLocaleString("fa-IR")} تومان`;
+}
+
+export type Award = {
+  prizeId: string;
+  label: string;
+  emoji: string;
+  kind: string;
+  rank: number;
+  trackId: string;
+  category: string;
+  amountToman: number | null;
+  teamId: string;
+  teamName: string;
+  productId: string | null;
+  productName: string;
+  /** امتیاز کل برنده */
+  value: number;
 };
 
-/** صندوق جایزه از روی کل مبلغ خرید سکه (تومان). */
-export function prizePoolFrom(coinSalesToman: number): PrizePool {
-  const extraMillion = Math.max(0, coinSalesToman) / 1_000_000;
-  return {
-    baseMillion: PRIZE_POOL_BASE_MILLION_TOMAN,
-    extraMillion,
-    totalMillion: PRIZE_POOL_BASE_MILLION_TOMAN + extraMillion,
+export type AwardExtra = {
+  prizes: PrizeRow[];
+  teamNames: Map<string, string>;
+  /** اگر تعداد ثبت‌های یک جایزه کمتر از این باشد، برنده باید حداقل نمرهٔ داوری را داشته باشد. */
+  minEntries: number;
+  minJury: number;
+};
+
+/**
+ * محاسبهٔ برندگان. هر ثبت (محصول) حداکثر یک جایزهٔ رتبه و یک جایزهٔ ویژه می‌برد.
+ * جایزهٔ رتبه خودکار از رتبهٔ محور می‌آید (با فیلتر دسته)؛ ثبت بدون عضو یا بدون محصول و امتیاز صفر
+ * جایزه نمی‌برد. جایزهٔ ویژه‌ای که برنده‌اش انتخاب نشده یا ثبتش قبلاً جایزهٔ ویژه برده اهدا نمی‌شود.
+ */
+export function computeAwards(output: ScoreOutput, extra: AwardExtra): Award[] {
+  const awards: Award[] = [];
+  const rankWinners = new Set<string>();
+  const specialWinners = new Set<string>();
+
+  const give = (prize: PrizeRow, t: TeamResult) => {
+    awards.push({
+      prizeId: prize.id,
+      label: prize.label,
+      emoji: prize.emoji,
+      kind: prize.kind,
+      rank: prize.rank,
+      trackId: prize.trackId,
+      category: prize.category,
+      amountToman: prize.amountToman,
+      teamId: t.teamId,
+      teamName: extra.teamNames.get(t.teamId) ?? "",
+      productId: t.productId,
+      productName: t.productName,
+      value: t.total,
+    });
   };
-}
 
-/** مبلغ یک جایزه (میلیون تومان) از روی صندوق. */
-export function prizeAmountMillion(pool: PrizePool, sharePct: number): number {
-  return (pool.totalMillion * sharePct) / 100;
-}
+  const eligible = (t: TeamResult) => t.memberCount > 0 && !!t.productId && t.total > 0;
+  const ordered = [...extra.prizes].sort((a, b) => a.rank - b.rank || a.order - b.order);
 
-/** نمایش مبلغ میلیونی: تا یک رقم اعشار، بدون صفر اضافه (مثلاً ۷۰۰ یا ۷۰۰٫۵) */
-export function formatMillion(n: number): string {
-  const rounded = Math.round(n * 10) / 10;
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  for (const prize of ordered) {
+    if (prize.kind === "SPECIAL") {
+      const t = output.teams.find((e) => e.productId && e.productId === prize.winnerProductId);
+      if (t && eligible(t) && !specialWinners.has(entryKey(t))) {
+        give(prize, t);
+        specialWinners.add(entryKey(t));
+      }
+      continue;
+    }
+
+    // output.teams به ترتیب رتبه است، پس فیلترشده هم به ترتیب رتبهٔ محور می‌ماند.
+    const pool = output.teams.filter((t) => t.trackId === prize.trackId && (!prize.category || t.category === prize.category));
+    const candidates = pool.filter((t) => eligible(t) && !rankWinners.has(entryKey(t)));
+    // فقط ثبت‌های دارای محصول رقیب واقعی‌اند؛ تیمی که فقط ایده دارد محور را از کم‌جمعیت بودن درنمی‌آورد.
+    const thin = pool.filter((t) => t.productId).length < extra.minEntries;
+    const winner = candidates.find((t) => !thin || (t.juryRaw ?? 0) >= extra.minJury);
+    if (winner) {
+      give(prize, winner);
+      rankWinners.add(entryKey(winner));
+    }
+  }
+
+  return awards;
 }

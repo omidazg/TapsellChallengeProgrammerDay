@@ -25,6 +25,7 @@ export async function raisedFor(ideaId: string): Promise<number> {
 
 export type IdeaCardData = {
   id: string;
+  trackId: string;
   teamId: string;
   teamName: string;
   teamLogoSeed: string;
@@ -57,9 +58,9 @@ export function parseFloorFilter(value: string | undefined): FloorFilter {
 }
 
 /** فهرست همهٔ ایده‌های ثبت‌نهایی‌شده برای صفحهٔ حمایت */
-export async function getIdeasForFloor(filter: FloorFilter = "all"): Promise<IdeaCardData[]> {
+export async function getIdeasForFloor(filter: FloorFilter = "all", trackId?: string): Promise<IdeaCardData[]> {
   const ideas = await prisma.idea.findMany({
-    where: { submittedAt: { not: null } },
+    where: { submittedAt: { not: null }, ...(trackId ? { trackId } : {}), track: { status: { not: "hidden" } } },
     include: {
       team: { select: { id: true, name: true, logoSeed: true } },
       investments: { select: { amount: true, userId: true } },
@@ -68,6 +69,7 @@ export async function getIdeasForFloor(filter: FloorFilter = "all"): Promise<Ide
   return ideas
     .map((i) => ({
       id: i.id,
+      trackId: i.trackId,
       teamId: i.teamId,
       teamName: i.team.name,
       teamLogoSeed: i.team.logoSeed,
@@ -93,6 +95,13 @@ export { analystAvg };
 
 export type IdeaDetail = {
   id: string;
+  trackId: string;
+  /** آخرین ویرایش پس از ثبت نهایی */
+  editedAt: Date | null;
+  /** نسخه‌های قبلی ایده، جدیدترین اول */
+  revisions: { id: string; title: string; oneLiner: string; problem: string; audience: string; buildPlan: string; createdAt: Date }[];
+  /** سکهٔ حمایت این بازدیدکننده که چون پیش از ویرایش ثبت شده قابل پس‌گرفتن است */
+  viewerWithdrawable: number;
   teamId: string;
   teamName: string;
   teamLogoSeed: string;
@@ -106,6 +115,8 @@ export type IdeaDetail = {
   analystFeasibility: number | null;
   analystNovelty: number | null;
   analystSummary: string | null;
+  /** پیشنهاد تحلیل‌گر برای تیم و حامی‌ها */
+  analystAdvice: string | null;
   aiTag: AiTagInfo | null;
   submittedAt: Date | null;
   raised: number;
@@ -123,6 +134,7 @@ export async function getIdeaDetail(id: string, viewerId: string | null): Promis
       team: { select: { id: true, name: true, logoSeed: true } },
       investments: { include: { user: { select: { id: true, nickname: true, avatarSeed: true } } }, orderBy: { createdAt: "desc" } },
       chats: { include: { user: { select: { id: true, nickname: true, avatarSeed: true } } }, orderBy: { createdAt: "asc" } },
+      revisions: { orderBy: { createdAt: "desc" } },
     },
   });
   if (!idea) return null;
@@ -135,6 +147,22 @@ export async function getIdeaDetail(id: string, viewerId: string | null): Promis
 
   return {
     id: idea.id,
+    trackId: idea.trackId,
+    editedAt: idea.editedAt,
+    revisions: idea.revisions.map((r) => ({
+      id: r.id,
+      title: r.title,
+      oneLiner: r.oneLiner,
+      problem: r.problem,
+      audience: r.audience,
+      buildPlan: r.buildPlan,
+      createdAt: r.createdAt,
+    })),
+    viewerWithdrawable: viewerId
+      ? idea.investments
+          .filter((inv) => inv.userId === viewerId && !!idea.editedAt && inv.createdAt.getTime() < idea.editedAt.getTime())
+          .reduce((a, inv) => a + inv.amount, 0)
+      : 0,
     teamId: idea.teamId,
     teamName: idea.team.name,
     teamLogoSeed: idea.team.logoSeed,
@@ -148,6 +176,7 @@ export async function getIdeaDetail(id: string, viewerId: string | null): Promis
     analystFeasibility: idea.analystFeasibility,
     analystNovelty: idea.analystNovelty,
     analystSummary: idea.analystSummary,
+    analystAdvice: idea.analystAdvice,
     aiTag: ideaAiTag(idea),
     submittedAt: idea.submittedAt,
     raised: idea.investments.reduce((a, inv) => a + inv.amount, 0),

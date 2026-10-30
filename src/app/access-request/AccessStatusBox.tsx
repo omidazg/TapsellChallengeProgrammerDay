@@ -61,7 +61,7 @@ export function AccessStatusBox({ defaultEmail = "" }: { defaultEmail?: string }
 function StatusMessage({ result }: { result: AccessStatusResult & { email: string } }) {
   if ("error" in result) return <Alert kind="error">{result.error}</Alert>;
   const closed = !result.registrationOpen && (
-    <> فاز ثبت‌نام الان بسته است؛ ساخت حساب وقتی ممکن می‌شود که برگزارکننده ثبت‌نام را دوباره باز کند.</>
+    <> ثبت‌نام الان بسته است؛ ساخت حساب وقتی ممکن می‌شود که برگزارکننده ثبت‌نام را دوباره باز کند.</>
   );
   switch (result.status) {
     case "PENDING":

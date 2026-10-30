@@ -43,6 +43,7 @@ async function main() {
   const { investCore } = await import("../src/lib/invest");
   const { settleGame } = await import("../src/lib/settlement");
   const { setPhase } = await import("../src/lib/phase");
+  const { parseCriteria } = await import("../src/lib/tracks");
   const { loadTimeline } = await import("../src/lib/timeline");
   const { buildExportWorkbookBuffer } = await import("../src/app/admin/export/xlsx/workbook");
   const ExcelJS = (await import("exceljs")).default;
@@ -90,16 +91,28 @@ async function main() {
       });
       ideaIds[t.key] = idea.id;
       const product = await prisma.product.create({
-        data: { teamId: team.id, name: `محصول ${t.name}`, price: 20, submittedAt: new Date(), juryWorks: t.jury, juryValue: t.jury, juryPitch: t.jury - 1 },
+        data: { teamId: team.id, slug: `smoke-reports-${t.key}-general`, name: `محصول ${t.name}`, price: 20, submittedAt: new Date() },
       });
       productIds[t.key] = product.id;
+    }
+
+    // نمرهٔ داور برای هر محصول روی معیارهای محور
+    const judge = await prisma.user.create({
+      data: { email: "smoke-reports-judge@example.test", passwordHash: "x", nickname: "داور گزارش", role: "BUILDER", power: "", staffRole: "JUDGE" },
+    });
+    const generalTrack = await prisma.track.findUniqueOrThrow({ where: { id: "general" } });
+    const criteria = parseCriteria(generalTrack.juryCriteria);
+    for (const t of SPEC) {
+      await prisma.juryScore.create({
+        data: { productId: productIds[t.key], judgeId: judge.id, scores: JSON.stringify(Object.fromEntries(criteria.map((c) => [c.key, t.jury]))) },
+      });
     }
 
     // ---------- رویدادها در زمان‌های پخش‌شده (برای آزمودن سطل‌های زمانی) ----------
     const T0 = Date.parse("2026-01-01T00:00:00.000Z");
     const HOUR = 3600_000;
 
-    await setPhase("SEED_ROUND", null);
+    await setPhase("LIVE", null);
     const invests = [
       { team: "alpha", user: "beta1", amount: 50, at: T0 + 1 * HOUR },
       { team: "alpha", user: "beta2", amount: 30, at: T0 + 5 * HOUR },
@@ -190,7 +203,7 @@ async function main() {
     check("شیت Teams and scores دو ردیف داده دارد (+هدر)", wsTeams.rowCount === 3, `=${wsTeams.rowCount}`);
 
     const wsUsers = wb.getWorksheet("Users")!;
-    check("شیت Users چهار ردیف داده دارد (+هدر)", wsUsers.rowCount === 5, `=${wsUsers.rowCount}`);
+    check("شیت Users پنج ردیف داده دارد: چهار بازیکن + داور (+هدر)", wsUsers.rowCount === 6, `=${wsUsers.rowCount}`);
 
     const wsInv = wb.getWorksheet("Investments")!;
     check("شیت Investments سه ردیف داده دارد (+هدر)", wsInv.rowCount === 4, `=${wsInv.rowCount}`);

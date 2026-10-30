@@ -3,9 +3,14 @@ export * from "./product-utils";
 import { parseImages } from "./product-utils";
 import { DEFAULTS } from "./constants";
 
-/** محصول تیم برای صفحهٔ مرکز ساخت */
-export async function getProductForTeam(teamId: string) {
-  return prisma.product.findUnique({ where: { teamId } });
+/** محصول تیم در یک محور برای صفحهٔ مرکز ساخت */
+export async function getProductForTeam(teamId: string, trackId: string) {
+  return prisma.product.findUnique({ where: { teamId_trackId: { teamId, trackId } } });
+}
+
+/** نشانی یکتای محصول: اسلاگ تیم به‌اضافهٔ شناسهٔ محور */
+export function productSlug(teamSlug: string, trackId: string): string {
+  return `${teamSlug}-${trackId}`;
 }
 
 /**
@@ -17,6 +22,14 @@ export async function effectiveMaxPrice(): Promise<number> {
 
 export type ProductDetail = {
   id: string;
+  slug: string;
+  trackId: string;
+  trackName: string;
+  deliverableUrl: string;
+  contentType: string;
+  preExistingNote: string;
+  liveStatus: string;
+  liveUrl: string;
   teamId: string;
   teamName: string;
   teamSlug: string;
@@ -34,24 +47,32 @@ export type ProductDetail = {
   submittedAt: Date | null;
   aiQuality: number | null;
   aiNotes: string | null;
-  juryQuality: number | null;
   hasAuction: boolean;
   members: { id: string; nickname: string; avatarSeed: string; role: string }[];
 };
 
-/** محصول از روی اسلاگ تیم، برای صفحهٔ عمومی /market/[slug] */
+/** محصول از روی نشانی آن، برای صفحهٔ عمومی /market/[slug] */
 export async function getProductBySlug(slug: string): Promise<ProductDetail | null> {
-  const team = await prisma.team.findUnique({
+  const p = await prisma.product.findUnique({
     where: { slug },
     include: {
-      product: { include: { auction: { select: { id: true } } } },
-      members: { select: { id: true, nickname: true, avatarSeed: true, role: true } },
+      auction: { select: { id: true } },
+      track: { select: { name: true } },
+      team: { include: { members: { select: { id: true, nickname: true, avatarSeed: true, role: true } } } },
     },
   });
-  if (!team || !team.product) return null;
-  const p = team.product;
+  if (!p) return null;
+  const team = p.team;
   return {
     id: p.id,
+    slug: p.slug,
+    trackId: p.trackId,
+    trackName: p.track.name,
+    deliverableUrl: p.deliverableUrl,
+    contentType: p.contentType,
+    preExistingNote: p.preExistingNote,
+    liveStatus: p.liveStatus,
+    liveUrl: p.liveUrl,
     teamId: team.id,
     teamName: team.name,
     teamSlug: team.slug,
@@ -67,9 +88,8 @@ export async function getProductBySlug(slug: string): Promise<ProductDetail | nu
     specialDesc: p.specialDesc,
     specialStart: p.specialStart,
     submittedAt: p.submittedAt,
-    aiQuality: p.aiQuality,
-    aiNotes: p.aiNotes,
-    juryQuality: p.juryQuality,
+    aiQuality: p.aiFinal ?? p.aiQuality,
+    aiNotes: p.aiFinalNotes ?? p.aiNotes,
     hasAuction: !!p.auction,
     members: team.members,
   };

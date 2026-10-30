@@ -1,6 +1,6 @@
 import { Container } from "@/components/ui";
 
-// دور حمایت: فهرست ایده‌ها به‌همراه مجموع حمایت‌ها خوانده می‌شود.
+// حمایت از ایده‌ها: فهرست ایده‌ها به‌همراه مجموع حمایت‌ها خوانده می‌شود.
 export default function Loading() {
   return (
     <Container className="pt-16">

@@ -1,9 +1,8 @@
 import ExcelJS from "exceljs";
 import { prisma } from "@/lib/db";
-import { computeScores, LEDGER_REASON_LABEL, WALLET_LABEL } from "@/lib/scoring";
-import { getSettledAt, loadSettledOutput } from "@/lib/settlement";
-import { SCORE_CATEGORY_ORDER, SCORE_CATEGORY_LABELS } from "@/lib/score-labels";
+import { LEDGER_REASON_LABEL, WALLET_LABEL } from "@/lib/scoring";
 import { ROLES, type RoleKey } from "@/lib/constants";
+import { ENTRY_COLUMNS, loadEntryRows } from "../entries";
 
 const COIN_ORDER_STATUS_LABEL: Record<string, string> = {
   PENDING: "در انتظار پرداخت",
@@ -11,8 +10,6 @@ const COIN_ORDER_STATUS_LABEL: Record<string, string> = {
   FAILED: "ناموفق / ردشده",
   CANCELED: "لغو کاربر",
 };
-
-const r1 = (n: number) => Math.round(n * 10) / 10;
 
 // نمای راست‌به‌چپ برای همهٔ شیت‌ها + هدر بولد و ثابت (freeze) روی سطر اول
 function setupSheet(ws: ExcelJS.Worksheet, headers: { header: string; key: string; width: number }[]) {
@@ -28,13 +25,18 @@ function setupSheet(ws: ExcelJS.Worksheet, headers: { header: string; key: strin
  * هیچ ستون passwordHash در هیچ شیتی نوشته نمی‌شود.
  */
 export async function buildExportWorkbookBuffer(): Promise<Buffer> {
-  const settledAt = await getSettledAt();
-  const [output, teams, products, users, ideas, investments, purchases, bids, ledger, coinOrders] = await Promise.all([
-    // بعد از تسویه همان عددهای ثبت‌شده در TeamScore؛ پیش از آن محاسبهٔ زنده
-    settledAt ? loadSettledOutput() : computeScores(),
-    prisma.team.findMany({ select: { id: true, name: true, slug: true, solo: true, cheatNote: true } }),
-    prisma.product.findMany({
-      select: { teamId: true, name: true, juryWorks: true, juryValue: true, juryPitch: true, aiQuality: true, liveStatus: true },
+  const [{ rows: entries, settled }, teams, tracks, juryScores, users, ideas, investments, purchases, bids, ledger, coinOrders] = await Promise.all([
+    loadEntryRows(),
+    prisma.team.findMany({ select: { id: true, name: true } }),
+    prisma.track.findMany({ select: { id: true, name: true } }),
+    prisma.juryScore.findMany({
+      select: {
+        scores: true,
+        note: true,
+        updatedAt: true,
+        judge: { select: { nickname: true } },
+        product: { select: { name: true, trackId: true, team: { select: { name: true } } } },
+      },
     }),
     prisma.user.findMany({
       select: {
@@ -43,13 +45,14 @@ export async function buildExportWorkbookBuffer(): Promise<Buffer> {
         email: true,
         role: true,
         isAdmin: true,
+        staffRole: true,
         department: true,
         teamId: true,
         buyWallet: true,
         createdAt: true,
       },
     }),
-    prisma.idea.findMany({ select: { id: true, teamId: true, title: true, oneLiner: true, submittedAt: true } }),
+    prisma.idea.findMany({ select: { id: true, teamId: true, trackId: true, title: true, oneLiner: true, submittedAt: true, editedAt: true } }),
     prisma.investment.findMany({ select: { id: true, ideaId: true, userId: true, amount: true, selfFunded: true, createdAt: true } }),
     prisma.purchase.findMany({ select: { id: true, productId: true, userId: true, amount: true, createdAt: true } }),
     prisma.bid.findMany({ select: { id: true, auctionId: true, userId: true, amount: true, createdAt: true } }),
@@ -61,63 +64,40 @@ export async function buildExportWorkbookBuffer(): Promise<Buffer> {
   ]);
 
   const teamNames = new Map(teams.map((t) => [t.id, t.name]));
-  const resultByTeam = new Map(output.teams.map((r) => [r.teamId, r]));
-  const productByTeam = new Map(products.map((p) => [p.teamId, p]));
+  const trackNames = new Map(tracks.map((t) => [t.id, t.name]));
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "میدان بنیان‌گذاران";
   wb.created = new Date();
 
-  // ---------- Teams and scores ----------
+  // ---------- Teams and scores: هر ردیف یک ثبت (تیم در یک محور) ----------
   const wsTeams = wb.addWorksheet("Teams and scores");
   setupSheet(wsTeams, [
-    { header: "شناسه تیم", key: "id", width: 22 },
-    { header: "نام تیم", key: "name", width: 22 },
-    { header: "اسلاگ", key: "slug", width: 16 },
-    { header: "رتبه", key: "rank", width: 8 },
-    { header: "تعداد اعضا", key: "memberCount", width: 10 },
-    { header: "شرکت فردی", key: "solo", width: 10 },
-    { header: "محصول", key: "product", width: 22 },
-    { header: "داوری: کار می‌کند؟", key: "juryWorks", width: 14 },
-    { header: "داوری: ارزش واقعی", key: "juryValue", width: 14 },
-    { header: "داوری: تیزر و ارائه", key: "juryPitch", width: 14 },
-    { header: "داوری انسانی (۰..۱۰۰)", key: "juryRaw", width: 14 },
-    { header: "حمایت مردمی (خام)", key: "people", width: 14 },
-    { header: "تعداد حامیان", key: "supporters", width: 12 },
-    { header: "سکهٔ دریافتی", key: "coinsReceived", width: 12 },
-    { header: "داوری هوش مصنوعی (۰..۱۰۰)", key: "ai", width: 16 },
-    { header: "لایو روی بازار استودیو", key: "live", width: 14 },
-    ...SCORE_CATEGORY_ORDER.map((k) => ({ header: `امتیاز ${SCORE_CATEGORY_LABELS[k].label}`, key: `pts_${k}`, width: 14 })),
-    { header: "کسر تقلب", key: "cheatPenalty", width: 10 },
-    { header: "توضیح کسر تقلب", key: "cheatNote", width: 24 },
-    { header: "امتیاز کل", key: "total", width: 12 },
+    ...ENTRY_COLUMNS.map((col) => ({ header: col.header, key: col.key, width: col.width })),
     { header: "وضعیت", key: "state", width: 14 },
   ]);
-  for (const t of teams) {
-    const s = resultByTeam.get(t.id);
-    const p = productByTeam.get(t.id);
-    wsTeams.addRow({
-      id: t.id,
-      name: t.name,
-      slug: t.slug,
-      rank: s?.rank ?? "",
-      memberCount: s?.memberCount ?? "",
-      solo: t.solo ? "بله" : "خیر",
-      product: p?.name ?? "",
-      juryWorks: p?.juryWorks ?? "",
-      juryValue: p?.juryValue ?? "",
-      juryPitch: p?.juryPitch ?? "",
-      juryRaw: s?.juryRaw != null ? r1(s.juryRaw) : "",
-      people: s ? r1(s.people) : "",
-      supporters: s?.supporters ?? "",
-      coinsReceived: s?.coinsReceived ?? "",
-      ai: s?.ai != null ? r1(s.ai) : "",
-      live: p?.liveStatus === "LIVE" ? "بله" : "خیر",
-      ...Object.fromEntries(SCORE_CATEGORY_ORDER.map((k) => [`pts_${k}`, s ? r1(s.pts[k]) : ""])),
-      cheatPenalty: s?.cheatPenalty ?? "",
-      cheatNote: t.cheatNote,
-      total: s ? r1(s.total) : "",
-      state: settledAt ? "تسویه‌شده" : "محاسبهٔ زنده",
+  for (const e of entries) wsTeams.addRow({ ...e, state: settled ? "تسویه‌شده" : "محاسبهٔ زنده" });
+
+  // ---------- Jury (نمرهٔ مستقل هر داور) ----------
+  const wsJury = wb.addWorksheet("Jury");
+  setupSheet(wsJury, [
+    { header: "داور", key: "judge", width: 18 },
+    { header: "تیم", key: "team", width: 20 },
+    { header: "محور", key: "track", width: 16 },
+    { header: "محصول", key: "product", width: 22 },
+    { header: "نمره‌ها", key: "scores", width: 30 },
+    { header: "یادداشت", key: "note", width: 30 },
+    { header: "زمان", key: "updatedAt", width: 20 },
+  ]);
+  for (const j of juryScores) {
+    wsJury.addRow({
+      judge: j.judge.nickname,
+      team: j.product.team.name,
+      track: trackNames.get(j.product.trackId) ?? j.product.trackId,
+      product: j.product.name,
+      scores: j.scores,
+      note: j.note,
+      updatedAt: j.updatedAt,
     });
   }
 
@@ -129,6 +109,7 @@ export async function buildExportWorkbookBuffer(): Promise<Buffer> {
     { header: "ایمیل", key: "email", width: 26 },
     { header: "مهارت", key: "role", width: 14 },
     { header: "ادمین", key: "isAdmin", width: 10 },
+    { header: "نقش برگزاری", key: "staffRole", width: 12 },
     { header: "دپارتمان", key: "department", width: 16 },
     { header: "تیم", key: "team", width: 20 },
     { header: "سکه", key: "coins", width: 12 },
@@ -141,6 +122,7 @@ export async function buildExportWorkbookBuffer(): Promise<Buffer> {
       email: u.email,
       role: ROLES[u.role as RoleKey]?.label ?? u.role,
       isAdmin: u.isAdmin ? "بله" : "خیر",
+      staffRole: u.staffRole,
       department: u.department,
       team: u.teamId ? teamNames.get(u.teamId) ?? u.teamId : "",
       coins: u.buyWallet,
@@ -153,17 +135,21 @@ export async function buildExportWorkbookBuffer(): Promise<Buffer> {
   setupSheet(wsIdeas, [
     { header: "شناسه", key: "id", width: 22 },
     { header: "تیم", key: "team", width: 20 },
+    { header: "محور", key: "track", width: 16 },
     { header: "عنوان", key: "title", width: 24 },
     { header: "یک‌خطی", key: "oneLiner", width: 30 },
     { header: "زمان ثبت", key: "submittedAt", width: 20 },
+    { header: "آخرین ویرایش", key: "editedAt", width: 20 },
   ]);
   for (const i of ideas) {
     wsIdeas.addRow({
       id: i.id,
       team: teamNames.get(i.teamId) ?? i.teamId,
+      track: trackNames.get(i.trackId) ?? i.trackId,
       title: i.title,
       oneLiner: i.oneLiner,
       submittedAt: i.submittedAt ?? "",
+      editedAt: i.editedAt ?? "",
     });
   }
 

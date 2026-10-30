@@ -1,19 +1,14 @@
 import { z } from "zod";
 import { prisma } from "./db";
-import { getPhase, phaseIndex, type Phase } from "./phase";
+import { moduleOpen } from "./module-state";
 import { ROLES, type RoleKey } from "./constants";
 import { notifyUsers } from "./notifications";
 
 export type TeamSettingsResult = { ok?: boolean; error?: string };
 
-/** نام و نشان تیم تا پایان «اتاق ایده» قابل تغییرند (پس از آن روی ایده و محصول نمایش داده می‌شوند). */
-export function teamSettingsPhaseOpen(phase: Phase) {
-  return phaseIndex(phase) <= phaseIndex("IDEATION");
-}
-
-export async function isTeamSettingsOpen() {
-  const { phase } = await getPhase();
-  return teamSettingsPhaseOpen(phase);
+/** نام و نشان تیم تا وقتی بخش «تیم» باز است قابل تغییرند. */
+export async function isTeamSettingsOpen(teamId?: string | null) {
+  return moduleOpen("team", teamId);
 }
 
 const teamSettingsSchema = z.object({
@@ -28,10 +23,9 @@ export async function updateTeamSettings(
 ): Promise<TeamSettingsResult> {
   const parsed = teamSettingsSchema.safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "اطلاعات نامعتبر است." };
-  if (!(await isTeamSettingsOpen())) return { error: "نام و نشان تیم فقط تا پایان «اتاق ایده» قابل تغییرند." };
-
   const actor = await prisma.user.findUnique({ where: { id: actorId }, select: { id: true, nickname: true, teamId: true } });
   if (!actor?.teamId) return { error: "ابتدا باید عضو یک تیم باشی." };
+  if (!(await isTeamSettingsOpen(actor.teamId))) return { error: "بخش تیم فعلاً باز نیست و نام و نشان تیم قابل تغییر نیستند." };
 
   const team = await prisma.team.findUnique({ where: { id: actor.teamId }, select: { name: true } });
   if (!team) return { error: "تیم یافت نشد." };

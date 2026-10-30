@@ -33,7 +33,7 @@ export function InvestPanel({
   spendable: number;
   /** حمایت قبلی همین کاربر از همین ایده */
   alreadyGiven: number;
-  /** سقف اثر هر نفر روی امتیاز حمایت مردمی یک پروژه */
+  /** سقف اثر هر نفر روی امتیاز حمایت یک پروژه */
   supportCap: number;
 }) {
   const [state, formAction] = useActionState<InvestActionState, FormData>(investAction, {});
@@ -176,7 +176,7 @@ export function InvestPanel({
 
       {overCap && (
         <p className="text-xs text-amber-700">
-          از هر نفر فقط {coins(supportCap)} برای هر پروژه در امتیاز «حمایت مردمی» حساب می‌شود؛ حمایت بیشتر مجاز است
+          از هر نفر فقط {coins(supportCap)} برای هر پروژه در امتیاز «حمایت با سکه» حساب می‌شود؛ حمایت بیشتر مجاز است
           اما امتیاز بیشتری نمی‌سازد.
         </p>
       )}

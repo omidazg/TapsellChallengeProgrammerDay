@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { getPhase } from "@/lib/phase";
+import { moduleGate } from "@/lib/module-state";
 import { purchaseProduct } from "@/lib/market";
 import { enqueueAuction } from "@/lib/auction";
 import { teamManageError } from "@/lib/team-access";
@@ -28,7 +28,7 @@ export async function purchaseAction(productId: string, slug: string): Promise<P
 
     revalidatePath(`/market`);
     revalidatePath(`/market/${slug}`);
-    // خرید در امتیاز «حمایت مردمی» حساب می‌شود.
+    // خرید در بخش «حمایت با سکه» امتیاز حساب می‌شود.
     invalidate("scores:");
     invalidate("api:market:ticker");
     return { ok: true, amount: result.amount };
@@ -42,8 +42,8 @@ export async function purchaseAction(productId: string, slug: string): Promise<P
 export async function heartAction(productId: string, slug: string): Promise<HeartState> {
   const user = await requireUser();
 
-  const { phase } = await getPhase();
-  if (phase !== "MARKET") return { error: "قلب‌دادن فقط در فاز «روز بازار» ممکن است" };
+  const gate = await moduleGate("market", user.teamId);
+  if (gate) return { error: gate };
 
   const purchaseCount = await prisma.purchase.count({ where: { userId: user.id, productId } });
   if (purchaseCount === 0) return { error: "برای قلب‌دادن ابتدا باید از این محصول خریده باشی" };
@@ -61,10 +61,10 @@ export async function heartAction(productId: string, slug: string): Promise<Hear
 }
 
 /**
- * فرستادن نسخهٔ ویژهٔ محصولِ تیمِ کاربر به صف حراج زنده (هر عضو تیم، فقط در روز بازار).
+ * فرستادن نسخهٔ ویژهٔ محصولِ تیمِ کاربر در یک محور به صف حراج زنده (هر عضو تیم).
  * منطق و همهٔ شرط‌ها در enqueueAuction (src/lib/auction.ts) است؛ slug فقط برای تازه‌سازی صفحه است.
  */
-export async function enqueueAuctionAction(slug: string): Promise<EnqueueState> {
+export async function enqueueAuctionAction(trackId: string, slug?: string): Promise<EnqueueState> {
   const user = await requireUser();
   const limit = rateLimit("auction:enqueue", user.id, { limit: 10, windowMs: 60 * 1000 });
   if (!limit.ok) return { error: rateLimitMessage(limit.retryAfterSec) };
@@ -72,9 +72,9 @@ export async function enqueueAuctionAction(slug: string): Promise<EnqueueState> 
   if (accessError) return { error: accessError };
 
   try {
-    const result = await enqueueAuction(user.id);
+    const result = await enqueueAuction(user.id, String(trackId ?? ""));
     if (!result.ok) return { error: result.error };
-    revalidatePath(`/market/${slug}`);
+    if (slug) revalidatePath(`/market/${slug}`);
     revalidatePath("/auction");
     return { ok: true, position: result.position };
   } catch (e) {

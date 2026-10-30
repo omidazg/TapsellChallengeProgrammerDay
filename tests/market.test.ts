@@ -1,9 +1,10 @@
 /**
- * تست src/lib/market.ts (خرید محصول در روز بازار) و src/lib/adslots.ts (جایگاه تبلیغاتی با قیمت ثابت)
+ * تست src/lib/market.ts (خرید محصول) و src/lib/adslots.ts (حراج جایگاه تبلیغاتی)
  * روی یک پایگاه‌دادهٔ SQLite موقت.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTempDb, type TempDb } from "../scripts/lib/temp-db";
+import { DEFAULTS } from "../src/lib/constants";
 
 let db: TempDb;
 let prisma: typeof import("../src/lib/db").prisma;
@@ -17,7 +18,7 @@ beforeAll(async () => {
   market = await import("../src/lib/market");
   adslots = await import("../src/lib/adslots");
   phase = await import("../src/lib/phase");
-  await phase.setPhase("MARKET", null);
+  await phase.setPhase("LIVE", null);
 });
 
 afterAll(async () => {
@@ -41,6 +42,7 @@ async function makeTeamWithProduct(opts: { price?: number; submitted?: boolean; 
   const product = await prisma.product.create({
     data: {
       teamId: team.id,
+      slug: `market-team-${counter}-general`,
       name: `محصول ${counter}`,
       price: opts.price ?? 20,
       submittedAt: opts.submitted === false ? null : new Date(),
@@ -54,12 +56,14 @@ async function walletOf(userId: string) {
   return (await prisma.user.findUniqueOrThrow({ where: { id: userId } })).buyWallet;
 }
 
-async function inPhase<T>(p: Parameters<typeof phase.setPhase>[0], fn: () => Promise<T>): Promise<T> {
-  await phase.setPhase(p, null);
+/** اجرای fn وقتی بخش key در وضعیت status است */
+async function withModule<T>(key: string, status: string, fn: () => Promise<T>): Promise<T> {
+  const k = `module_${key}`;
+  await prisma.setting.upsert({ where: { key: k }, update: { value: status }, create: { key: k, value: status } });
   try {
     return await fn();
   } finally {
-    await phase.setPhase("MARKET", null);
+    await prisma.setting.delete({ where: { key: k } });
   }
 }
 
@@ -99,7 +103,7 @@ describe("market.ts: purchaseProduct", () => {
     expect(await walletOf(members[0].id)).toBe(200);
   });
 
-  it("موجودی ناکافی، محصول ثبت‌نهایی‌نشده و بیرون از روز بازار رد می‌شوند", async () => {
+  it("موجودی ناکافی، محصول ثبت‌نهایی‌نشده، بازار بسته و پایان مسابقه رد می‌شوند", async () => {
     const { product } = await makeTeamWithProduct({ price: 30 });
     const poor = await makeUser(29);
     expect((await market.purchaseProduct(poor.id, product.id)).ok).toBe(false);
@@ -108,9 +112,17 @@ describe("market.ts: purchaseProduct", () => {
     const buyer = await makeUser(100);
     expect((await market.purchaseProduct(buyer.id, draft.id)).ok).toBe(false);
 
-    const res = await inPhase("BUILD", () => market.purchaseProduct(buyer.id, product.id));
-    expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.error).toContain("روز بازار");
+    for (const status of ["ro", "closed", "hidden"]) {
+      const res = await withModule("market", status, () => market.purchaseProduct(buyer.id, product.id));
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.error).toContain("فعلاً باز نیست");
+    }
+    await phase.setPhase("CLOSED", null);
+    try {
+      expect((await market.purchaseProduct(buyer.id, product.id)).ok).toBe(false);
+    } finally {
+      await phase.setPhase("LIVE", null);
+    }
     expect(await walletOf(buyer.id)).toBe(100);
     expect(await walletOf(poor.id)).toBe(29);
   });
@@ -169,126 +181,362 @@ describe("market.ts: getMarketProducts", () => {
   });
 });
 
-describe("adslots.ts: جایگاه تبلیغاتی با قیمت ثابت", () => {
+describe("adslots.ts: حراج جایگاه تبلیغاتی", () => {
   const HOUR = 3600_000;
-  let marketStart: Date;
+  let slotCounter = 0;
 
-  beforeAll(async () => {
-    marketStart = new Date(Date.now() - 30 * 60_000); // ساعت اول همین حالا جاری است
-    await adslots.ensureAdSlots(marketStart, 4);
-  });
-
-  async function openSlot(kind: "BANNER" | "FEATURED" | "PUSH", hour: number) {
-    return prisma.adSlot.findUniqueOrThrow({
-      where: { kind_hourStart: { kind, hourStart: new Date(marketStart.getTime() + hour * HOUR) } },
-    });
+  /** جایگاه تازه در آینده با زمان یکتا */
+  async function futureSlot(kind: "BANNER" | "FEATURED" | "PUSH" = "BANNER") {
+    slotCounter++;
+    return prisma.adSlot.create({ data: { kind, hourStart: new Date(Date.now() + (slotCounter + 1) * HOUR) } });
   }
 
-  it("ensureAdSlots برای هر ساعت و هر نوع یک جایگاه می‌سازد و idempotent است", async () => {
-    expect(await prisma.adSlot.count()).toBe(12);
-    await adslots.ensureAdSlots(marketStart, 4);
-    expect(await prisma.adSlot.count()).toBe(12);
-  });
+  const slotOf = (id: string) => prisma.adSlot.findUniqueOrThrow({ where: { id } });
 
-  it("قیمت‌ها پیش‌فرض دارند و از تنظیمات خوانده می‌شوند", async () => {
-    expect(await adslots.adSlotPrices()).toEqual({ BANNER: 60, FEATURED: 40, PUSH: 80 });
-    await prisma.setting.create({ data: { key: "adslot_price_featured", value: "45" } });
-    try {
-      expect((await adslots.adSlotPrices()).FEATURED).toBe(45);
-    } finally {
-      await prisma.setting.delete({ where: { key: "adslot_price_featured" } });
-    }
-  });
-
-  it("هر عضو تیم با محصول ثبت‌شده می‌تواند به قیمت ثابت بخرد؛ اول‌آمده اول‌خرید", async () => {
-    const { team, members } = await makeTeamWithProduct({ members: 2 });
-    const slot = await openSlot("BANNER", 1);
-
-    const res = await adslots.buyAdSlot(members[1].id, slot.id);
-    expect(res).toEqual({ ok: true, price: 60 });
-    expect(await walletOf(members[1].id)).toBe(140);
-    expect(await prisma.adSlot.findUniqueOrThrow({ where: { id: slot.id } })).toMatchObject({
-      status: "CLOSED",
-      winnerTeamId: team.id,
-      pricePaid: 60,
+  describe("ساخت بازه‌ها و قیمت‌ها", () => {
+    it("ensureAdSlots برای هر بازه تا ددلاین و هر نوع یک جایگاه می‌سازد و idempotent است", async () => {
+      const start = new Date(2031, 0, 1, 0, 0, 0);
+      const inRange = { hourStart: { gte: start } };
+      await phase.setPhase("LIVE", new Date(start.getTime() + 72 * HOUR));
+      try {
+        await adslots.ensureAdSlots(start);
+        expect(await prisma.adSlot.count({ where: inRange })).toBe(9); // ۳ بازهٔ ۲۴ساعته × ۳ نوع
+        await adslots.ensureAdSlots(start);
+        expect(await prisma.adSlot.count({ where: inRange })).toBe(9);
+      } finally {
+        await prisma.adSlot.deleteMany({ where: inRange });
+        await phase.setPhase("LIVE", null);
+      }
     });
-    const ledger = await prisma.ledgerEntry.findMany({ where: { refId: slot.id } });
-    expect(ledger).toHaveLength(1);
-    expect(ledger[0]).toMatchObject({ userId: members[1].id, teamId: team.id, delta: -60, reason: "ADSLOT" });
 
-    // تیم دیگر دیگر نمی‌تواند همان جایگاه را بخرد
-    const other = await makeTeamWithProduct();
-    const taken = await adslots.buyAdSlot(other.members[0].id, slot.id);
-    expect(taken.ok).toBe(false);
-    if (!taken.ok) expect(taken.error).toContain("فروخته");
-    expect(await walletOf(other.members[0].id)).toBe(200);
+    it("طول بازه از تنظیمات adslot_hours می‌آید", async () => {
+      const start = new Date(2032, 0, 1, 0, 0, 0);
+      const inRange = { hourStart: { gte: start } };
+      await prisma.setting.create({ data: { key: "adslot_hours", value: "12" } });
+      await phase.setPhase("LIVE", new Date(start.getTime() + 24 * HOUR));
+      try {
+        await adslots.ensureAdSlots(start);
+        const rows = await prisma.adSlot.findMany({ where: { ...inRange, kind: "BANNER" }, orderBy: { hourStart: "asc" } });
+        expect(rows.map((r) => r.hourStart.getTime() - start.getTime())).toEqual([0, 12 * HOUR]);
+      } finally {
+        await prisma.adSlot.deleteMany({ where: inRange });
+        await prisma.setting.delete({ where: { key: "adslot_hours" } });
+        await phase.setPhase("LIVE", null);
+      }
+    });
 
-    const grid = await adslots.slotsGrid(team.id);
-    const cell = grid.find((c) => c.id === slot.id)!;
-    expect(cell).toMatchObject({ state: "SOLD", mine: true, winnerTeamId: team.id, pricePaid: 60, price: 60 });
-    const otherView = await adslots.slotsGrid(other.team.id);
-    expect(otherView.find((c) => c.id === slot.id)?.mine).toBe(false);
+    it("کمترین پیشنهاد پیش‌فرض دارد و از تنظیمات خوانده می‌شود", async () => {
+      expect(await adslots.adSlotPrices()).toEqual({ BANNER: 60, FEATURED: 40, PUSH: 80 });
+      await prisma.setting.create({ data: { key: "adslot_price_featured", value: "45" } });
+      try {
+        expect((await adslots.adSlotPrices()).FEATURED).toBe(45);
+      } finally {
+        await prisma.setting.delete({ where: { key: "adslot_price_featured" } });
+      }
+    });
+
+    it("minNextSlotBid: نخستین پیشنهاد برابر پایه، سپس بالاترین + گام", () => {
+      expect(adslots.minNextSlotBid(60, null)).toBe(60);
+      expect(adslots.minNextSlotBid(60, 60)).toBe(60 + DEFAULTS.adslotBidIncrement);
+      expect(adslots.minNextSlotBid(60, 200)).toBe(200 + DEFAULTS.adslotBidIncrement);
+    });
   });
 
-  it("سقف جایگاه هر تیم (پیش‌فرض ۲) برای همهٔ اعضا مشترک است", async () => {
-    const { members } = await makeTeamWithProduct({ members: 2 });
-    expect((await adslots.buyAdSlot(members[0].id, (await openSlot("FEATURED", 1)).id)).ok).toBe(true);
-    expect((await adslots.buyAdSlot(members[1].id, (await openSlot("FEATURED", 2)).id)).ok).toBe(true);
-    const third = await adslots.buyAdSlot(members[1].id, (await openSlot("FEATURED", 3)).id);
-    expect(third.ok).toBe(false);
-    if (!third.ok) expect(third.error).toContain("حداکثر");
+  describe("bidAdSlot", () => {
+    it("نخستین پیشنهاد: هر عضو تیم، سکه همان لحظه کم می‌شود و جایگاه به محصول می‌رسد", async () => {
+      const { team, members, product } = await makeTeamWithProduct({ members: 2 });
+      const slot = await futureSlot("BANNER");
+
+      const low = await adslots.bidAdSlot(members[1].id, slot.id, product.id, 59);
+      expect(low.ok).toBe(false);
+      if (!low.ok) expect(low.error).toContain("کمترین پیشنهاد");
+
+      const res = await adslots.bidAdSlot(members[1].id, slot.id, product.id, 60);
+      expect(res).toEqual({ ok: true, amount: 60 });
+      expect(await walletOf(members[1].id)).toBe(140);
+      expect(await slotOf(slot.id)).toMatchObject({
+        status: "OPEN",
+        winnerTeamId: team.id,
+        winnerUserId: members[1].id,
+        winnerProductId: product.id,
+        pricePaid: 60,
+      });
+      const ledger = await prisma.ledgerEntry.findMany({ where: { refId: slot.id } });
+      expect(ledger).toHaveLength(1);
+      expect(ledger[0]).toMatchObject({ userId: members[1].id, teamId: team.id, wallet: "BUY", delta: -60, reason: "ADSLOT" });
+      expect(await prisma.adSlotBid.findMany({ where: { slotId: slot.id } })).toMatchObject([{ userId: members[1].id, teamId: team.id, productId: product.id, amount: 60 }]);
+    });
+
+    it("پیشنهاد بالاتر جایگاه را می‌گیرد و پیشنهاد قبلی کامل به نفر قبلی برمی‌گردد، حتی اگر دیرتر آمده باشد", async () => {
+      const first = await makeTeamWithProduct();
+      const second = await makeTeamWithProduct();
+      const slot = await futureSlot("FEATURED");
+      expect((await adslots.bidAdSlot(first.members[0].id, slot.id, first.product.id, 40)).ok).toBe(true);
+      expect(await walletOf(first.members[0].id)).toBe(160);
+
+      // کمتر از بالاترین + گام رد می‌شود و هیچ سکه‌ای جابه‌جا نمی‌شود
+      const tooLow = await adslots.bidAdSlot(second.members[0].id, slot.id, second.product.id, 40 + DEFAULTS.adslotBidIncrement - 1);
+      expect(tooLow.ok).toBe(false);
+      expect(await walletOf(first.members[0].id)).toBe(160);
+      expect(await walletOf(second.members[0].id)).toBe(200);
+
+      const amount = 40 + DEFAULTS.adslotBidIncrement;
+      expect((await adslots.bidAdSlot(second.members[0].id, slot.id, second.product.id, amount)).ok).toBe(true);
+      expect(await walletOf(first.members[0].id)).toBe(200);
+      expect(await walletOf(second.members[0].id)).toBe(200 - amount);
+      expect(await slotOf(slot.id)).toMatchObject({ winnerTeamId: second.team.id, winnerUserId: second.members[0].id, winnerProductId: second.product.id, pricePaid: amount });
+
+      const refunds = await prisma.ledgerEntry.findMany({ where: { refId: slot.id, reason: adslots.ADSLOT_REFUND_REASON } });
+      expect(refunds).toHaveLength(1);
+      expect(refunds[0]).toMatchObject({ userId: first.members[0].id, teamId: first.team.id, wallet: "BUY", delta: 40 });
+      expect(await prisma.adSlotBid.count({ where: { slotId: slot.id } })).toBe(2);
+
+      // تیم قبلی خبردار می‌شود
+      expect(await prisma.notification.count({ where: { kind: "adslot_outbid", userId: first.members[0].id } })).toBe(1);
+      expect(await prisma.notification.count({ where: { kind: "adslot_outbid", userId: second.members[0].id } })).toBe(0);
+
+      // شبکه: وضعیت و کمترین پیشنهاد بعدی
+      const cell = (await adslots.slotsGrid(second.team.id)).find((c) => c.id === slot.id)!;
+      expect(cell).toMatchObject({ state: "OPEN", mine: true, winnerTeamId: second.team.id, pricePaid: amount, minBid: amount + DEFAULTS.adslotBidIncrement });
+      expect((await adslots.slotsGrid(first.team.id)).find((c) => c.id === slot.id)?.mine).toBe(false);
+    });
+
+    it("زنجیرهٔ پیشنهادها: جمع سکهٔ کیف‌ها فقط به اندازهٔ بالاترین پیشنهاد کم شده است", async () => {
+      const a = await makeTeamWithProduct();
+      const b = await makeTeamWithProduct();
+      const slot = await futureSlot("BANNER");
+      for (const [who, amount] of [[a, 60], [b, 70], [a, 80], [b, 100]] as const) {
+        expect((await adslots.bidAdSlot(who.members[0].id, slot.id, who.product.id, amount)).ok).toBe(true);
+      }
+      expect(await walletOf(a.members[0].id)).toBe(200);
+      expect(await walletOf(b.members[0].id)).toBe(100);
+    });
+
+    it("بالا بردن پیشنهاد خود: پیشنهاد قبلی همان نفر در موجودی حساب می‌شود و اعلان نمی‌گیرد", async () => {
+      const { members, product } = await makeTeamWithProduct();
+      await prisma.user.update({ where: { id: members[0].id }, data: { buyWallet: 70 } });
+      const slot = await futureSlot("BANNER");
+      expect((await adslots.bidAdSlot(members[0].id, slot.id, product.id, 60)).ok).toBe(true);
+      expect(await walletOf(members[0].id)).toBe(10);
+
+      // ۷۰ از کل موجودی (۱۰ + ۶۰) ممکن است؛ ۷۱ نه
+      const tooMuch = await adslots.bidAdSlot(members[0].id, slot.id, product.id, 71);
+      expect(tooMuch.ok).toBe(false);
+      if (!tooMuch.ok) expect(tooMuch.error).toContain("سکهٔ کافی");
+      expect(await walletOf(members[0].id)).toBe(10);
+
+      expect((await adslots.bidAdSlot(members[0].id, slot.id, product.id, 70)).ok).toBe(true);
+      expect(await walletOf(members[0].id)).toBe(0);
+      expect((await slotOf(slot.id)).pricePaid).toBe(70);
+      expect(await prisma.notification.count({ where: { kind: "adslot_outbid", userId: members[0].id } })).toBe(0);
+    });
+
+    it("هم‌تیمی پیشنهاد را بالا می‌برد: سکهٔ نفر قبلی برمی‌گردد و سقف تیم مصرف اضافه نمی‌شود", async () => {
+      const { members, product } = await makeTeamWithProduct({ members: 2 });
+      const s1 = await futureSlot("PUSH");
+      const s2 = await futureSlot("PUSH");
+      expect((await adslots.bidAdSlot(members[0].id, s1.id, product.id, 80)).ok).toBe(true);
+      expect((await adslots.bidAdSlot(members[0].id, s2.id, product.id, 80)).ok).toBe(true);
+      // هر دو جایگاه سقف تیم را پر کرده‌اند، ولی بالابردن جایگاهی که دست تیم است آزاد است
+      expect((await adslots.bidAdSlot(members[1].id, s1.id, product.id, 90)).ok).toBe(true);
+      expect(await walletOf(members[0].id)).toBe(120);
+      expect(await walletOf(members[1].id)).toBe(110);
+      expect(await prisma.notification.count({ where: { kind: "adslot_outbid", userId: members[0].id } })).toBe(0);
+    });
+
+    it("سقف جایگاه هر تیم (پیش‌فرض ۲) برای همهٔ اعضا مشترک است و با شکسته‌شدن پیشنهاد آزاد می‌شود", async () => {
+      const { members, product } = await makeTeamWithProduct({ members: 2 });
+      const s1 = await futureSlot("FEATURED");
+      const s2 = await futureSlot("FEATURED");
+      const s3 = await futureSlot("FEATURED");
+      expect((await adslots.bidAdSlot(members[0].id, s1.id, product.id, 40)).ok).toBe(true);
+      expect((await adslots.bidAdSlot(members[1].id, s2.id, product.id, 40)).ok).toBe(true);
+      const third = await adslots.bidAdSlot(members[1].id, s3.id, product.id, 40);
+      expect(third.ok).toBe(false);
+      if (!third.ok) expect(third.error).toContain("حداکثر");
+
+      const rival = await makeTeamWithProduct();
+      expect((await adslots.bidAdSlot(rival.members[0].id, s1.id, rival.product.id, 50)).ok).toBe(true);
+      expect((await adslots.bidAdSlot(members[1].id, s3.id, product.id, 40)).ok).toBe(true);
+    });
+
+    it("پیشنهاد در لحظهٔ شروع بازه بسته می‌شود؛ شبکه وضعیت LIVE و PAST را نشان می‌دهد", async () => {
+      const { members, product } = await makeTeamWithProduct();
+      const live = await prisma.adSlot.create({ data: { kind: "BANNER", hourStart: new Date(Date.now() - HOUR) } });
+      const past = await prisma.adSlot.create({ data: { kind: "BANNER", hourStart: new Date(Date.now() - 25 * HOUR) } });
+      const startingNow = await prisma.adSlot.create({ data: { kind: "FEATURED", hourStart: new Date() } });
+      for (const slot of [live, past, startingNow]) {
+        const res = await adslots.bidAdSlot(members[0].id, slot.id, product.id, 500);
+        expect(res.ok).toBe(false);
+        if (!res.ok) expect(res.error).toContain("بسته");
+      }
+      expect(await walletOf(members[0].id)).toBe(200);
+      const grid = await adslots.slotsGrid(null);
+      expect(grid.find((c) => c.id === live.id)?.state).toBe("LIVE");
+      expect(grid.find((c) => c.id === past.id)?.state).toBe("PAST");
+    });
+
+    it("بی‌تیم، محصول ثبت‌نهایی‌نشده، محصول تیم دیگر، مبلغ نامعتبر، موجودی ناکافی و جایگاه ناموجود رد می‌شوند", async () => {
+      const slot = await futureSlot("PUSH");
+      const { members, product } = await makeTeamWithProduct();
+
+      const teamless = await makeUser(500);
+      expect((await adslots.bidAdSlot(teamless.id, slot.id, product.id, 80)).ok).toBe(false);
+
+      const draft = await makeTeamWithProduct({ submitted: false });
+      const draftRes = await adslots.bidAdSlot(draft.members[0].id, slot.id, draft.product.id, 80);
+      expect(draftRes.ok).toBe(false);
+      if (!draftRes.ok) expect(draftRes.error).toContain("ثبت نهایی");
+
+      const foreign = await makeTeamWithProduct();
+      const foreignRes = await adslots.bidAdSlot(members[0].id, slot.id, foreign.product.id, 80);
+      expect(foreignRes.ok).toBe(false);
+      if (!foreignRes.ok) expect(foreignRes.error).toContain("متعلق");
+
+      for (const bad of [0, -5, 80.5, Number.NaN]) {
+        expect((await adslots.bidAdSlot(members[0].id, slot.id, product.id, bad)).ok).toBe(false);
+      }
+
+      const poor = await makeTeamWithProduct();
+      await prisma.user.update({ where: { id: poor.members[0].id }, data: { buyWallet: 79 } });
+      const noCoins = await adslots.bidAdSlot(poor.members[0].id, slot.id, poor.product.id, 80);
+      expect(noCoins.ok).toBe(false);
+      if (!noCoins.ok) expect(noCoins.error).toContain("سکهٔ کافی");
+
+      expect((await adslots.bidAdSlot(members[0].id, "no-such-slot", product.id, 80)).ok).toBe(false);
+      expect((await slotOf(slot.id)).pricePaid).toBeNull();
+      expect(await prisma.ledgerEntry.count({ where: { refId: slot.id } })).toBe(0);
+    });
+
+    it("سکه‌های رزروشده برای پیشتازی در حراج زنده خرج‌شدنی نیستند", async () => {
+      const { members, product } = await makeTeamWithProduct();
+      const { product: auctioned } = await makeTeamWithProduct();
+      const slot = await futureSlot("BANNER");
+      const a = await prisma.auction.create({
+        data: { productId: auctioned.id, status: "LIVE", startsAt: new Date(), endsAt: new Date(Date.now() + 60_000) },
+      });
+      await prisma.bid.create({ data: { auctionId: a.id, userId: members[0].id, amount: 150 } });
+      try {
+        const res = await adslots.bidAdSlot(members[0].id, slot.id, product.id, 60);
+        expect(res.ok).toBe(false);
+        if (!res.ok) expect(res.error).toContain("سکهٔ کافی");
+      } finally {
+        await prisma.auction.update({ where: { id: a.id }, data: { status: "ENDED" } });
+      }
+    });
+
+    it("بخش جایگاه باید باز باشد (مگر استثنای همان تیم) و پس از پایان مسابقه بسته است", async () => {
+      const { team, members, product } = await makeTeamWithProduct();
+      const slot = await futureSlot("BANNER");
+      for (const status of ["ro", "closed", "hidden"]) {
+        const res = await withModule("adslots", status, () => adslots.bidAdSlot(members[0].id, slot.id, product.id, 60));
+        expect(res.ok).toBe(false);
+        if (!res.ok) expect(res.error).toContain("فعلاً باز نیست");
+      }
+      await phase.setPhase("CLOSED", null);
+      try {
+        expect((await adslots.bidAdSlot(members[0].id, slot.id, product.id, 60)).ok).toBe(false);
+      } finally {
+        await phase.setPhase("LIVE", null);
+      }
+      expect(await walletOf(members[0].id)).toBe(200);
+
+      await prisma.moduleException.create({ data: { moduleKey: "adslots", teamId: team.id, createdBy: "test" } });
+      const res = await withModule("adslots", "closed", () => adslots.bidAdSlot(members[0].id, slot.id, product.id, 60));
+      expect(res.ok).toBe(true);
+    });
+
+    it("دو پیشنهاد هم‌زمان سکه را گم نمی‌کنند: یک برنده و بازگشت کامل بقیه", async () => {
+      const a = await makeTeamWithProduct();
+      const b = await makeTeamWithProduct();
+      const slot = await futureSlot("BANNER");
+      const results = await Promise.all([
+        adslots.bidAdSlot(a.members[0].id, slot.id, a.product.id, 60),
+        adslots.bidAdSlot(b.members[0].id, slot.id, b.product.id, 60),
+      ]);
+      expect(results.filter((r) => r.ok)).toHaveLength(1);
+      const row = await slotOf(slot.id);
+      expect(row.pricePaid).toBe(60);
+      const winner = row.winnerUserId === a.members[0].id ? a : b;
+      const loser = winner === a ? b : a;
+      expect(await walletOf(winner.members[0].id)).toBe(140);
+      expect(await walletOf(loser.members[0].id)).toBe(200);
+    });
+
+    it("یک تیم می‌تواند برای محصول هر محورش جدا پیشنهاد بدهد", async () => {
+      const { team, members } = await makeTeamWithProduct();
+      const content = await prisma.product.create({
+        data: { teamId: team.id, trackId: "content", slug: `${team.slug}-content`, name: "محتوا", submittedAt: new Date() },
+      });
+      const slot = await futureSlot("BANNER");
+      expect((await adslots.bidAdSlot(members[0].id, slot.id, content.id, 60)).ok).toBe(true);
+      expect((await slotOf(slot.id)).winnerProductId).toBe(content.id);
+    });
   });
 
-  it("بی‌تیم، بدون محصول ثبت‌شده، موجودی ناکافی، جایگاه گذشته و فاز نادرست رد می‌شوند", async () => {
-    const slot = await openSlot("PUSH", 2);
-    const teamless = await makeUser(500);
-    expect((await adslots.buyAdSlot(teamless.id, slot.id)).ok).toBe(false);
+  describe("نمایش برنده و اعلان", () => {
+    it("currentAdWinners محصول صاحب بازهٔ جاری هر نوع را برمی‌گرداند", async () => {
+      const now = new Date(2029, 5, 1, 12, 0, 0);
+      const a = await makeTeamWithProduct();
+      const b = await makeTeamWithProduct();
+      await prisma.adSlot.createMany({
+        data: [
+          { kind: "BANNER", hourStart: new Date(now.getTime() - HOUR), winnerTeamId: a.team.id, winnerProductId: a.product.id, pricePaid: 1 },
+          { kind: "FEATURED", hourStart: new Date(now.getTime() + HOUR), winnerTeamId: b.team.id, winnerProductId: b.product.id, pricePaid: 1 }, // هنوز شروع نشده
+          { kind: "PUSH", hourStart: new Date(now.getTime() - 25 * HOUR), winnerTeamId: b.team.id, winnerProductId: b.product.id, pricePaid: 1 }, // تمام‌شده
+        ],
+      });
+      expect(await adslots.currentAdWinners(now)).toEqual({ banner: a.product.id, featured: null, push: null });
+    });
 
-    const draft = await makeTeamWithProduct({ submitted: false });
-    expect((await adslots.buyAdSlot(draft.members[0].id, slot.id)).ok).toBe(false);
-
-    const poor = await makeTeamWithProduct();
-    await prisma.user.update({ where: { id: poor.members[0].id }, data: { buyWallet: 79 } });
-    const noCoins = await adslots.buyAdSlot(poor.members[0].id, slot.id);
-    expect(noCoins.ok).toBe(false);
-    if (!noCoins.ok) expect(noCoins.error).toContain("سکهٔ کافی");
-
-    const past = await prisma.adSlot.create({ data: { kind: "BANNER", hourStart: new Date(Date.now() - 3 * HOUR) } });
-    const rich = await makeTeamWithProduct();
-    const late = await adslots.buyAdSlot(rich.members[0].id, past.id);
-    expect(late.ok).toBe(false);
-    expect((await adslots.slotsGrid(null)).find((c) => c.id === past.id)?.state).toBe("PAST");
-
-    for (const p of ["SEED_ROUND", "CLOSED"] as const) {
-      const res = await inPhase(p, () => adslots.buyAdSlot(rich.members[0].id, slot.id));
-      expect(res.ok).toBe(false);
-    }
-    // در «ساخت محصول» پیش‌خرید ممکن است
-    const prebuy = await inPhase("BUILD", () => adslots.buyAdSlot(rich.members[0].id, slot.id));
-    expect(prebuy).toEqual({ ok: true, price: 80 });
+    it("sendDuePushSlots وقتی بازه شروع شد یک‌بار به همه اعلان می‌دهد و محصول ثبت‌نشده علامت «ارسال‌نشده» می‌گیرد", async () => {
+      const a = await makeTeamWithProduct();
+      const slot = await prisma.adSlot.create({
+        data: { kind: "PUSH", hourStart: new Date(Date.now() - 30 * 60_000), winnerTeamId: a.team.id, winnerProductId: a.product.id, winnerUserId: a.members[0].id, pricePaid: 80 },
+      });
+      const draft = await makeTeamWithProduct({ submitted: false });
+      const skipped = await prisma.adSlot.create({
+        data: { kind: "PUSH", hourStart: new Date(Date.now() - 40 * 60_000), winnerTeamId: draft.team.id, winnerProductId: draft.product.id, winnerUserId: draft.members[0].id, pricePaid: 80 },
+      });
+      const sent = await adslots.sendDuePushSlots();
+      expect(sent).toBe(1);
+      const note = await prisma.notification.findFirstOrThrow({ where: { kind: "adslot_push", userId: a.members[0].id } });
+      expect(note.href).toBe(`/market/${a.product.slug}`);
+      expect((await prisma.setting.findUniqueOrThrow({ where: { key: `adslot_push_sent:${skipped.id}` } })).value).toBe("skipped");
+      expect((await prisma.setting.findUniqueOrThrow({ where: { key: `adslot_push_sent:${slot.id}` } })).value).not.toBe("");
+      expect(await adslots.sendDuePushSlots()).toBe(0);
+    });
   });
 });
 
-describe("market.ts: getCurrentAdSlotWinners (بازهٔ ساعت، بدون N+1)", () => {
+describe("market.ts: getCurrentAdSlotWinners (بازهٔ جاری، بدون N+1)", () => {
   // زمانی دور در آینده تا جایگاه‌های بقیهٔ تست‌ها در بازه نیفتند
   const now = new Date(2030, 0, 1, 10, 0, 0);
-  const ago = (min: number) => new Date(now.getTime() - min * 60_000);
+  const ago = (hours: number) => new Date(now.getTime() - hours * 3600_000);
 
-  it("جایگاهی که سرِ ساعت نیست (مثلاً ۹:۳۰) برندهٔ اکنون است؛ جدیدترینِ هر نوع، بدون بازپرداخت‌شده و محصول ثبت‌نشده", async () => {
+  it("برندهٔ اکنون جدیدترین جایگاه هر نوع است، بدون بازپرداخت‌شده، محصول ثبت‌نشده و بازه‌های گذشته و آینده", async () => {
     const a = await makeTeamWithProduct();
     const older = await makeTeamWithProduct();
     const refunded = await makeTeamWithProduct();
     const unsubmitted = await makeTeamWithProduct({ submitted: false });
     const featured = await makeTeamWithProduct();
+    const row = (kind: string, hourStart: Date, w: { team: { id: string }; product: { id: string } }, status = "OPEN") => ({
+      kind,
+      hourStart,
+      status,
+      winnerTeamId: w.team.id,
+      winnerProductId: w.product.id,
+      pricePaid: 1,
+    });
     await prisma.adSlot.createMany({
       data: [
-        { kind: "BANNER", hourStart: ago(30), status: "CLOSED", winnerTeamId: a.team.id, pricePaid: 1 },
-        { kind: "BANNER", hourStart: ago(50), status: "CLOSED", winnerTeamId: older.team.id, pricePaid: 1 },
-        { kind: "BANNER", hourStart: ago(61), status: "CLOSED", winnerTeamId: older.team.id, pricePaid: 1 }, // تمام‌شده
-        { kind: "FEATURED", hourStart: ago(10), status: "CLOSED", winnerTeamId: unsubmitted.team.id, pricePaid: 1 },
-        { kind: "FEATURED", hourStart: ago(20), status: "REFUNDED", winnerTeamId: refunded.team.id, pricePaid: 1 },
-        { kind: "FEATURED", hourStart: ago(40), status: "CLOSED", winnerTeamId: featured.team.id, pricePaid: 1 },
-        { kind: "BANNER", hourStart: new Date(now.getTime() + 60_000), status: "CLOSED", winnerTeamId: older.team.id, pricePaid: 1 }, // هنوز شروع نشده
+        row("BANNER", ago(1), a),
+        row("BANNER", ago(5), older),
+        row("BANNER", ago(25), older), // تمام‌شده (بازهٔ پیش‌فرض ۲۴ ساعت)
+        row("FEATURED", ago(1), unsubmitted),
+        row("FEATURED", ago(2), refunded, "REFUNDED"),
+        row("FEATURED", ago(4), featured),
+        row("BANNER", new Date(now.getTime() + 60_000), older), // هنوز شروع نشده
       ],
     });
 
@@ -296,7 +544,7 @@ describe("market.ts: getCurrentAdSlotWinners (بازهٔ ساعت، بدون N+1
     const byKind = Object.fromEntries(winners.map((w) => [w.kind, w.teamId]));
     expect(winners).toHaveLength(2);
     expect(byKind).toEqual({ BANNER: a.team.id, FEATURED: featured.team.id });
-    expect(winners.find((w) => w.kind === "BANNER")).toMatchObject({ productSlug: a.team.slug, productName: a.product.name });
+    expect(winners.find((w) => w.kind === "BANNER")).toMatchObject({ productSlug: a.product.slug, productName: a.product.name });
   });
 
   it("بدون جایگاه در بازه، فهرست خالی است", async () => {

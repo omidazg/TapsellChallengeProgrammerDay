@@ -4,15 +4,19 @@ import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { fa } from "@/lib/persian";
-import { ADMIN_SECTIONS, ADMIN_EXTRA_LINKS, isAdminNavActive } from "./nav-items";
+import type { PanelRole } from "@/lib/panel-roles";
+import { adminExtraLinksFor, adminSectionsFor, isAdminNavActive } from "./nav-items";
 
 /**
  * ناوبری ماندگار پنل برگزارکننده:
  * دسکتاپ (lg+) نوار کناری چسبان؛ موبایل/تبلت نوار تب افقی اسکرول‌شونده زیر هدر.
  * `badges` شمار موارد منتظر اقدام هر بخش است (مثلاً درخواست‌های دسترسی تازه).
+ * `role` فقط پیوندها را محدود می‌کند؛ دسترسی واقعی روی سرور در هر صفحه و اکشن بررسی می‌شود.
  */
-export function AdminNav({ badges = {} }: { badges?: Record<string, number> }) {
+export function AdminNav({ role, badges = {} }: { role: PanelRole; badges?: Record<string, number> }) {
   const path = usePathname() ?? "";
+  const sections = adminSectionsFor(role);
+  const extraLinks = adminExtraLinksFor(role);
   const tabsRef = useRef<HTMLUListElement>(null);
 
   // در تب‌بار افقی موبایل، تب فعال (که ممکن است بیرون از دید باشد) به دید آورده می‌شود.
@@ -28,7 +32,7 @@ export function AdminNav({ badges = {} }: { badges?: Record<string, number> }) {
       {/* موبایل/تبلت: تب‌بار افقی زیر هدر چسبان AppShell */}
       <div className="lg:hidden border-b border-brand-mist bg-white/90 backdrop-blur">
         <ul ref={tabsRef} className="flex items-center gap-1 overflow-x-auto no-scrollbar px-3 py-2">
-          {ADMIN_SECTIONS.map((s) => {
+          {sections.map((s) => {
             const active = isAdminNavActive(path, s.href);
             const badge = badges[s.href] ?? 0;
             return (
@@ -58,7 +62,7 @@ export function AdminNav({ badges = {} }: { badges?: Record<string, number> }) {
       <div className="hidden lg:block sticky top-28 max-h-[calc(100vh-8rem)] overflow-y-auto py-8">
         <div className="card p-2">
           <ul className="space-y-0.5">
-            {ADMIN_SECTIONS.map((s) => {
+            {sections.map((s) => {
               const active = isAdminNavActive(path, s.href);
               const badge = badges[s.href] ?? 0;
               return (
@@ -82,20 +86,24 @@ export function AdminNav({ badges = {} }: { badges?: Record<string, number> }) {
               );
             })}
           </ul>
-          <div className="my-2 border-t border-brand-mist" />
-          <ul>
-            {ADMIN_EXTRA_LINKS.map((s) => (
-              <li key={s.href}>
-                <Link
-                  href={s.href}
-                  className="flex items-center gap-2.5 rounded-2xl px-3 min-h-10 text-sm font-bold text-brand-slate hover:bg-brand-ice"
-                >
-                  <span aria-hidden className="w-5 text-center">{s.emoji}</span>
-                  {s.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
+          {extraLinks.length > 0 && (
+            <>
+              <div className="my-2 border-t border-brand-mist" />
+              <ul>
+                {extraLinks.map((s) => (
+                  <li key={s.href}>
+                    <Link
+                      href={s.href}
+                      className="flex items-center gap-2.5 rounded-2xl px-3 min-h-10 text-sm font-bold text-brand-slate hover:bg-brand-ice"
+                    >
+                      <span aria-hidden className="w-5 text-center">{s.emoji}</span>
+                      {s.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       </div>
     </nav>

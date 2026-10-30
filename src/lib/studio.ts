@@ -1,11 +1,11 @@
 /**
  * انتشار روی «بازار استودیو»: تیم از فرم ساخت محصول درخواست انتشار می‌دهد (لینک کد/بسته + توضیح)،
  * برگزارکننده در /admin/studio پیگیری و وضعیت را به‌روز می‌کند. محصول منتشرشده نشان «🚀 لایو»
- * می‌گیرد و نامزد جایزهٔ «بهترین محصول لایو» است. انتشار اختیاری است و اثری مستقیم در امتیاز ندارد.
+ * می‌گیرد و آمار واقعی‌اش (نصب، درآمد، امتیاز، نظر) در بخش بازار امتیاز حساب می‌شود (./bazaar.ts).
  */
 import { z } from "zod";
 import { prisma } from "./db";
-import { getPhase } from "./phase";
+import { moduleGate } from "./module-state";
 import { notifyTeam } from "./notifications";
 
 export type LiveStatus = "" | "REQUESTED" | "PUBLISHING" | "LIVE" | "REJECTED";
@@ -17,9 +17,13 @@ export const LIVE_STATUS_LABEL: Record<Exclude<LiveStatus, "">, string> = {
   REJECTED: "نیاز به اصلاح",
 };
 
-const STUDIO_PHASES = ["BUILD", "MARKET"] as const;
-
 const requestSchema = z.object({
+  bazaarPackage: z
+    .string()
+    .trim()
+    .max(200, "شناسهٔ بسته خیلی بلند است")
+    .refine((v) => v === "" || /^[a-zA-Z][\w]*(\.[a-zA-Z][\w]*)+$/.test(v), "شناسهٔ بسته باید مثل com.example.app باشد")
+    .default(""),
   sourceUrl: z
     .string()
     .trim()
@@ -31,17 +35,23 @@ const requestSchema = z.object({
 export type StudioResult = { ok?: boolean; error?: string };
 
 /** درخواست انتشار (یا ارسال دوباره پس از «نیاز به اصلاح») — هر عضو تیم */
-export async function requestGoLive(user: { id: string; teamId: string | null }, input: { sourceUrl: string; note?: string }): Promise<StudioResult> {
+export async function requestGoLive(
+  user: { id: string; teamId: string | null },
+  trackId: string,
+  input: { sourceUrl: string; note?: string; bazaarPackage?: string }
+): Promise<StudioResult> {
   if (!user.teamId) return { error: "ابتدا باید عضو یک تیم باشی." };
-  const { phase } = await getPhase();
-  if (!(STUDIO_PHASES as readonly string[]).includes(phase)) {
-    return { error: "درخواست انتشار در «ساخت محصول» و «روز بازار» ممکن است." };
-  }
+  const gate = await moduleGate("studio", user.teamId);
+  if (gate) return { error: gate };
   const parsed = requestSchema.safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "اطلاعات نامعتبر است." };
 
-  const product = await prisma.product.findUnique({ where: { teamId: user.teamId }, select: { id: true, liveStatus: true } });
+  const product = await prisma.product.findUnique({
+    where: { teamId_trackId: { teamId: user.teamId, trackId } },
+    select: { id: true, liveStatus: true, submittedAt: true },
+  });
   if (!product) return { error: "اول پیش‌نویس محصول را ذخیره کن." };
+  if (!product.submittedAt) return { error: "اول محصولت را ثبت نهایی کن، بعد درخواست انتشار بده." };
   if (product.liveStatus === "LIVE") return { error: "محصولت همین حالا لایو است." };
   if (product.liveStatus === "PUBLISHING") return { error: "انتشار محصولت در جریان است." };
 
@@ -50,6 +60,7 @@ export async function requestGoLive(user: { id: string; teamId: string | null },
     data: {
       liveStatus: "REQUESTED",
       liveSourceUrl: parsed.data.sourceUrl,
+      bazaarPackage: parsed.data.bazaarPackage,
       liveRequestNote: parsed.data.note,
       liveRequestedAt: new Date(),
       liveAdminNote: "",
@@ -59,10 +70,10 @@ export async function requestGoLive(user: { id: string; teamId: string | null },
 }
 
 /** لغو درخواست (تا پیش از شروع انتشار) */
-export async function cancelGoLive(user: { id: string; teamId: string | null }): Promise<StudioResult> {
+export async function cancelGoLive(user: { id: string; teamId: string | null }, trackId: string): Promise<StudioResult> {
   if (!user.teamId) return { error: "ابتدا باید عضو یک تیم باشی." };
   const res = await prisma.product.updateMany({
-    where: { teamId: user.teamId, liveStatus: { in: ["REQUESTED", "REJECTED"] } },
+    where: { teamId: user.teamId, trackId, liveStatus: { in: ["REQUESTED", "REJECTED"] } },
     data: { liveStatus: "" },
   });
   return res.count > 0 ? { ok: true } : { error: "درخواستی برای لغو وجود ندارد." };
@@ -113,7 +124,8 @@ export type StudioRow = {
   productId: string;
   productName: string;
   teamName: string;
-  teamSlug: string;
+  slug: string;
+  bazaarPackage: string;
   status: LiveStatus;
   sourceUrl: string;
   requestNote: string;
@@ -136,7 +148,8 @@ export async function listStudioRequests(): Promise<StudioRow[]> {
       productId: p.id,
       productName: p.name,
       teamName: p.team.name,
-      teamSlug: p.team.slug,
+      slug: p.slug,
+      bazaarPackage: p.bazaarPackage,
       status: p.liveStatus as LiveStatus,
       sourceUrl: p.liveSourceUrl,
       requestNote: p.liveRequestNote,

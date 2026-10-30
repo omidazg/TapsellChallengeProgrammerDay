@@ -6,7 +6,7 @@
  * یک کپی از `dev.db` در پوشهٔ موقت ساخته می‌شود و `DATABASE_URL` پیش از بارگذاری
  * Prisma به آن اشاره می‌کند (معادل «db push --force-reset» روی یک پایگاه‌دادهٔ تازه،
  * بدون نیاز به زیرفرآیند جدا — اسکیمای dev.db از قبل به‌روز است).
- * در پایان فاز به REGISTRATION برمی‌گردد و کپی حذف می‌شود.
+ * در پایان کپی حذف می‌شود.
  */
 
 import fs from "node:fs";
@@ -42,60 +42,69 @@ async function main() {
   // پس از تنظیم DATABASE_URL بارگذاری می‌شوند (Prisma آدرس را در زمان import می‌خواند).
   const { setPhase, getPhase } = await import("../src/lib/phase");
   const { setSetting } = await import("../src/lib/admin");
-  const { runScheduledTasks } = await import("../src/lib/scheduler");
+  const { setModuleStatus } = await import("../src/lib/module-state");
+  const { runScheduledTasks, getLastSchedulerTickAt } = await import("../src/lib/scheduler");
+  const { prisma } = await import("../src/lib/db");
 
   try {
-    // ---------- حالت ۱: auto_advance=1 و زمان فاز گذشته ----------
-    const pastEndsAt = new Date(Date.now() - 60_000);
-    await setPhase("IDEATION", pastEndsAt);
-    await setSetting("auto_advance", "1");
-
+    // ---------- حالت ۱: ددلاین نهایی نرسیده ----------
+    const future = new Date(Date.now() + 3600_000);
+    await setPhase("LIVE", future);
     await runScheduledTasks();
-
     const after1 = await getPhase();
-    eq("auto_advance=1: فاز به SEED_ROUND رفت", after1.phase, "SEED_ROUND");
-    check(
-      "auto_advance=1: زمان پایان جدید تقریباً ۲۴ ساعت بعد است",
-      !!after1.endsAt && Math.abs(after1.endsAt.getTime() - (Date.now() + 24 * 3600 * 1000)) < 10_000,
-      after1.endsAt?.toISOString()
-    );
+    eq("پیش از ددلاین: مسابقه در جریان می‌ماند", after1.phase, "LIVE");
+    eq("پیش از ددلاین: ددلاین تغییر نکرد", after1.endsAt?.toISOString(), future.toISOString());
+    check("تیک موفق ثبت شد", typeof getLastSchedulerTickAt() === "number");
 
-    // اجرای دوباره بدون گذشتن زمان فاز جدید: تغییری نباید رخ دهد (idempotent/safe)
-    const endsAtAfterFirst = after1.endsAt?.toISOString() ?? null;
+    // ---------- حالت ۲: بدون ددلاین هرگز خودکار بسته نمی‌شود ----------
+    await setPhase("LIVE", null);
     await runScheduledTasks();
-    const after1b = await getPhase();
-    eq("اجرای دوباره بدون پایان زمان فاز: فاز تغییر نکرد", after1b.phase, "SEED_ROUND");
-    eq("اجرای دوباره بدون پایان زمان فاز: زمان پایان تغییر نکرد", after1b.endsAt?.toISOString() ?? null, endsAtAfterFirst);
+    eq("بدون ددلاین: مسابقه در جریان می‌ماند", (await getPhase()).phase, "LIVE");
 
-    // ---------- حالت ۲: auto_advance=0 ----------
-    const pastEndsAt2 = new Date(Date.now() - 60_000);
-    await setPhase("SEED_ROUND", pastEndsAt2);
-    await setSetting("auto_advance", "0");
-
+    // ---------- حالت ۳: با رسیدن ددلاین مسابقه خودکار بسته و تسویه می‌شود ----------
+    const past = new Date(Date.now() - 60_000);
+    await setPhase("LIVE", past);
     await runScheduledTasks();
+    eq("پس از ددلاین: مسابقه بسته شد", (await getPhase()).phase, "CLOSED");
+    const settledAt = await prisma.setting.findUnique({ where: { key: "settled_at" } });
+    check("پس از ددلاین: تسویه انجام شد", !!settledAt?.value, settledAt);
+    eq("پس از ددلاین: ردیف پایان مسابقه برای فید عمومی ثبت شد", await prisma.auditLog.count({ where: { action: "contest.end" } }), 1);
 
-    const after2 = await getPhase();
-    eq("auto_advance=0: فاز تغییر نکرد", after2.phase, "SEED_ROUND");
-    eq("auto_advance=0: زمان پایان تغییر نکرد", after2.endsAt?.toISOString(), pastEndsAt2.toISOString());
-
-    // ---------- حالت ۳: فاز CLOSED هرگز پیشروی نمی‌کند، حتی با auto_advance=1 ----------
-    await setPhase("CLOSED", new Date(Date.now() - 60_000));
-    await setSetting("auto_advance", "1");
+    // ---------- حالت ۴: اجرای دوباره روی CLOSED کاری نمی‌کند ----------
     await runScheduledTasks();
-    const after3 = await getPhase();
-    eq("CLOSED: فاز تغییر نکرد", after3.phase, "CLOSED");
+    eq("CLOSED: وضعیت تغییر نکرد", (await getPhase()).phase, "CLOSED");
+    const settledAgain = await prisma.setting.findUnique({ where: { key: "settled_at" } });
+    eq("CLOSED: تسویه دوباره اجرا نشد", settledAgain?.value, settledAt?.value);
 
-    // ---------- حالت ۴: اجرای هم‌زمان نباید رو هم بیفتد (قفل در-فرآیندی) ----------
-    await setPhase("IDEATION", new Date(Date.now() - 60_000));
-    await setSetting("auto_advance", "1");
+    // ---------- حالت ۵: حراج خودکار فقط وقتی بخش بازار باز است ----------
+    await setPhase("LIVE", null);
+    await prisma.setting.deleteMany({ where: { key: "last_auction_ended_at" } });
+    const team = await prisma.team.create({ data: { name: "تیم زمان‌بند", slug: "smoke-scheduler-team" } });
+    const product = await prisma.product.create({
+      data: { teamId: team.id, slug: "smoke-scheduler-team-general", name: "محصول زمان‌بند", price: 10, submittedAt: new Date() },
+    });
+    await prisma.auction.create({ data: { productId: product.id, status: "SCHEDULED", startPrice: 5 } });
+
+    await setModuleStatus("market", "closed");
+    await runScheduledTasks();
+    eq("بازار بسته: حراج شروع نشد", await prisma.auction.count({ where: { status: "LIVE" } }), 0);
+
+    await setModuleStatus("market", "open");
+    await setSetting("auto_auction", "0");
+    await runScheduledTasks();
+    eq("auto_auction=0: حراج شروع نشد", await prisma.auction.count({ where: { status: "LIVE" } }), 0);
+
+    await setSetting("auto_auction", "1");
+    await runScheduledTasks();
+    eq("بازار باز و auto_auction=1: حراج صف شروع شد", await prisma.auction.count({ where: { status: "LIVE" } }), 1);
+
+    // ---------- حالت ۶: اجرای هم‌زمان نباید رو هم بیفتد (قفل در-فرآیندی) ----------
+    await setPhase("LIVE", new Date(Date.now() - 60_000));
     await Promise.all([runScheduledTasks(), runScheduledTasks(), runScheduledTasks()]);
-    const after4 = await getPhase();
-    eq("اجرای هم‌زمان: فقط یک‌بار پیشروی کرد", after4.phase, "SEED_ROUND");
+    eq("اجرای هم‌زمان: مسابقه یک‌بار بسته شد", (await getPhase()).phase, "CLOSED");
   } finally {
     // ---------- پاکسازی ----------
     try {
-      const { setPhase } = await import("../src/lib/phase");
-      await setPhase("REGISTRATION", null);
       const { prisma } = await import("../src/lib/db");
       await prisma.$disconnect();
     } catch {

@@ -8,7 +8,7 @@
 import { prisma } from "./db";
 import { computeScores } from "./scoring";
 import { invalidate } from "./ttl-cache";
-import type { ScoreOutput, TeamResult } from "./economy/types";
+import { entryKey, type MarketPoints, type ScoreOutput, type TeamResult } from "./economy/types";
 
 /** کلید Setting که زمان تسویه در آن ذخیره می‌شود (ISO). */
 export const SETTLED_AT_KEY = "settled_at";
@@ -66,12 +66,23 @@ export function settleGame(): Promise<SettlementResult> {
 
 function noop() {}
 
+function parseMarketDetail(raw: string): MarketPoints {
+  const empty: MarketPoints = { support: 0, activeInstalls: 0, revenue: 0, rating: 0, comments: 0 };
+  try {
+    return { ...empty, ...JSON.parse(raw) };
+  } catch {
+    return empty;
+  }
+}
+
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 /** نوشتن امتیاز همهٔ تیم‌ها در TeamScore و زمان تسویه (درون تراکنش). final=undefined وضعیت قطعی را دست نمی‌زند. */
 async function writeScores(tx: Tx, output: ScoreOutput, settledAt: Date, final?: boolean) {
   for (const t of output.teams) {
     const data = {
+      productId: t.productId,
+      category: t.category,
       memberCount: t.memberCount,
       juryRaw: t.juryRaw,
       juryAdjusted: t.juryAdjusted,
@@ -80,21 +91,26 @@ async function writeScores(tx: Tx, output: ScoreOutput, settledAt: Date, final?:
       coinsReceived: t.coinsReceived,
       ai: t.ai,
       ptsJury: t.pts.jury,
-      ptsPeople: t.pts.people,
+      ptsMarket: t.pts.market,
       ptsAi: t.pts.ai,
+      marketDetail: JSON.stringify(t.marketDetail),
       cheatPenalty: t.cheatPenalty,
       total: t.total,
       rank: t.rank ?? 0,
+      overallRank: t.overallRank ?? 0,
       computedAt: settledAt,
     };
     await tx.teamScore.upsert({
-      where: { teamId: t.teamId },
+      where: { teamId_trackId: { teamId: t.teamId, trackId: t.trackId } },
       update: data,
-      create: { teamId: t.teamId, ...data },
+      create: { teamId: t.teamId, trackId: t.trackId, ...data },
     });
   }
-  // ردیف تیم‌هایی که دیگر در محاسبه نیستند (مثلاً ادغام‌شده) نباید در نتیجه بمانند.
-  await tx.teamScore.deleteMany({ where: { teamId: { notIn: output.teams.map((t) => t.teamId) } } });
+  // ردیف ثبت‌هایی که دیگر در محاسبه نیستند (مثلاً محور مخفی یا تیم ادغام‌شده) نباید در نتیجه بمانند.
+  const keep = new Set(output.teams.map(entryKey));
+  const existingRows = await tx.teamScore.findMany({ select: { id: true, teamId: true, trackId: true } });
+  const stale = existingRows.filter((r) => !keep.has(entryKey(r))).map((r) => r.id);
+  if (stale.length > 0) await tx.teamScore.deleteMany({ where: { id: { in: stale } } });
 
   await tx.setting.upsert({
     where: { key: SETTLED_AT_KEY },
@@ -169,9 +185,13 @@ export async function resettleGame(): Promise<SettlementResult> {
  * تا عددهای صفحه دقیقاً همانی باشد که ثبت شده است.
  */
 export async function loadSettledOutput(): Promise<ScoreOutput> {
-  const scores = await prisma.teamScore.findMany({ orderBy: { rank: "asc" } });
+  const scores = await prisma.teamScore.findMany({ orderBy: { overallRank: "asc" }, include: { team: { select: { products: { select: { id: true, name: true } } } } } });
   const teams: TeamResult[] = scores.map((s) => ({
     teamId: s.teamId,
+    trackId: s.trackId,
+    category: s.category,
+    productId: s.productId,
+    productName: s.team.products.find((p) => p.id === s.productId)?.name ?? "",
     memberCount: s.memberCount,
     juryRaw: s.juryRaw,
     juryAdjusted: s.juryAdjusted,
@@ -180,9 +200,11 @@ export async function loadSettledOutput(): Promise<ScoreOutput> {
     coinsReceived: s.coinsReceived,
     ai: s.ai,
     cheatPenalty: s.cheatPenalty,
-    pts: { jury: s.ptsJury, people: s.ptsPeople, ai: s.ptsAi },
+    pts: { jury: s.ptsJury, market: s.ptsMarket, ai: s.ptsAi },
+    marketDetail: parseMarketDetail(s.marketDetail),
     total: s.total,
     rank: s.rank,
+    overallRank: s.overallRank,
   }));
   return { teams };
 }

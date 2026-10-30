@@ -53,18 +53,14 @@ export async function notifyAll(n: NotifyInput): Promise<void> {
 }
 
 const PHASE_HREF: Record<Phase, string> = {
-  REGISTRATION: "/team",
-  IDEATION: "/idea",
-  SEED_ROUND: "/invest",
-  BUILD: "/build",
-  MARKET: "/market",
+  LIVE: "/",
   CLOSED: "/results",
 };
 
 export async function notifyPhaseChange(phase: Phase): Promise<void> {
   await notifyAll({
     kind: "PHASE_CHANGE",
-    title: `فاز جدید: ${PHASE_LABEL[phase]}`,
+    title: PHASE_LABEL[phase],
     body: PHASE_DESC[phase],
     href: PHASE_HREF[phase],
   });

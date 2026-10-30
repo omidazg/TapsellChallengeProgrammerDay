@@ -1,13 +1,18 @@
-import { SCORE_WEIGHTS } from "@/lib/constants";
 import { SCORE_CATEGORY_LABELS } from "@/lib/score-labels";
+import { MARKET_SUB_LABEL, type MarketSubWeights, type TrackWeights } from "@/lib/tracks";
 import type { TeamResult } from "@/lib/economy/types";
-import { formatMillion } from "@/lib/prizes";
 import { fa, coins } from "@/lib/persian";
 
-/** مبلغ میلیونی (تومان) با رقم فارسی، جداکنندهٔ هزارگان و ممیز فارسی */
-export function millionFa(n: number): string {
-  return fa(Number(formatMillion(n))).replace(".", "٫");
-}
+/** آمار خام بازار یک محصول برای ستون جزئیات */
+export type BazaarFigures = {
+  activeInstalls: number;
+  revenueToman: number;
+  rating: number | null;
+  commentCount: number;
+  flagged: boolean;
+};
+
+const MARKET_SUB_ORDER: readonly (keyof MarketSubWeights)[] = ["support", "activeInstalls", "revenue", "rating", "comments"];
 
 /** «۷۷ از ۱۰۰»؛ null یعنی هنوز داوری نشده */
 export function juryDetail(t: Pick<TeamResult, "juryRaw">): string | null {
@@ -15,13 +20,49 @@ export function juryDetail(t: Pick<TeamResult, "juryRaw">): string | null {
   return `${fa(Math.round(t.juryRaw))} از ۱۰۰`;
 }
 
+function marketSubDetail(key: keyof MarketSubWeights, result: TeamResult, bazaar?: BazaarFigures | null): React.ReactNode {
+  if (key === "support") {
+    return (
+      <>
+        {fa(result.supporters)} حامی · {coins(result.coinsReceived)}
+        <span className="block text-xs">نمرهٔ درجه‌دو: {fa(Math.round(result.people))}</span>
+      </>
+    );
+  }
+  if (!bazaar) return "آماری ثبت نشده";
+  if (bazaar.flagged) return "در حال بررسی؛ تا رفع پرچم حساب نمی‌شود";
+  switch (key) {
+    case "activeInstalls":
+      return `${fa(bazaar.activeInstalls)} نصب`;
+    case "revenue":
+      return `${fa(bazaar.revenueToman)} تومان`;
+    case "rating":
+      return bazaar.rating == null ? "بدون امتیاز" : `${fa(bazaar.rating.toFixed(1)).replace(".", "٫")} از ۵`;
+    case "comments":
+      return `${fa(bazaar.commentCount)} نظر`;
+  }
+}
+
 /**
- * ریزامتیاز یک تیم در سه معیار + کسر تقلب و امتیاز کل.
- * مشترک بین صفحهٔ نتایج و گزارش چاپی هر تیم تا عددها و متن‌ها یکی بمانند.
+ * ریزامتیاز یک ثبت با وزن‌های محور خودش: داوری، بازار با زیرشاخص‌ها، هوش مصنوعی، کسر تقلب و امتیاز کل.
+ * زیرشاخصی که در این محور وزن ندارد نمایش داده نمی‌شود. مشترک بین صفحهٔ نتایج و گزارش چاپی هر تیم.
  */
-export function ScoreBreakdown({ result, cheatNote, caption }: { result: TeamResult; cheatNote?: string; caption: string }) {
-  const total = SCORE_WEIGHTS.jury + SCORE_WEIGHTS.people + SCORE_WEIGHTS.ai;
+export function ScoreBreakdown({
+  result,
+  weights,
+  bazaar,
+  cheatNote,
+  caption,
+}: {
+  result: TeamResult;
+  weights: TrackWeights;
+  bazaar?: BazaarFigures | null;
+  cheatNote?: string;
+  caption: string;
+}) {
+  const total = (weights.jury + weights.market + weights.ai) * 10;
   const jury = juryDetail(result);
+  const marketMax = weights.market * 10;
   return (
     <table className="w-full text-sm">
       <caption className="sr-only">{caption}</caption>
@@ -35,28 +76,31 @@ export function ScoreBreakdown({ result, cheatNote, caption }: { result: TeamRes
       <tbody>
         <Row
           label={`${SCORE_CATEGORY_LABELS.jury.emoji} ${SCORE_CATEGORY_LABELS.jury.label}`}
-          detail={
-            jury == null ? "هنوز داوری نشده" : <>نمرهٔ داوران {jury}</>
-          }
+          detail={jury == null ? "هنوز داوری نشده" : <>میانگین نمرهٔ داوران {jury}</>}
           pts={result.pts.jury}
-          max={SCORE_WEIGHTS.jury}
+          max={weights.jury * 10}
         />
         <Row
-          label={`${SCORE_CATEGORY_LABELS.people.emoji} ${SCORE_CATEGORY_LABELS.people.label}`}
-          detail={
-            <>
-              {fa(result.supporters)} حامی · {coins(result.coinsReceived)}
-              <span className="block text-xs">نمرهٔ درجه‌دو: {fa(Math.round(result.people))}</span>
-            </>
-          }
-          pts={result.pts.people}
-          max={SCORE_WEIGHTS.people}
+          label={`${SCORE_CATEGORY_LABELS.market.emoji} ${SCORE_CATEGORY_LABELS.market.label}`}
+          detail="جمع زیرشاخص‌های پایین"
+          pts={result.pts.market}
+          max={marketMax}
         />
+        {MARKET_SUB_ORDER.filter((k) => weights.marketSub[k] > 0).map((k) => (
+          <Row
+            key={k}
+            sub
+            label={MARKET_SUB_LABEL[k]}
+            detail={marketSubDetail(k, result, bazaar)}
+            pts={result.marketDetail[k]}
+            max={(marketMax * weights.marketSub[k]) / 100}
+          />
+        ))}
         <Row
           label={`${SCORE_CATEGORY_LABELS.ai.emoji} ${SCORE_CATEGORY_LABELS.ai.label}`}
           detail={result.ai == null ? "هنوز ارزیابی نشده" : `${fa(Math.round(result.ai))} از ۱۰۰`}
           pts={result.pts.ai}
-          max={SCORE_WEIGHTS.ai}
+          max={weights.ai * 10}
         />
         {result.cheatPenalty > 0 && (
           <tr className="border-b border-brand-mist bg-red-50">
@@ -77,13 +121,15 @@ export function ScoreBreakdown({ result, cheatNote, caption }: { result: TeamRes
   );
 }
 
-function Row({ label, detail, pts, max }: { label: string; detail: React.ReactNode; pts: number; max: number }) {
+function Row({ label, detail, pts, max, sub }: { label: string; detail: React.ReactNode; pts: number; max: number; sub?: boolean }) {
   return (
     <tr className="border-b border-brand-mist align-top">
-      <th scope="row" className="px-3 py-2 text-right font-bold text-brand-navy whitespace-nowrap">{label}</th>
-      <td className="px-3 py-2 text-brand-slate fa-num">{detail}</td>
-      <td className="px-3 py-2 font-bold fa-num whitespace-nowrap">
-        {fa(Math.round(pts))} <span className="font-normal text-brand-slate">/ {fa(max)}</span>
+      <th scope="row" className={`px-3 py-2 text-right whitespace-nowrap ${sub ? "pr-8 font-normal text-brand-slate" : "font-bold text-brand-navy"}`}>
+        {label}
+      </th>
+      <td className={`px-3 py-2 text-brand-slate fa-num ${sub ? "text-xs" : ""}`}>{detail}</td>
+      <td className={`px-3 py-2 fa-num whitespace-nowrap ${sub ? "text-xs" : "font-bold"}`}>
+        {fa(Math.round(pts))} <span className="font-normal text-brand-slate">/ {fa(Math.round(max))}</span>
       </td>
     </tr>
   );

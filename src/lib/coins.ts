@@ -10,17 +10,15 @@
  *   manual — بدون درگاه: سفارش ثبت می‌شود و برگزارکننده پس از دریافت وجه از /admin/coins تأییدش می‌کند
  * درگاه واقعی (مثلاً زرین‌پال/پی‌پینگ) با پیاده‌سازی همین رابط PaymentDriver اضافه می‌شود.
  *
- * کل مبلغ سفارش‌های پرداخت‌شده به صندوق جایزه اضافه می‌شود (./prize-pool.ts).
  */
 import { randomBytes } from "node:crypto";
 import { prisma } from "./db";
 import { COIN_PRICE_RIAL, DEFAULTS } from "./constants";
-import { getPhase, getSetting, getSettingInt } from "./phase";
+import { getSetting, getSettingInt } from "./phase";
+import { moduleGate } from "./module-state";
 import { fa } from "./persian";
-import { invalidate } from "./ttl-cache";
 import { notifyUser } from "./notifications";
 
-export const PRIZE_POOL_CACHE_PREFIX = "prizepool:";
 
 export type CoinOrderStatus = "PENDING" | "PAID" | "FAILED" | "CANCELED";
 
@@ -122,8 +120,9 @@ export async function createCoinOrder(userId: string, coinsWanted: number, callb
   const minCoins = DEFAULTS.minCoinPurchase;
   if (!Number.isFinite(coins) || coins < minCoins) return { ok: false, error: `حداقل خرید ${fa(minCoins)} سکه است` };
 
-  const { phase } = await getPhase();
-  if (phase === "CLOSED") return { ok: false, error: "بازی تمام شده و خرید سکه بسته است" };
+  const buyer = await prisma.user.findUnique({ where: { id: userId }, select: { teamId: true } });
+  const gate = await moduleGate("coins", buyer?.teamId);
+  if (gate) return { ok: false, error: gate };
 
   const maxPerUser = await getSettingInt("max_bought_coins_per_user", DEFAULTS.maxBoughtCoinsPerUser);
   const driver = getPaymentDriver();
@@ -182,7 +181,6 @@ async function markPaidAndCredit(orderId: string, refId: string, note?: string):
     return order;
   });
   if (!credited) return false;
-  invalidate(PRIZE_POOL_CACHE_PREFIX);
   await notifyUser(credited.userId, {
     kind: "coins",
     title: "سکه‌هایت اضافه شد",

@@ -53,7 +53,7 @@ export function NotificationBell({ phase, variant = "desktop" }: { phase: Phase;
       setItems(data.items);
       // توست فقط از زنگ هدر؛ نسخهٔ منوی موبایل همزمان mount است و توست تکراری می‌ساخت
       if (variant === "desktop" && lastPhase.current !== data.phase) {
-        setToast(`فاز بازی تغییر کرد: ${PHASE_LABEL[data.phase]}`);
+        setToast(`وضعیت بازی تغییر کرد: ${PHASE_LABEL[data.phase]}`);
       }
       lastPhase.current = data.phase;
     } catch {

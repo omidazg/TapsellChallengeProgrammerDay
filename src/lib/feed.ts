@@ -4,7 +4,6 @@
  * هیچ ایمیل، موجودی کیف یا مبلغ حمایت (که در InvestorList پنهان است) درز نمی‌کند.
  */
 import { prisma } from "./db";
-import { PHASE_LABEL, PHASES, type Phase } from "./phases";
 import { cached } from "./ttl-cache";
 
 export type FeedEvent = {
@@ -63,10 +62,10 @@ export async function buildFeed(limit = FEED_LIMIT): Promise<FeedEvent[]> {
       },
     }),
     prisma.auditLog.findMany({
-      where: { action: "phase.set" },
+      where: { action: { in: ["phase.set", "contest.end"] } },
       orderBy: { createdAt: "desc" },
       take: PER_SOURCE_LIMIT,
-      select: { id: true, target: true, createdAt: true },
+      select: { id: true, action: true, target: true, createdAt: true },
     }),
   ]);
 
@@ -121,14 +120,9 @@ export async function buildFeed(limit = FEED_LIMIT): Promise<FeedEvent[]> {
   }
 
   for (const c of phaseChanges) {
-    const phase = (PHASES as readonly string[]).includes(c.target) ? (c.target as Phase) : null;
-    if (!phase) continue;
-    events.push({
-      id: `phase:${c.id}`,
-      emoji: "🚦",
-      text: `فاز بازی به «${PHASE_LABEL[phase]}» تغییر کرد`,
-      at: c.createdAt.toISOString(),
-    });
+    // مرحلهٔ سراسری وجود ندارد؛ تنها خبر عمومی، پایان مسابقه است.
+    if (c.action !== "contest.end" && c.target !== "CLOSED") continue;
+    events.push({ id: `phase:${c.id}`, emoji: "🏁", text: "مسابقه به پایان رسید", at: c.createdAt.toISOString() });
   }
 
   events.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());

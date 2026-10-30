@@ -2,6 +2,8 @@ import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/lib/db";
 import { DEFAULTS } from "../src/lib/constants";
+import { DEFAULT_PRIZES } from "../src/lib/prizes";
+import { DEFAULT_WEIGHTS, NO_BAZAAR_WEIGHTS } from "../src/lib/tracks";
 
 /** سکهٔ رایگان اولیه: همان تنظیم starting_coins که ثبت‌نام می‌خواند (پیش‌فرض DEFAULTS.startingCoins) */
 async function startingCoins() {
@@ -39,7 +41,23 @@ async function main() {
     });
     console.log("seeded admin:", email);
   }
-  await prisma.setting.upsert({ where: { key: "phase" }, update: {}, create: { key: "phase", value: "REGISTRATION" } });
+  await prisma.setting.upsert({ where: { key: "phase" }, update: {}, create: { key: "phase", value: "LIVE" } });
+  await seedTracksAndPrizes();
+}
+
+/** محورها و جوایز پیش‌فرض؛ ردیف موجود دست نمی‌خورد تا تغییرات پنل ادمین حفظ شود. */
+async function seedTracksAndPrizes() {
+  const tracks = [
+    { id: "general", name: "محور عمومی", description: "ساخت محصول و انتشار روی بازار", kind: "PRODUCT", category: "MIXED", status: "open", order: 0, weights: DEFAULT_WEIGHTS },
+    { id: "content", name: "تولید محتوا", description: "ویدیو، پادکست، دوره، فیلم، موسیقی یا هر راهکار محتوایی", kind: "CONTENT", category: "NON_TECH", status: "open", order: 1, weights: NO_BAZAAR_WEIGHTS },
+    { id: "os", name: "راهکار OS", description: "راهکار برای مسائل تیم OS", kind: "OS", category: "TECH", status: "hidden", order: 2, weights: NO_BAZAAR_WEIGHTS },
+  ];
+  for (const { weights, ...t } of tracks) {
+    await prisma.track.upsert({ where: { id: t.id }, update: {}, create: { ...t, weights: JSON.stringify(weights) } });
+  }
+  if ((await prisma.prize.count()) === 0) {
+    await prisma.prize.createMany({ data: DEFAULT_PRIZES.map((p, order) => ({ ...p, order })) });
+  }
 }
 
 main().finally(() => prisma.$disconnect());

@@ -3,7 +3,10 @@ import { z } from "zod";
 import { askChat } from "@/lib/ai";
 import { getCurrentUser } from "@/lib/auth";
 import { buildAssistantContext } from "@/lib/assistant-context";
-import { getPrizePoolCached } from "@/lib/prize-pool";
+import { listAllTracks } from "@/lib/track-data";
+import { listPrizes } from "@/lib/scoring";
+import { getModuleStatuses } from "@/lib/module-state";
+import { getPhase } from "@/lib/phase";
 import { getEffectiveGameValues } from "@/lib/game-values";
 import { ASSISTANT_IP_RULE, rateLimit, rateLimitMessage } from "@/lib/rate-limit";
 
@@ -69,8 +72,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "پیام نامعتبر است." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
 
-  const [values, pool] = await Promise.all([getEffectiveGameValues(), getPrizePoolCached()]);
-  const reply = await askChat(buildAssistantContext(values, pool), messages.slice(firstUser), 600);
+  const [values, tracks, prizes, statuses, { endsAt }] = await Promise.all([
+    getEffectiveGameValues(),
+    listAllTracks(),
+    listPrizes(),
+    getModuleStatuses(),
+    getPhase(),
+  ]);
+  const reply = await askChat(buildAssistantContext(values, { tracks, prizes, statuses, deadline: endsAt }), messages.slice(firstUser), 600);
   if (!reply) {
     return NextResponse.json(
       { error: "دستیار هوش مصنوعی الان در دسترس نیست؛ سؤالت را از برگزارکننده بپرس یا راهنمای بازی (/guide) را ببین." },

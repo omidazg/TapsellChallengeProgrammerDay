@@ -191,7 +191,7 @@ export async function runCappedAiEval(opts: {
 /** پیام فارسی وقتی سقف ارزیابی پر شده و نمرهٔ قبلی حفظ شد. */
 export function aiEvalCapMessage(kind: AiEvalKind): string {
   const what = kind === "analyst" ? "تحلیل هوش مصنوعی ایده" : "داوری هوش مصنوعی محصول";
-  return `سقف ${AI_EVAL_CAP_PER_PHASE.toLocaleString("fa-IR")} بار ${what} در این فاز پر شده است؛ ثبت انجام شد ولی ارزیابی دوباره اجرا نشد و نمرهٔ قبلی حفظ شد.`;
+  return `سقف ${AI_EVAL_CAP_PER_PHASE.toLocaleString("fa-IR")} بار ${what} پر شده است؛ ثبت انجام شد ولی ارزیابی دوباره اجرا نشد و نمرهٔ قبلی حفظ شد.`;
 }
 
 /** پیام فارسی برای فاصلهٔ حداقل بین دو ثبت نهایی. */

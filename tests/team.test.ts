@@ -17,7 +17,7 @@ let access: typeof import("../src/lib/team-access");
 let teamSettings: typeof import("../src/lib/team-settings");
 
 const SOLO_CLOSED = "این شرکت‌کننده فردی بازی می‌کند و هم‌تیمی نمی‌پذیرد.";
-const PHASE_ERR = "این کار فقط تا پایان فاز «اتاق ایده» ممکن است.";
+const CLOSED_ERR = "بخش تیم فعلاً باز نیست.";
 
 beforeAll(async () => {
   db = createTempDb("team-test");
@@ -26,7 +26,7 @@ beforeAll(async () => {
   phase = await import("../src/lib/phase");
   access = await import("../src/lib/team-access");
   teamSettings = await import("../src/lib/team-settings");
-  await phase.setPhase("IDEATION", null);
+  await phase.setPhase("LIVE", null);
 });
 
 afterAll(async () => {
@@ -61,14 +61,28 @@ async function hostTeam(name: string) {
   return { host, teamId: after.teamId!, slug: after.team!.slug, token: after.team!.inviteToken! };
 }
 
-/** با فاز موقت اجرا می‌کند و در پایان به IDEATION برمی‌گرداند */
-async function inPhase<T>(p: Parameters<typeof phase.setPhase>[0], fn: () => Promise<T>): Promise<T> {
-  await phase.setPhase(p, null);
+/** با وضعیت موقت بخش «تیم» اجرا می‌کند و در پایان آن را به پیش‌فرض (باز) برمی‌گرداند */
+async function withTeamModule<T>(status: string, fn: () => Promise<T>): Promise<T> {
+  await prisma.setting.upsert({ where: { key: "module_team" }, update: { value: status }, create: { key: "module_team", value: status } });
   try {
     return await fn();
   } finally {
-    await phase.setPhase("IDEATION", null);
+    await prisma.setting.deleteMany({ where: { key: "module_team" } });
   }
+}
+
+/** محصول تیم در یک محور (پیش‌فرض ثبت‌نهایی‌شده) */
+async function makeProduct(teamId: string, trackId = "general", submitted = true) {
+  counter++;
+  return prisma.product.create({
+    data: { teamId, trackId, slug: `team-product-${counter}-${trackId}`, name: `محصول ${counter}`, submittedAt: submitted ? new Date() : null },
+  });
+}
+
+async function makeIdea(teamId: string, trackId = "general") {
+  return prisma.idea.create({
+    data: { teamId, trackId, title: "ایده", oneLiner: "x", problem: "x", audience: "x", buildPlan: "x", fundingCap: 0, revenueShare: 0, submittedAt: new Date() },
+  });
 }
 
 describe("team.ts: createTeamForUser", () => {
@@ -97,11 +111,11 @@ describe("team.ts: createTeamForUser", () => {
     expect((await reload(u.id)).teamId).toBeNull();
   });
 
-  it("rejects team creation outside the ideation-forming window", async () => {
+  it("rejects team creation while the team module is not open", async () => {
     const u = await makeUser();
-    const res = await inPhase("BUILD", () => team.createTeamForUser(u.id, "تیم دیرهنگام"));
+    const res = await withTeamModule("closed", () => team.createTeamForUser(u.id, "تیم دیرهنگام"));
     expect(res.ok).toBeUndefined();
-    expect(res.error).toBe(PHASE_ERR);
+    expect(res.error).toBe(CLOSED_ERR);
   });
 });
 
@@ -214,10 +228,10 @@ describe("team.ts: goSolo (شرکت فردی)", () => {
     expect((await prisma.team.findUniqueOrThrow({ where: { id: teamId } })).solo).toBe(false);
   });
 
-  it("بیرون از بازهٔ تشکیل تیم رد می‌شود", async () => {
+  it("وقتی بخش تیم باز نیست رد می‌شود", async () => {
     const u = await makeUser();
-    const res = await inPhase("SEED_ROUND", () => team.goSolo(u.id));
-    expect(res.error).toBe(PHASE_ERR);
+    const res = await withTeamModule("ro", () => team.goSolo(u.id));
+    expect(res.error).toBe(CLOSED_ERR);
     expect((await reload(u.id)).teamId).toBeNull();
   });
 });
@@ -298,14 +312,14 @@ describe("team.ts: openSoloTeam", () => {
     expect((await reload(joiner.id)).teamId).toBe(teamId);
   });
 
-  it("بدون تیم یا بیرون از بازهٔ تشکیل تیم رد می‌شود", async () => {
+  it("بدون تیم یا وقتی بخش تیم باز نیست رد می‌شود", async () => {
     const noTeam = await makeUser();
     expect((await team.openSoloTeam(noTeam.id)).error).toBe("تو عضو هیچ تیمی نیستی.");
 
     const u = await makeUser();
     await team.goSolo(u.id);
-    const res = await inPhase("BUILD", () => team.openSoloTeam(u.id));
-    expect(res.error).toBe(PHASE_ERR);
+    const res = await withTeamModule("closed", () => team.openSoloTeam(u.id));
+    expect(res.error).toBe(CLOSED_ERR);
     expect((await reload(u.id)).team?.solo).toBe(true);
   });
 
@@ -344,7 +358,7 @@ describe("team-access: بدون سرپرست، هر عضو کارهای تیم �
     expect(await access.teamManageError({ id: solo.id, teamId: soloTeamId })).toBeNull();
   });
 
-  it("هر عضو می‌تواند نام تیم را تا پایان اتاق ایده عوض کند", async () => {
+  it("هر عضو می‌تواند نام تیم را تا وقتی بخش تیم باز است عوض کند", async () => {
     const { slug, token, teamId } = await hostTeam("تیم تغییر نام");
     const second = await makeUser("STORYTELLER");
     await team.joinByInviteToken(second.id, token);
@@ -356,7 +370,7 @@ describe("team-access: بدون سرپرست، هر عضو کارهای تیم �
     expect(t.slug).toBe(slug); // لینک بازار نمی‌شکند
     expect(t.inviteToken).toBe(token); // لینک دعوت هم نمی‌شکند
 
-    const late = await inPhase("SEED_ROUND", () => teamSettings.updateTeamSettings(second.id, { name: "تیم خیلی دیر" }));
+    const late = await withTeamModule("ro", () => teamSettings.updateTeamSettings(second.id, { name: "تیم خیلی دیر" }));
     expect(late.error).toBeTruthy();
     expect((await prisma.team.findUniqueOrThrow({ where: { id: teamId } })).name).toBe("تیم نام تازه");
   });
@@ -371,14 +385,123 @@ describe("team-access: بدون سرپرست، هر عضو کارهای تیم �
 });
 
 describe("team.ts: leaveTeam", () => {
-  it("آخرین عضو که تیم را ترک کند، تیم حذف می‌شود (فقط در فاز ثبت‌نام)", async () => {
+  it("آخرین عضو که تیم را ترک کند، تیم حذف می‌شود (فقط وقتی بخش تیم باز است)", async () => {
     const { host, teamId } = await hostTeam("تیم ترک‌شونده");
-    expect((await team.leaveTeam(host.id)).error).toBe("خروج از تیم فقط در فاز ثبت‌نام و تیم امکان‌پذیر است.");
+    const closed = await withTeamModule("closed", () => team.leaveTeam(host.id));
+    expect(closed.ok).toBeUndefined();
+    expect(closed.error).toBeTruthy();
+    expect((await reload(host.id)).teamId).toBe(teamId);
 
-    const res = await inPhase("REGISTRATION", () => team.leaveTeam(host.id));
+    const res = await team.leaveTeam(host.id);
     expect(res.ok).toBe(true);
     expect((await reload(host.id)).teamId).toBeNull();
     expect(await prisma.team.findUnique({ where: { id: teamId } })).toBeNull();
+  });
+
+  it("تیم با ایده یا پیش‌نویس محصول: عضو می‌تواند برود ولی آخرین عضو نه (تیم بی‌صاحب نمی‌ماند)", async () => {
+    const { host, teamId, token } = await hostTeam("تیم با ایده");
+    const mate = await makeUser();
+    await team.joinByInviteToken(mate.id, token);
+    await makeIdea(teamId);
+    await makeProduct(teamId, "general", false);
+
+    expect((await team.leaveTeam(mate.id)).ok).toBe(true);
+    const last = await team.leaveTeam(host.id);
+    expect(last.ok).toBeUndefined();
+    expect(last.error).toBeTruthy();
+    expect((await reload(host.id)).teamId).toBe(teamId);
+  });
+});
+
+describe("team.ts: قفل اعضا پس از ثبت نهایی محصول", () => {
+  const LOCKED = "این تیم محصولش را ثبت نهایی کرده و اعضایش دیگر عوض نمی‌شوند.";
+
+  it("پیش از ثبت نهایی اعضا آزادانه عوض می‌شوند؛ پیش‌نویس محصول قفل نمی‌کند", async () => {
+    const { teamId, token } = await hostTeam("تیم پیش‌نویس");
+    await makeProduct(teamId, "general", false);
+    const joiner = await makeUser();
+    expect((await team.joinByInviteToken(joiner.id, token)).ok).toBe(true);
+    expect((await team.leaveTeam(joiner.id)).ok).toBe(true);
+  });
+
+  it("پس از ثبت نهایی: ترک تیم، پیوستن با لینک، پذیرش دعوت و دعوت تازه رد می‌شوند", async () => {
+    const { host, teamId, token } = await hostTeam("تیم قفل");
+    const mate = await makeUser();
+    await team.joinByInviteToken(mate.id, token);
+    const invitee = await makeUser();
+    expect((await team.inviteToTeam(host.id, invitee.email)).ok).toBe(true);
+    const invite = await prisma.teamInvite.findFirstOrThrow({ where: { teamId, email: invitee.email } });
+
+    await makeProduct(teamId);
+
+    expect((await team.leaveTeam(mate.id)).error).toBeTruthy();
+    expect((await reload(mate.id)).teamId).toBe(teamId);
+
+    const joiner = await makeUser();
+    expect((await team.joinByInviteToken(joiner.id, token)).error).toBe(LOCKED);
+    expect((await reload(joiner.id)).teamId).toBeNull();
+
+    expect((await team.acceptInvite(invitee.id, invite.id)).error).toBe(LOCKED);
+    expect((await reload(invitee.id)).teamId).toBeNull();
+    expect((await prisma.teamInvite.findUniqueOrThrow({ where: { id: invite.id } })).status).toBe("PENDING");
+
+    expect((await team.inviteToTeam(host.id, "late-invite@example.test")).error).toBe(LOCKED);
+  });
+
+  it("ثبت نهایی در هر محوری قفل می‌کند، و بازکردن محصول برای ویرایش قفل را برمی‌دارد", async () => {
+    const { teamId, token } = await hostTeam("تیم چندمحوره");
+    await makeProduct(teamId, "general", false);
+    const content = await makeProduct(teamId, "content", true);
+    const joiner = await makeUser();
+    expect((await team.joinByInviteToken(joiner.id, token)).error).toBe(LOCKED);
+
+    await prisma.product.update({ where: { id: content.id }, data: { submittedAt: null } });
+    expect((await team.joinByInviteToken(joiner.id, token)).ok).toBe(true);
+  });
+
+  it("هم‌تیم‌سازی خودکار به تیم قفل‌شده نمی‌رسد", async () => {
+    const { teamId } = await hostTeam("تیم قفل هم‌تیم‌سازی");
+    await makeProduct(teamId);
+    const joiner = await makeUser();
+    expect((await team.joinMatchmaking(joiner.id)).ok).toBe(true);
+    expect((await reload(joiner.id)).teamId).not.toBe(teamId);
+  });
+});
+
+describe("team.ts: استثنای بخش تیم برای یک تیم", () => {
+  it("بخش بسته است ولی تیم دارای استثنا می‌تواند دعوت کند و عضو بپذیرد؛ تیم دیگر نه", async () => {
+    const special = await hostTeam("تیم استثنا");
+    const plain = await hostTeam("تیم بدون استثنا");
+    await prisma.moduleException.create({ data: { moduleKey: "team", teamId: special.teamId, createdBy: "test" } });
+    const joiner = await makeUser();
+    const other = await makeUser();
+    try {
+      await withTeamModule("closed", async () => {
+        expect((await team.inviteToTeam(special.host.id, "exception-invite@example.test")).ok).toBe(true);
+        expect((await team.inviteToTeam(plain.host.id, "no-exception-invite@example.test")).error).toBe(CLOSED_ERR);
+
+        expect((await team.joinByInviteToken(other.id, plain.token)).error).toBe(CLOSED_ERR);
+        expect((await reload(other.id)).teamId).toBeNull();
+
+        expect((await team.joinByInviteToken(joiner.id, special.token)).ok).toBe(true);
+        expect((await reload(joiner.id)).teamId).toBe(special.teamId);
+      });
+    } finally {
+      await prisma.moduleException.deleteMany({ where: { teamId: special.teamId } });
+    }
+  });
+
+  it("پذیرش دعوت هم با استثنای تیم مقصد سنجیده می‌شود", async () => {
+    const special = await hostTeam("تیم استثنای دعوت");
+    const invitee = await makeUser();
+    expect((await team.inviteToTeam(special.host.id, invitee.email)).ok).toBe(true);
+    const invite = await prisma.teamInvite.findFirstOrThrow({ where: { teamId: special.teamId, email: invitee.email } });
+    await withTeamModule("closed", async () => {
+      expect((await team.acceptInvite(invitee.id, invite.id)).error).toBe(CLOSED_ERR);
+      await prisma.moduleException.create({ data: { moduleKey: "team", teamId: special.teamId, createdBy: "test" } });
+      expect((await team.acceptInvite(invitee.id, invite.id)).ok).toBe(true);
+    });
+    await prisma.moduleException.deleteMany({ where: { teamId: special.teamId } });
   });
 });
 

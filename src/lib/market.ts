@@ -1,6 +1,8 @@
 import { prisma } from "./db";
 import { coverUrl, parseImages } from "./product";
-import { getPhase } from "./phase";
+import { getSettingInt } from "./phase";
+import { moduleGate } from "./module-state";
+import { DEFAULTS } from "./constants";
 import { reservedBuyCoins } from "./reservations";
 import { cached, invalidate } from "./ttl-cache";
 // اعتبارسنجی خرید مستقیماً از موتور اقتصاد می‌آید تا یک منبع حقیقت واحد بماند.
@@ -12,6 +14,7 @@ export type MarketSort = "all" | "top" | "popular" | "cheap";
 export type MarketCard = {
   id: string;
   slug: string;
+  trackId: string;
   name: string;
   tagline: string;
   cover: string;
@@ -50,7 +53,8 @@ function getBaseMarketCards(): Promise<Omit<MarketCard, "bought">[]> {
     const soldByProduct = new Map(soldGroups.map((g) => [g.productId, g._sum.amount ?? 0]));
     return products.map((p) => ({
       id: p.id,
-      slug: p.team.slug,
+      slug: p.slug,
+      trackId: p.trackId,
       name: p.name,
       tagline: p.tagline,
       cover: coverUrl(parseImages(p.images), p.team.slug),
@@ -143,23 +147,18 @@ export type PurchaseResult =
  *
  * هر خرید به قیمت کامل محصول است و سقفی روی تعداد خرید نیست؛ اثر هر نفر روی امتیاز «حمایت مردمی»
  * در موتور امتیاز (support_cap و تأمین مالی درجه‌دو) محدود می‌شود. سکه‌های رزروشده برای پیشتازی
- * در حراج زنده خرج‌پذیر نیستند (حراج و خرید هر دو در روز بازارند).
+ * در حراج زنده خرج‌پذیر نیستند (حراج و خرید یک بخش‌اند).
  */
 export async function purchaseProduct(userId: string, productId: string): Promise<PurchaseResult> {
-  const { phase } = await getPhase();
-  if (phase !== "MARKET") return { ok: false, error: "خرید فقط در فاز «روز بازار» ممکن است" };
+  const buyer = await prisma.user.findUnique({ where: { id: userId }, select: { teamId: true } });
+  const gate = await moduleGate("market", buyer?.teamId);
+  if (gate) return { ok: false, error: gate };
 
   const product = await prisma.product.findUnique({ where: { id: productId } });
   if (!product || !product.submittedAt) return { ok: false, error: "این محصول در دسترس نیست" };
 
   try {
     return await prisma.$transaction(async (tx) => {
-      // فاز دوباره داخل همان تراکنش خوانده می‌شود (مثل investCore) تا خریدی که هم‌زمان با بسته‌شدن
-      // بازار توسط ادمین می‌رسد، پس از پایان فاز ثبت نشود.
-      const phaseRow = await tx.setting.findUnique({ where: { key: "phase" } });
-      // مقدار قدیمی "AUCTION" هم مثل getPhase روز بازار حساب می‌شود
-      if (phaseRow?.value !== "MARKET" && phaseRow?.value !== "AUCTION") throw new UserFacingError("خرید فقط در فاز «روز بازار» ممکن است");
-
       const freshUser = await tx.user.findUniqueOrThrow({ where: { id: userId } });
       const isOwnTeam = !!freshUser.teamId && freshUser.teamId === product.teamId;
       const spendable = freshUser.buyWallet - (await reservedBuyCoins(tx, userId));
@@ -229,48 +228,45 @@ export type AdSlotWinner = {
   cover: string;
 };
 
-const HOUR_MS = 60 * 60 * 1000;
-
 /**
- * صاحبان جایگاه تبلیغاتی ساعت جاری (فقط خواندن).
- * جایگاه‌ها از market_starts_at ساعت‌به‌ساعت ساخته می‌شوند و لزوماً سرِ ساعت نیستند (مثلاً ۱۲:۳۰)،
- * پس به‌جای تطبیق دقیق با «ساعت جاری» از بازه استفاده می‌شود: hourStart ≤ now < hourStart + ۱ساعت
- * (همان قاعدهٔ currentAdWinners در adslots.ts). تیم و محصول در همان کوئری (بدون N+1) خوانده می‌شوند.
+ * صاحبان جایگاه تبلیغاتی بازهٔ جاری (فقط خواندن): بازهٔ هر جایگاه از hourStart به طول adslot_hours است.
+ * محصول و تیم در همان کوئری (بدون N+1) خوانده می‌شوند.
  */
 export async function getCurrentAdSlotWinners(now: Date = new Date()): Promise<AdSlotWinner[]> {
-  // مدل AdSlot رابطهٔ winnerTeam ندارد (فقط winnerTeamId اسکالر)؛ پس تیم‌ها با یک کوئری in خوانده می‌شوند.
+  const hours = await getSettingInt("adslot_hours", DEFAULTS.adslotHours);
+  const durationMs = Math.max(1, hours) * 60 * 60 * 1000;
   const slots = await prisma.adSlot.findMany({
     where: {
       kind: { in: ["BANNER", "FEATURED"] },
-      winnerTeamId: { not: null },
+      winnerProductId: { not: null },
       status: { not: "REFUNDED" },
-      hourStart: { lte: now, gt: new Date(now.getTime() - HOUR_MS) },
+      hourStart: { lte: now, gt: new Date(now.getTime() - durationMs) },
     },
     orderBy: { hourStart: "desc" },
   });
   if (slots.length === 0) return [];
-  const teams = await prisma.team.findMany({
-    where: { id: { in: [...new Set(slots.map((s) => s.winnerTeamId!))] } },
-    select: { id: true, name: true, slug: true, logoSeed: true, product: { select: { name: true, images: true, submittedAt: true } } },
+  const products = await prisma.product.findMany({
+    where: { id: { in: [...new Set(slots.map((s) => s.winnerProductId!))] } },
+    select: { id: true, name: true, slug: true, images: true, submittedAt: true, team: { select: { id: true, name: true, logoSeed: true } } },
   });
-  const teamById = new Map(teams.map((t) => [t.id, t]));
+  const byId = new Map(products.map((p) => [p.id, p]));
   const winners: AdSlotWinner[] = [];
   const seenKinds = new Set<string>();
   for (const slot of slots) {
     // در هر نوع، جدیدترین جایگاه فعال (در صورت هم‌پوشانی بازه‌ها) برنده است.
     if (seenKinds.has(slot.kind)) continue;
-    const team = teamById.get(slot.winnerTeamId!);
+    const p = byId.get(slot.winnerProductId!);
     // محصول ثبت‌نهایی‌نشده در بازار نمایش داده نمی‌شود (صفحه‌اش هم 404 است)، پس تبلیغش هم نه.
-    if (!team || !team.product || !team.product.submittedAt) continue;
+    if (!p || !p.submittedAt) continue;
     seenKinds.add(slot.kind);
     winners.push({
       kind: slot.kind as "BANNER" | "FEATURED",
-      teamId: team.id,
-      teamName: team.name,
-      teamLogoSeed: team.logoSeed,
-      productSlug: team.slug,
-      productName: team.product.name,
-      cover: coverUrl(parseImages(team.product.images), team.slug),
+      teamId: p.team.id,
+      teamName: p.team.name,
+      teamLogoSeed: p.team.logoSeed,
+      productSlug: p.slug,
+      productName: p.name,
+      cover: coverUrl(parseImages(p.images), p.slug),
     });
   }
   return winners;

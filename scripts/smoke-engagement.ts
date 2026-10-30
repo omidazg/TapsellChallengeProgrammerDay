@@ -79,7 +79,7 @@ async function main() {
   }
 
   async function makeProduct(teamId: string, n: string) {
-    return prisma.product.create({ data: { teamId, name: `محصول ${n}` } });
+    return prisma.product.create({ data: { teamId, slug: `smoke-engagement-${teamId}-general`, name: `محصول ${n}` } });
   }
 
   const userIds: string[] = [];

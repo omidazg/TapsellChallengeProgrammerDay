@@ -6,7 +6,7 @@
  * اصلی لمس نمی‌شود.
  *
  * سناریو: ۳ تیم (سه‌نفره، دونفره و شرکت فردی) + حامیان بی‌تیم. حمایت از ایده‌ها از مسیر واقعی
- * investCore در «دور حمایت» و خرید محصول از مسیر واقعی purchaseProduct در «روز بازار».
+ * investCore و خرید محصول از مسیر واقعی purchaseProduct.
  * سپس پایان بازی با transitionTo("CLOSED") که تسویه را اجرا می‌کند، و settleGame دوباره
  * (idempotent). در پایان TeamScore ذخیره‌شده با computeScores و loadSettledOutput مقایسه می‌شود.
  */
@@ -51,14 +51,20 @@ async function main() {
   const { computeScores } = await import("../src/lib/scoring");
   const { settleGame, getSettledAt, loadSettledOutput, SETTLED_AT_KEY } = await import("../src/lib/settlement");
   const { setPhase, getPhase } = await import("../src/lib/phase");
+  const { parseCriteria } = await import("../src/lib/tracks");
   const { transitionTo } = await import("../src/lib/phase-transition");
 
   try {
     // ---------- تیم‌ها، کاربران، ایده‌ها و محصولات ----------
+    const generalTrack = await prisma.track.findUniqueOrThrow({ where: { id: "general" } });
+    const criteria = parseCriteria(generalTrack.juryCriteria).map((c) => c.key);
+    const judge = await prisma.user.create({
+      data: { email: "settle-judge@example.test", passwordHash: "x", nickname: "داور", role: "DEALMAKER", power: "", staffRole: "JUDGE" },
+    });
     const SPEC = [
-      { key: "alpha", name: "تیم آلفا", members: 3, solo: false, jury: [9, 9, 8] as const, ai: 70, price: 20 },
-      { key: "beta", name: "تیم بتا", members: 2, solo: false, jury: [7, 8, 7] as const, ai: 90, price: 15 },
-      { key: "gamma", name: "شرکت فردی گاما", members: 1, solo: true, jury: [8, 8, 8] as const, ai: null, price: 10 },
+      { key: "alpha", name: "تیم آلفا", members: 3, solo: false, jury: 9, ai: 70, price: 20 },
+      { key: "beta", name: "تیم بتا", members: 2, solo: false, jury: 7, ai: 90, price: 15 },
+      { key: "gamma", name: "شرکت فردی گاما", members: 1, solo: true, jury: 8, ai: null, price: 10 },
     ];
     const teamIds: Record<string, string> = {};
     const ideaIds: Record<string, string> = {};
@@ -102,21 +108,22 @@ async function main() {
       const product = await prisma.product.create({
         data: {
           teamId: team.id,
+          slug: `smoke-${t.key}-general`,
           name: `محصول ${t.name}`,
           price: t.price,
           submittedAt: new Date(),
-          juryWorks: t.jury[0],
-          juryValue: t.jury[1],
-          juryPitch: t.jury[2],
           aiQuality: t.ai,
         },
       });
       productIds[t.key] = product.id;
+      await prisma.juryScore.create({
+        data: { productId: product.id, judgeId: judge.id, scores: JSON.stringify(Object.fromEntries(criteria.map((k) => [k, t.jury]))) },
+      });
     }
     const fans = await Promise.all([0, 1, 2, 3].map((i) => mkUser(`fan${i}`, null)));
 
-    // ---------- دور حمایت: investCore ----------
-    await setPhase("SEED_ROUND", null);
+    // ---------- حمایت: investCore ----------
+    await setPhase("LIVE", null);
     const inv = async (userId: string, key: string, amount: number) => {
       const r = await investCore(prisma, userId, ideaIds[key], amount);
       if (!r.ok) throw new Error(`حمایت ناموفق: ${r.error}`);
@@ -130,8 +137,7 @@ async function main() {
     const ownTeam = await investCore(prisma, memberIds.alpha[0], ideaIds.alpha, 5);
     check("حمایت از ایدهٔ تیم خود رد شد", !ownTeam.ok, ownTeam.ok ? "پذیرفته شد" : ownTeam.error);
 
-    // ---------- روز بازار: purchaseProduct ----------
-    await setPhase("MARKET", null);
+    // ---------- بازار: purchaseProduct ----------
     const buy = async (userId: string, key: string) => {
       const r = await purchaseProduct(userId, productIds[key]);
       if (!r.ok) throw new Error(`خرید ناموفق: ${r.error}`);
@@ -155,13 +161,13 @@ async function main() {
     // ---------- پایان بازی: transitionTo("CLOSED") تسویه را اجرا می‌کند ----------
     const tr = await transitionTo("CLOSED", null);
     check("انتقال به CLOSED بدون خطای تسویه", !tr.settleFailed, JSON.stringify(tr));
-    check("فاز CLOSED شد", (await getPhase()).phase === "CLOSED");
+    check("مسابقه CLOSED شد", (await getPhase()).phase === "CLOSED");
 
     const settledAt = await getSettledAt();
     check("settled_at ثبت شد", settledAt !== null, settledAt?.toISOString() ?? "null");
 
     const rows = await prisma.teamScore.findMany({ orderBy: { rank: "asc" } });
-    check("برای هر تیم یک ردیف TeamScore", rows.length === SPEC.length, `تعداد=${rows.length}`);
+    check("برای هر تیم در این محور یک ردیف TeamScore", rows.length === SPEC.length && rows.every((r) => r.trackId === "general"), `تعداد=${rows.length}`);
     check(
       "computedAt همهٔ ردیف‌ها = settled_at",
       !!settledAt && rows.every((r) => r.computedAt.getTime() === settledAt.getTime())
@@ -182,7 +188,7 @@ async function main() {
         r.coinsReceived === t.coinsReceived &&
         near(r.ai, t.ai) &&
         near(r.ptsJury, t.pts.jury) &&
-        near(r.ptsPeople, t.pts.people) &&
+        near(r.ptsMarket, t.pts.market) &&
         near(r.ptsAi, t.pts.ai) &&
         r.cheatPenalty === t.cheatPenalty &&
         near(r.total, t.total) &&
@@ -217,7 +223,7 @@ async function main() {
         near(l.total, t.total) &&
         l.rank === t.rank &&
         near(l.pts.jury, t.pts.jury) &&
-        near(l.pts.people, t.pts.people) &&
+        near(l.pts.market, t.pts.market) &&
         near(l.pts.ai, t.pts.ai)
       );
     });
@@ -225,7 +231,7 @@ async function main() {
 
     // ---------- idempotency ----------
     // تغییر داده پس از تسویه نباید روی نتیجهٔ ثبت‌شده اثر بگذارد.
-    await prisma.product.update({ where: { id: productIds.gamma }, data: { juryWorks: 0, juryValue: 0, juryPitch: 0 } });
+    await prisma.juryScore.updateMany({ where: { productId: productIds.gamma }, data: { scores: "{}" } });
     const second = await settleGame();
     check("settleGame دوم alreadySettled برمی‌گرداند", second.alreadySettled, JSON.stringify(second));
     check("settleGame دوم همان settledAt را برمی‌گرداند", !!settledAt && second.settledAt.getTime() === settledAt.getTime());

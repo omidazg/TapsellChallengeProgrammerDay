@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { getSessionUserId } from "@/lib/auth";
 import { rateLimit, rateLimitMessage, clientIp, ACCESS_REQUEST_IP_RULE, ACCESS_STATUS_IP_RULE } from "@/lib/rate-limit";
 import { ACCESS_STATUS_LABEL, accessState, canRegister, normalizeEmail } from "@/lib/whitelist";
-import { getPhase } from "@/lib/phase";
+import { moduleOpen } from "@/lib/module-state";
 import { normalizePhone } from "@/lib/phone";
 
 type AccessRequestFields = { email: string; firstName: string; lastName: string; position: string; unit: string; phone: string };
@@ -118,8 +118,7 @@ export async function checkAccessStatusAction(rawEmail: string): Promise<AccessS
   if (!limit.ok) return { error: rateLimitMessage(limit.retryAfterSec) };
 
   const email = normalizeEmail(parsed.data);
-  const { phase } = await getPhase();
-  const registrationOpen = phase === "REGISTRATION";
+  const registrationOpen = await moduleOpen("registration");
   const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
   if (user) return { status: "HAS_ACCOUNT", registrationOpen };
   return { status: await accessState(email), registrationOpen };

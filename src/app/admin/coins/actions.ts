@@ -26,7 +26,7 @@ function revalidateCoinPages() {
   revalidatePath("/coins");
 }
 
-/** تأیید دستی پرداخت: سکه‌ها (یک‌بار) به کیف کاربر اضافه و مبلغ به صندوق جایزه افزوده می‌شود */
+/** تأیید دستی پرداخت: سکه‌ها (یک‌بار) به کیف کاربر اضافه می‌شود */
 export async function markOrderPaidAction(prevState: CoinsActionState, formData: FormData): Promise<CoinsActionState> {
   const admin = await requireAdmin();
   const parsed = parseOrder(formData);

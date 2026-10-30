@@ -1,8 +1,8 @@
 /**
- * تست دودی منطق حمایت از ایده‌ها با سکه («دور حمایت»).
+ * تست دودی منطق حمایت از ایده‌ها با سکه.
  * اجرا: npx tsx scripts/smoke-invest.ts
  *
- * دو تیم با ایدهٔ ثبت‌نهایی‌شده + یک کاربر بی‌تیم می‌سازد، فاز را روی SEED_ROUND می‌گذارد و
+ * دو تیم با ایدهٔ ثبت‌نهایی‌شده + یک کاربر بی‌تیم می‌سازد، مسابقه را روی LIVE می‌گذارد و
  * هستهٔ حمایت (`investCore`) را می‌آزماید: کسر از کیف سکه، ثبت دفتر کل، نبود سقف، رد حمایت
  * از تیم خود، سکهٔ ناکافی، رزرو حراج و قفل فاز.
  * روی پایگاه‌دادهٔ موقت اجرا می‌شود (createTempDb)؛ dev.db لمس نمی‌شود.
@@ -99,7 +99,7 @@ async function main() {
       data: { teamId: draftTeam.id, title: "پیش‌نویس", oneLiner: "-", problem: "-", audience: "-", buildPlan: "-", fundingCap: 0, revenueShare: 0 },
     });
 
-    await setPhaseValue("SEED_ROUND");
+    await setPhaseValue("LIVE");
 
     // ---------- ۱) حمایت معتبر ----------
     const r1 = await investCore(prisma, u1, idea2, 30);
@@ -153,7 +153,7 @@ async function main() {
 
     // ---------- ۷) سکه‌های رزروشده در حراج زنده خرج‌پذیر نیستند ----------
     {
-      const product = await prisma.product.create({ data: { teamId: teams[0], name: "محصول حراجی", price: 10, submittedAt: new Date() } });
+      const product = await prisma.product.create({ data: { teamId: teams[0], slug: "smoke-invest-auction-general", name: "محصول حراجی", price: 10, submittedAt: new Date() } });
       const auction = await prisma.auction.create({
         data: { productId: product.id, status: "LIVE", startPrice: 5, startsAt: new Date(), endsAt: new Date(Date.now() + 60_000) },
       });
@@ -166,15 +166,20 @@ async function main() {
       await prisma.auction.delete({ where: { id: auction.id } });
     }
 
-    // ---------- ۸) قفل فاز ----------
+    // ---------- ۸) قفل بخش حمایت و پایان مسابقه ----------
+    const { setModuleStatus } = await import("../src/lib/module-state");
     const walletBefore = await walletOf(u2);
-    for (const phase of ["IDEATION", "BUILD", "MARKET", "CLOSED"]) {
-      await setPhaseValue(phase);
+    for (const status of ["ro", "closed", "hidden"] as const) {
+      await setModuleStatus("invest", status);
       const r = await investCore(prisma, u2, idea1, 5);
-      check(`خارج از «دور حمایت» (${phase}) رد شد`, !r.ok && r.error.includes("دور حمایت"), r.ok ? "پذیرفته شد" : r.error);
+      check(`بخش حمایت در وضعیت ${status} رد شد`, !r.ok && r.error.includes("فعلاً باز نیست"), r.ok ? "پذیرفته شد" : r.error);
     }
-    check("کیف پس از تلاش‌های خارج از فاز تغییر نکرد", (await walletOf(u2)) === walletBefore);
-    await setPhaseValue("SEED_ROUND");
+    await setModuleStatus("invest", "open");
+    await setPhaseValue("CLOSED");
+    const afterEnd = await investCore(prisma, u2, idea1, 5);
+    check("پس از پایان مسابقه حمایت رد شد", !afterEnd.ok, afterEnd.ok ? "پذیرفته شد" : afterEnd.error);
+    check("کیف پس از تلاش‌های رد شده تغییر نکرد", (await walletOf(u2)) === walletBefore);
+    await setPhaseValue("LIVE");
 
     // ---------- ۹) سازگاری دفتر کل با کیف ----------
     const sum = await prisma.ledgerEntry.aggregate({ where: { userId: u1, reason: "INVEST" }, _sum: { delta: true } });

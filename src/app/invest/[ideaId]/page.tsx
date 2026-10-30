@@ -1,18 +1,22 @@
 import { notFound } from "next/navigation";
 import dynamic from "next/dynamic";
 import { requireUser } from "@/lib/auth";
-import { getPhase, getSettingInt, phaseIndex, PHASE_LABEL } from "@/lib/phase";
+import { getSettingInt } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
 import { getIdeaDetail } from "@/lib/idea";
 import { spendableBuyCoins } from "@/lib/market";
-import { PageHeader, Container, Locked, Alert } from "@/components/ui";
+import { moduleStatusFor } from "@/lib/module-state";
+import { getTrack } from "@/lib/track-data";
+import { PageHeader, Container, Alert } from "@/components/ui";
+import { ModuleClosed, ModuleReadOnly } from "@/components/ModuleState";
 import { Avatar } from "@/components/Avatar";
 import { AiTag } from "@/components/AiTag";
-import { fa, coins } from "@/lib/persian";
+import { fa, coins, jdatetime } from "@/lib/persian";
 import { AnalystCard } from "@/app/idea/AnalystCard";
 import { Cover } from "@/app/idea/Cover";
 import { InvestPanel } from "./InvestPanel";
 import { InvestorList } from "./InvestorList";
+import { WithdrawButton } from "./WithdrawButton";
 import { peopleExample } from "@/lib/people-example";
 
 // چت بررسی دقیق سنگین‌تر از بقیهٔ صفحه است (فرم + لیست پیام‌ها)؛ با next/dynamic
@@ -29,37 +33,38 @@ export async function generateMetadata({ params }: { params: Promise<{ ideaId: s
 export default async function IdeaDetailPage({ params }: { params: Promise<{ ideaId: string }> }) {
   const { ideaId } = await params;
   const user = await requireUser();
-  const { phase } = await getPhase();
 
-  if (phaseIndex(phase) < phaseIndex("SEED_ROUND")) {
-    return (
-      <>
-        <PageHeader eyebrow="حمایت از ایده‌ها" title="حمایت" />
-        <Container>
-          <h2 className="sr-only">وضعیت حمایت</h2>
-          <Locked title="هنوز زود است" desc={`حمایت از ایده‌ها از فاز «${PHASE_LABEL.SEED_ROUND}» باز می‌شود.`} />
-        </Container>
-      </>
-    );
-  }
+  const status = await moduleStatusFor("invest", user.teamId);
+  if (status === "hidden") notFound();
+  if (status === "closed") return <ModuleClosed moduleKey="invest" title="حمایت از ایده‌ها" />;
 
   const idea = await getIdeaDetail(ideaId, user.id);
   if (!idea || !idea.submittedAt) notFound();
+  // ایدهٔ محور مخفی فقط برای خود تیم دیده می‌شود.
+  const track = await getTrack(idea.trackId);
+  if (track?.status === "hidden" && !idea.isOwnTeam) notFound();
 
   const aiOff = !process.env.ANTHROPIC_API_KEY;
-  const interactive = phase === "SEED_ROUND";
+  const interactive = status === "open";
   const [spendable, supportCap] = await Promise.all([
     spendableBuyCoins(user.id, user.buyWallet),
     getSettingInt("support_cap", DEFAULTS.supportCap),
   ]);
   const supporterCount = new Set(idea.investments.map((i) => i.userId)).size;
 
-  // در «دور حمایت» مبلغ هر حامی پنهان است (جز برای اعضای خود تیم)؛ پس از آن همه می‌بینند.
+  // تا وقتی حمایت باز است مبلغ هر حامی پنهان است (جز برای اعضای خود تیم)؛ پس از آن همه می‌بینند.
   const revealed = !interactive || idea.isOwnTeam;
+  // تاریخچهٔ تغییرات برای کسانی که حمایت کرده‌اند و خود تیم
+  const showRevisions = idea.revisions.length > 0 && (idea.viewerInvested > 0 || idea.isOwnTeam);
 
   return (
     <>
-      <PageHeader eyebrow="حمایت از ایده‌ها" title={idea.title} desc={idea.oneLiner} />
+      <PageHeader eyebrow={track ? `حمایت از ایده‌ها · ${track.name}` : "حمایت از ایده‌ها"} title={idea.title} desc={idea.oneLiner} />
+      {status === "ro" && (
+        <Container className="mb-6">
+          <ModuleReadOnly moduleKey="invest" />
+        </Container>
+      )}
       <Container className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           {/* عنوان بخش برای ترتیب درست سرتیترها (h1 ← h2 ← h3 کارت‌ها)؛ ظاهر صفحه تغییری نمی‌کند */}
@@ -86,12 +91,13 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
               <p className="text-brand-navy leading-7 break-words">{idea.audience}</p>
             </div>
             <div>
-              <div className="text-xs font-bold text-brand-slate mb-1">برنامهٔ ساخت ۴۸ ساعته</div>
+              <div className="text-xs font-bold text-brand-slate mb-1">برنامهٔ ساخت</div>
               <p className="text-brand-navy leading-7 break-words">{idea.buildPlan}</p>
             </div>
             <div className="flex flex-wrap gap-3 pt-2">
               <span className="chip-navy">{fa(supporterCount)} حامی</span>
               <span className="chip-gold">{coins(idea.raised)} حمایت</span>
+              {idea.editedAt && <span className="chip-cyan">آخرین ویرایش: {jdatetime(idea.editedAt)}</span>}
             </div>
           </div>
 
@@ -100,8 +106,31 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
             feasibility={idea.analystFeasibility}
             novelty={idea.analystNovelty}
             summary={idea.analystSummary}
+            advice={idea.analystAdvice}
             aiOff={aiOff}
           />
+
+          {showRevisions && (
+            <div className="card p-6 space-y-3 anim-rise">
+              <h3 className="font-black text-brand-navy">تاریخچهٔ تغییرات ایده</h3>
+              <p className="text-xs text-brand-slate leading-6">نسخه‌های قبلی این ایده؛ جدیدترین اول. متن بالا نسخهٔ فعلی است.</p>
+              <div className="space-y-2">
+                {idea.revisions.map((r) => (
+                  <details key={r.id} className="rounded-2xl bg-brand-ice px-4 py-3">
+                    <summary className="cursor-pointer text-sm font-bold text-brand-navy">
+                      {r.title} <span className="font-medium text-brand-slate">· {jdatetime(r.createdAt)}</span>
+                    </summary>
+                    <dl className="mt-3 space-y-2 text-sm text-brand-navy leading-7">
+                      <div><dt className="text-xs font-bold text-brand-slate">یک‌خطی</dt><dd className="break-words">{r.oneLiner}</dd></div>
+                      <div><dt className="text-xs font-bold text-brand-slate">مسئله</dt><dd className="break-words whitespace-pre-line">{r.problem}</dd></div>
+                      <div><dt className="text-xs font-bold text-brand-slate">مخاطب</dt><dd className="break-words whitespace-pre-line">{r.audience}</dd></div>
+                      <div><dt className="text-xs font-bold text-brand-slate">برنامهٔ ساخت</dt><dd className="break-words whitespace-pre-line">{r.buildPlan}</dd></div>
+                    </dl>
+                  </details>
+                ))}
+              </div>
+            </div>
+          )}
 
           <DueDiligenceChat ideaId={idea.id} chats={idea.chats} aiOff={aiOff} closed={!interactive} />
         </div>
@@ -115,6 +144,7 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
             {idea.viewerInvested > 0 && (
               <Alert kind="ok">تا الان {coins(idea.viewerInvested)} از این ایده حمایت کرده‌ای.</Alert>
             )}
+            {interactive && idea.viewerWithdrawable > 0 && <WithdrawButton ideaId={idea.id} amount={idea.viewerWithdrawable} />}
             {idea.isOwnTeam ? (
               <Alert kind="info">نمی‌توانی از ایدهٔ تیم خودت حمایت کنی؛ ایده‌ات را به بقیه معرفی کن تا حامی جمع کنی.</Alert>
             ) : interactive ? (
@@ -125,7 +155,7 @@ export default async function IdeaDetailPage({ params }: { params: Promise<{ ide
                 supportCap={supportCap}
               />
             ) : (
-              <Alert kind="info">«{PHASE_LABEL.SEED_ROUND}» تمام شده است.</Alert>
+              <Alert kind="info">حمایت از ایده‌ها الان باز نیست.</Alert>
             )}
           </div>
 

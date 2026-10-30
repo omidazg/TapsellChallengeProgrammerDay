@@ -91,7 +91,7 @@ export function MoveAuctionButtons({ auctionId, label, canUp, canDown }: { aucti
 export function AdSlotActionButtons() {
   return (
     <div className="flex flex-wrap gap-4">
-      <ActionButton label="ساخت جایگاه‌های روز بازار" action={ensureAdSlotsAction} tone="ghost" />
+      <ActionButton label="ساخت جایگاه‌ها تا ددلاین نهایی" action={ensureAdSlotsAction} tone="ghost" />
     </div>
   );
 }

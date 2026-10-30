@@ -4,6 +4,8 @@ import "./globals.css";
 import "./theme.css";
 import { getCurrentUser } from "@/lib/auth";
 import { getPhase } from "@/lib/phase";
+import { MODULE_DEFAULTS, moduleStatusesFor } from "@/lib/module-state";
+import { panelHome, panelRoleOf } from "@/lib/panel-roles";
 import { AppShell } from "@/components/AppShell";
 import { AnnouncementBar } from "@/components/AnnouncementBar";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
@@ -19,7 +21,7 @@ const vazir = localFont({
 
 const SITE_URL = process.env.SITE_URL ?? "http://188.121.125.246";
 const SITE_TITLE = "میدان بنیان‌گذاران";
-const SITE_DESCRIPTION = "بازار استارتاپی چهارروزهٔ روز برنامه‌نویس گروه پگاه: ایده بده، حامی جذب کن، بساز، بفروش.";
+const SITE_DESCRIPTION = "بازار استارتاپی سه‌هفته‌ای روز برنامه‌نویس گروه پگاه: ایده بده، حامی جذب کن، بساز، بفروش.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -56,7 +58,10 @@ export const dynamic = "force-dynamic";
 const THEME_INIT_SCRIPT = `(function(){var d=false;try{var m=localStorage.getItem("theme");d=m==="dark"||(m!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);}catch(e){try{d=matchMedia("(prefers-color-scheme: dark)").matches;}catch(e2){}}document.documentElement.setAttribute("data-theme",d?"dark":"light");})();`;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const [user, phaseInfo] = await Promise.all([getCurrentUser(), getPhase().catch(() => ({ phase: "REGISTRATION" as const, endsAt: null }))]);
+  const [user, phaseInfo] = await Promise.all([getCurrentUser(), getPhase().catch(() => ({ phase: "LIVE" as const, endsAt: null }))]);
+  // منو از وضعیت بخش‌ها پیروی می‌کند؛ استثناهای تیم هم لحاظ می‌شوند.
+  const modules = await moduleStatusesFor(user?.teamId).catch(() => MODULE_DEFAULTS);
+  const panelRole = user ? panelRoleOf(user) : null;
   return (
     <html lang="fa" dir="rtl" className={vazir.variable} suppressHydrationWarning>
       <head>
@@ -72,9 +77,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <ServiceWorkerRegister />
         <AnnouncementBar />
         <AppShell
-          user={user ? { id: user.id, nickname: user.nickname, isAdmin: user.isAdmin, buyWallet: user.buyWallet, teamName: user.team?.name ?? null, avatarSeed: user.avatarSeed } : null}
+          user={user ? { id: user.id, nickname: user.nickname, panelHref: panelRole ? panelHome(panelRole) : null, buyWallet: user.buyWallet, teamName: user.team?.name ?? null, avatarSeed: user.avatarSeed } : null}
           phase={phaseInfo.phase}
           phaseEndsAt={phaseInfo.endsAt?.toISOString() ?? null}
+          modules={modules}
           // همان شرط صفحه‌های ایده/حمایت (DueDiligenceChat): بدون کلید، دستیار فقط توضیح نشان می‌دهد
           aiOff={!process.env.ANTHROPIC_API_KEY}
         >

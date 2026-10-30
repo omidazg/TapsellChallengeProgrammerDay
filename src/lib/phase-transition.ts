@@ -1,8 +1,10 @@
 import { setPhase, type Phase } from "./phase";
 import { notifyPhaseChange } from "./notifications";
-import { settleGame } from "./settlement";
+import { resettleGame, settleGame } from "./settlement";
 import { closeAuctionsForGameEnd } from "./auction";
-import { recordMarketWindow, refundUndeliveredAdSlots } from "./adslots";
+import { refundUndeliveredAdSlots } from "./adslots";
+import { snapshotBazaarStats } from "./bazaar";
+import { runFinalAiEvaluation } from "./jury-ai";
 import { log } from "./log";
 import { alert } from "./alert";
 
@@ -30,11 +32,11 @@ function reportGameEndFailure(step: string, e: unknown) {
  */
 export async function transitionTo(phase: Phase, endsAt: Date | null): Promise<TransitionResult> {
   await setPhase(phase, endsAt);
-  // بازه‌های واقعی روز بازار برای سنجش تحویل جایگاه‌های تبلیغاتی ثبت می‌شوند.
-  await recordMarketWindow(phase).catch((e) => reportGameEndFailure("recordMarketWindow", e));
   await notifyPhaseChange(phase).catch((e) => console.error("notifyPhaseChange failed", e));
   if (phase === "CLOSED") {
-    // حراج زندهٔ روز بازار پیش از تسویه بسته می‌شود تا خرید برنده در امتیاز حساب شود.
+    // برداشت نهایی آمار بازار در ددلاین.
+    await snapshotBazaarStats().catch((e) => reportGameEndFailure("snapshotBazaarStats", e));
+    // حراج زنده پیش از تسویه بسته می‌شود تا خرید برنده در امتیاز حساب شود.
     // اگر این گام شکست بخورد، تسویه ادامه می‌یابد و حراج زندهٔ باقی‌مانده دیگر تسویه نمی‌شود
     // (settleCore پس از CLOSED جز در مسیر پایان بازی تسویه نمی‌کند) — پس خطا باید بلند گزارش شود.
     await closeAuctionsForGameEnd().catch((e) => reportGameEndFailure("closeAuctionsForGameEnd", e));
@@ -46,6 +48,10 @@ export async function transitionTo(phase: Phase, endsAt: Date | null): Promise<T
       reportGameEndFailure("settleGame", e);
       return { settleFailed: true };
     }
+    // ارزیابی نهایی هوش مصنوعی زمان‌بر است و نباید پنل را نگه دارد؛ بعد از آن امتیازها بازمحاسبه می‌شوند.
+    void runFinalAiEvaluation()
+      .then((r) => (r.done > 0 ? resettleGame() : undefined))
+      .catch((e) => reportGameEndFailure("runFinalAiEvaluation", e));
   }
   return {};
 }

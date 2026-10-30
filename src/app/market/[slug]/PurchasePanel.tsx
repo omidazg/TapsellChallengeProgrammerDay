@@ -16,7 +16,7 @@ export function PurchasePanel({
   productId,
   slug,
   price,
-  phaseIsMarket,
+  marketOpen,
   isOwnTeam,
   alreadySpent,
   walletBalance,
@@ -28,7 +28,7 @@ export function PurchasePanel({
   productId: string;
   slug: string;
   price: number;
-  phaseIsMarket: boolean;
+  marketOpen: boolean;
   isOwnTeam: boolean;
   /** مجموع سکه‌ای که کاربر تاکنون روی این محصول خرج کرده */
   alreadySpent: number;
@@ -53,7 +53,7 @@ export function PurchasePanel({
 
   const walletShort = price > wallet;
   const walletAfter = wallet - price;
-  const disabled = pending || isOwnTeam || !phaseIsMarket || walletShort;
+  const disabled = pending || isOwnTeam || !marketOpen || walletShort;
 
   function buy() {
     setError(null);
@@ -103,13 +103,13 @@ export function PurchasePanel({
         </div>
       </div>
 
-      {!phaseIsMarket && <Alert kind="info">خرید فقط در فاز «روز بازار» ممکن است.</Alert>}
+      {!marketOpen && <Alert kind="info">خرید الان باز نیست.</Alert>}
       {isOwnTeam && <Alert kind="info">این محصول تیم خودت است؛ نمی‌توانی از آن بخری.</Alert>}
 
-      {phaseIsMarket && !isOwnTeam && (
+      {marketOpen && !isOwnTeam && (
         <>
           <p className="text-xs text-brand-slate leading-6">
-            هر خرید به قیمت کامل است و یعنی حمایت از این تیم در امتیاز «حمایت مردمی».
+            هر خرید به قیمت کامل است و یعنی حمایت از این تیم در امتیاز «حمایت با سکه».
             {spent > 0 && <> تا حالا {coins(spent)} از این محصول خریده‌ای.</>}
           </p>
 

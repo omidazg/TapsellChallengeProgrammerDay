@@ -45,17 +45,17 @@ async function main() {
     // ---------- چیدمان ----------
     const seller = await prisma.team.create({ data: { name: "تیم فروشنده", slug: "smoke-m-seller" } });
     const buyerTeam = await prisma.team.create({ data: { name: "تیم خریدار", slug: "smoke-m-buyer" } });
-    await setPhase("MARKET", null);
+    await setPhase("LIVE", null);
 
     const product = await prisma.product.create({
-      data: { teamId: seller.id, name: "محصول دود-بازار", price: 20, submittedAt: new Date(), liveStatus: "LIVE" },
+      data: { teamId: seller.id, slug: "smoke-market-seller-general", name: "محصول دود-بازار", price: 20, submittedAt: new Date(), liveStatus: "LIVE" },
     });
     const otherProduct = await prisma.product.create({
-      data: { teamId: buyerTeam.id, name: "محصول تیم خریدار", price: 10, submittedAt: new Date() },
+      data: { teamId: buyerTeam.id, slug: "smoke-market-buyer-general", name: "محصول تیم خریدار", price: 10, submittedAt: new Date() },
     });
     // محصول ثبت‌نشده در بازار نمی‌آید و قابل خرید نیست
     const draftTeam = await prisma.team.create({ data: { name: "تیم پیش‌نویس", slug: "smoke-m-draft" } });
-    const draft = await prisma.product.create({ data: { teamId: draftTeam.id, name: "پیش‌نویس", price: 10 } });
+    const draft = await prisma.product.create({ data: { teamId: draftTeam.id, slug: "smoke-market-draft-general", name: "پیش‌نویس", price: 10 } });
 
     const mkUser = (key: string, teamId: string | null, buyWallet: number) =>
       prisma.user.create({
@@ -133,13 +133,18 @@ async function main() {
       check("پس از آزاد شدن رزرو همان خرید موفق است", freed.ok, freed);
     }
 
-    // ---------- خرید فقط در فاز «روز بازار» ممکن است ----------
-    for (const phase of ["BUILD", "CLOSED"] as const) {
-      await setPhase(phase, null);
-      const outOfPhase = await purchaseProduct(buyer.id, product.id);
-      check(`purchaseProduct: در فاز ${phase} رد می‌شود`, !outOfPhase.ok && outOfPhase.error.includes("روز بازار"), outOfPhase);
+    // ---------- خرید فقط وقتی بخش بازار باز است ممکن است ----------
+    const { setModuleStatus } = await import("../src/lib/module-state");
+    for (const status of ["ro", "closed", "hidden"] as const) {
+      await setModuleStatus("market", status);
+      const blocked = await purchaseProduct(buyer.id, product.id);
+      check(`purchaseProduct: در وضعیت ${status} رد می‌شود`, !blocked.ok && blocked.error.includes("فعلاً باز نیست"), blocked);
     }
-    await setPhase("MARKET", null);
+    await setModuleStatus("market", "open");
+    await setPhase("CLOSED", null);
+    const afterEnd = await purchaseProduct(buyer.id, product.id);
+    check("purchaseProduct: پس از پایان مسابقه رد می‌شود", !afterEnd.ok, afterEnd);
+    await setPhase("LIVE", null);
 
     // ---------- getMarketProducts ----------
     {

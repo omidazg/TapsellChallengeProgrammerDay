@@ -12,16 +12,19 @@ export function AnalystCard({
   feasibility,
   novelty,
   summary,
+  advice = null,
   aiOff = false,
 }: {
   clarity: number | null;
   feasibility: number | null;
   novelty: number | null;
   summary: string | null;
+  /** پیشنهاد تحلیل‌گر برای بهتر کردن ایده (برای تیم و حامی‌ها) */
+  advice?: string | null;
   aiOff?: boolean;
 }) {
   const scores = { analystClarity: clarity, analystFeasibility: feasibility, analystNovelty: novelty };
-  if (clarity === null && feasibility === null && novelty === null) {
+  if (clarity === null && feasibility === null && novelty === null && !advice) {
     return aiOff ? <AiUnavailable /> : null;
   }
   return (
@@ -47,6 +50,13 @@ export function AnalystCard({
         })}
       </div>
       {summary && <p className="mt-4 text-sm text-brand-navy/90 leading-7 bg-brand-ice rounded-2xl p-4 whitespace-pre-line break-words">{summary}</p>}
+      {advice && (
+        <div className="mt-4 rounded-2xl border border-brand-mist p-4">
+          <div className="text-xs font-bold text-brand-cyan-dark mb-1">پیشنهاد تحلیل‌گر</div>
+          <p className="text-sm text-brand-navy/90 leading-7 whitespace-pre-line break-words">{advice}</p>
+          <p className="mt-2 text-xs text-brand-slate">این نظر فقط راهنماست و در امتیاز نهایی حساب نمی‌شود.</p>
+        </div>
+      )}
     </div>
   );
 }

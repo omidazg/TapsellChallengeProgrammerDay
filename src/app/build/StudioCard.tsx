@@ -24,21 +24,23 @@ function Submit({ label, pendingLabel, className }: { label: string; pendingLabe
 }
 
 /**
- * انتشار اختیاری محصول روی «بازار استودیو»: درخواست (لینک کد/بسته + توضیح)، لغو، و نمایش وضعیت.
- * open: آیا الان (فاز ساخت محصول یا روز بازار) درخواست ممکن است؛ closedNote: دلیل بسته بودن.
+ * انتشار اختیاری محصول روی «بازار استودیو»: درخواست (لینک کد/بسته + شناسهٔ بسته + توضیح)، لغو، و نمایش وضعیت.
+ * open: آیا الان درخواست ممکن است؛ closedNote: دلیل بسته بودن.
  */
 export function StudioCard({
+  trackId,
   status,
   statusLabel,
   sourceUrl,
   requestNote,
   liveUrl,
   adminNote,
+  bazaarPackage,
   canManage,
   open,
   closedNote,
-  prizeLabel,
 }: {
+  trackId: string;
   status: LiveStatus;
   /** LIVE_STATUS_LABEL همین وضعیت (از سرور) */
   statusLabel: string;
@@ -46,13 +48,14 @@ export function StudioCard({
   requestNote: string;
   liveUrl: string;
   adminNote: string;
+  /** شناسهٔ بسته روی بازار استودیو (package name)؛ آمار نصب و درآمد با این شناسه خوانده می‌شود */
+  bazaarPackage: string;
   canManage: boolean;
   open: boolean;
   closedNote: string | null;
-  prizeLabel: string;
 }) {
   const [reqState, requestAction] = useActionState<StudioActionState, FormData>(requestGoLiveAction, {});
-  const [cancelState, cancelAction] = useActionState<StudioActionState, FormData>(async () => cancelGoLiveAction(), {});
+  const [cancelState, cancelAction] = useActionState<StudioActionState, FormData>(async () => cancelGoLiveAction(trackId), {});
   const canRequest = canManage && open && (status === "" || status === "REJECTED");
   const canCancel = canManage && (status === "REQUESTED" || status === "REJECTED");
 
@@ -66,7 +69,7 @@ export function StudioCard({
       </div>
       <p className="text-xs text-brand-slate leading-6">
         اگر محصولت واقعاً قابل استفاده است، لینک کد یا بسته‌اش را بفرست تا برگزارکننده آن را روی بازار استودیو منتشر کند.
-        محصولات لایو نشان «🚀 لایو» می‌گیرند و نامزد جایزهٔ «{prizeLabel}» هستند.
+        محصول منتشرشده نشان «🚀 لایو» می‌گیرد و از زمان انتشار تا مهلت نهایی، نصب فعال، درآمد واقعی، امتیاز ستاره‌ای و تعداد نظرش در بخش بازارِ امتیاز حساب می‌شود.
       </p>
 
       {status === "LIVE" && liveUrl && (
@@ -97,6 +100,7 @@ export function StudioCard({
 
       {canRequest && (
         <form action={requestAction} className="space-y-3">
+          <input type="hidden" name="trackId" value={trackId} />
           {reqState.error && <Alert kind="error">{reqState.error}</Alert>}
           <div>
             <label className="label" htmlFor="studioSourceUrl">لینک کد یا بستهٔ محصول</label>
@@ -111,6 +115,19 @@ export function StudioCard({
               placeholder="https://github.com/…"
               dir="ltr"
             />
+          </div>
+          <div>
+            <label className="label" htmlFor="studioBazaarPackage">شناسهٔ بسته روی بازار (اختیاری)</label>
+            <input
+              id="studioBazaarPackage"
+              name="bazaarPackage"
+              maxLength={200}
+              defaultValue={bazaarPackage}
+              className="input"
+              placeholder="com.example.app"
+              dir="ltr"
+            />
+            <p className="mt-1 text-xs text-brand-slate">آمار بازار با همین شناسه به محصولت وصل می‌شود.</p>
           </div>
           <div>
             <label className="label" htmlFor="studioNote">توضیح برای برگزارکننده (اختیاری)</label>

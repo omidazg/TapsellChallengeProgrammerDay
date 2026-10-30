@@ -46,9 +46,9 @@ export function HallClient() {
       setFailures(0);
       const serverNow = new Date(payload.serverNow).getTime();
       if (!Number.isNaN(serverNow)) skewRef.current = serverNow - Date.now();
-      // فقط تغییر واقعی فاز با aria-live="polite" اعلام می‌شود (بقیهٔ صفحه aria-live خاموش دارد).
+      // فقط تغییر واقعی وضعیت مسابقه با aria-live="polite" اعلام می‌شود (بقیهٔ صفحه aria-live خاموش دارد).
       if (prevPhaseRef.current !== null && prevPhaseRef.current !== payload.phase) {
-        setAnnouncement(`فاز بازی به «${payload.phaseLabel}» تغییر کرد`);
+        setAnnouncement(`وضعیت مسابقه به «${payload.phaseLabel}» تغییر کرد`);
       }
       prevPhaseRef.current = payload.phase;
     } catch {
@@ -84,7 +84,7 @@ export function HallClient() {
       style={{ fontFamily: "var(--font-sans)" }}
     >
       <ConnectionBanner failing={failures >= 2} />
-      {/* اعلان‌های صفحه‌خوان فقط برای تغییر فاز؛ بقیهٔ به‌روزرسانی‌ها بی‌صدا هستند */}
+      {/* اعلان‌های صفحه‌خوان فقط برای تغییر وضعیت مسابقه؛ بقیهٔ به‌روزرسانی‌ها بی‌صدا هستند */}
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {announcement}
       </div>
@@ -112,7 +112,7 @@ export function HallClient() {
           </>
         ) : (
           <>
-            <TopTeamsPanel teams={data.topTeams} metricLabel={data.metricLabel} closed={data.phase === "CLOSED"} />
+            <TopTeamsPanel teams={data.topTeams} metricLabel={data.metricLabel} />
             <AuctionPanel auction={data.auction} now={now} />
             <FeedPanel feed={data.feed} />
           </>
@@ -144,7 +144,7 @@ function HallHeader({
         <h1 className="text-2xl sm:text-3xl font-black break-words">میدان بنیان‌گذاران</h1>
       </div>
       <div className="flex items-center gap-4 sm:gap-6 shrink-0">
-        {/* جای بلوک فاز از اول رزرو می‌شود (حداقل پهنا و ارتفاع ثابت) تا با رسیدن داده سرصفحه جابه‌جا نشود */}
+        {/* جای بلوک وضعیت از اول رزرو می‌شود (حداقل پهنا و ارتفاع ثابت) تا با رسیدن داده سرصفحه جابه‌جا نشود */}
         <div className="text-left min-w-[8.5rem] sm:min-w-[13rem]">
           <div className="text-xs sm:text-sm text-brand-cyan font-bold min-h-4 sm:min-h-5">{phaseLabel ?? "\u00a0"}</div>
           <div className="min-h-9 sm:min-h-12 flex items-center justify-end">
@@ -182,19 +182,22 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-/** پیش از پایان بازی فقط معیار عمومی «تعداد حامی» دیده می‌شود؛ پس از آن امتیاز کل (همان قاعدهٔ جدول امتیازات). */
-function TopTeamsPanel({ teams, metricLabel, closed }: { teams: HallPayload["topTeams"]; metricLabel: string; closed: boolean }) {
+/** برترها در نمای کلی همهٔ محورها؛ تا اعلام نتایج امتیاز زنده بدون داوری (همان قاعدهٔ جدول امتیازات). */
+function TopTeamsPanel({ teams, metricLabel }: { teams: HallPayload["topTeams"]; metricLabel: string }) {
   return (
-    <Panel title={closed ? `تیم‌های برتر · ${metricLabel}` : `پرحامی‌ترین تیم‌ها · ${metricLabel}`}>
+    <Panel title={`تیم‌های برتر · ${metricLabel}`}>
       {teams.length === 0 ? (
         <p className="text-white/50 text-lg">هنوز تیمی رتبه‌بندی نشده</p>
       ) : (
         <ol className="space-y-3">
           {teams.map((t, i) => (
-            <li key={t.teamId} className="flex items-center gap-3 anim-rise">
+            <li key={t.key} className="flex items-center gap-3 anim-rise">
               <span className="w-8 text-xl sm:text-2xl font-black text-amber-400 fa-num shrink-0">{fa(i + 1)}</span>
               <Avatar seed={t.logoSeed || t.teamId} size={40} />
-              <span className="flex-1 min-w-0 truncate text-lg sm:text-2xl font-bold">{t.name}</span>
+              <span className="flex-1 min-w-0">
+                <span className="block truncate text-lg sm:text-2xl font-bold">{t.name}</span>
+                <span className="block truncate text-sm text-white/60">{[t.productName, t.trackName].filter(Boolean).join(" · ")}</span>
+              </span>
               <span className="fa-num text-xl sm:text-2xl font-black text-brand-cyan shrink-0">{fa(Math.round(t.metric))}</span>
             </li>
           ))}

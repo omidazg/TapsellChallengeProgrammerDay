@@ -24,13 +24,13 @@
  *     (Announcement فقط با --wipe-announcements پاک می‌شود). فقط Setting‌های وضعیتِ
  *     دور قبل پاک می‌شوند: settled_at، last_auction_ended_at، انتخاب‌های داوران
  *     (award_ai_team_id/award_live_team_id) و پرچم‌های adslot_push_sent:*.
- *   - فاز بازی به REGISTRATION برمی‌گردد (phase_ends_at پاک می‌شود).
+ *   - مسابقه دوباره در جریان (LIVE) می‌شود (phase_ends_at پاک می‌شود).
  *
  * ایمنی:
  *   - بدون --yes هیچ کاری انجام نمی‌شود (dry بودن پیش‌فرض).
  *   - اگر NODE_ENV=production باشد و ALLOW_RESET=1 ست نشده باشد، امتناع
  *     می‌کند (برای جلوگیری از پاک کردن تصادفی دادهٔ رویداد واقعی).
- *   - سفارش‌های PAID خرید سکه پول واقعی‌اند (و جزو صندوق جایزه): اگر وجود داشته
+ *   - سفارش‌های PAID خرید سکه پول واقعی‌اند: اگر وجود داشته
  *     باشند، بدون --include-paid-orders امتناع می‌کند. قبلش از جدول CoinOrder
  *     خروجی بگیرید.
  *   - همه چیز در یک تراکنش Prisma اجرا می‌شود؛ اگر جایی خطا بدهد، هیچ‌چیز
@@ -66,6 +66,7 @@ const INCLUDE_PAID_ORDERS = args.includes("--include-paid-orders");
 /** Setting‌های وضعیتِ یک دور بازی (نه تنظیمات برگزارکننده) که باید با بازنشانی پاک شوند. */
 const ROUND_STATE_KEYS = [
   "settled_at", // src/lib/settlement.ts (SETTLED_AT_KEY)
+  "settled_final", // src/lib/settlement.ts (SETTLED_FINAL_KEY)
   "last_auction_ended_at", // src/lib/scheduler.ts
   "award_ai_team_id", // src/lib/scoring.ts (AWARD_PICK_KEYS.ai)
   "award_live_team_id", // src/lib/scoring.ts (AWARD_PICK_KEYS.live)
@@ -87,7 +88,7 @@ async function main() {
   const { prisma } = await import("../src/lib/db");
   const { PHASES } = await import("../src/lib/phases");
   const { DEFAULTS } = await import("../src/lib/constants");
-  const firstPhase = PHASES[0]; // REGISTRATION
+  const firstPhase = PHASES[0]; // LIVE
 
   // سکهٔ اولیه از تنظیم starting_coins (همان که ثبت‌نام می‌خواند)
   const startingRow = await prisma.setting.findUnique({ where: { key: "starting_coins" } });
@@ -108,7 +109,7 @@ async function main() {
     const paidToman = Math.round((paidAgg._sum.amountRial ?? 0) / 10);
     console.warn(
       `!! هشدار: ${paidOrders} سفارش PAID (${paidCoins} سکه، ${paidToman.toLocaleString("en-US")} تومان) با پول واقعی پرداخت شده‌اند` +
-        " و بخشی از صندوق جایزه‌اند. با بازنشانی، این سفارش‌ها پاک و سکه‌های خریداری‌شده از کیف‌ها حذف می‌شوند."
+        ". با بازنشانی، این سفارش‌ها پاک و سکه‌های خریداری‌شده از کیف‌ها حذف می‌شوند."
     );
     if (!INCLUDE_PAID_ORDERS) {
       console.error("!! بازنشانی انجام نشد. اول از جدول CoinOrder خروجی بگیرید و اگر مطمئنید --include-paid-orders را اضافه کنید.");
@@ -124,6 +125,9 @@ async function main() {
     heart: await prisma.heart.count(),
     bid: await prisma.bid.count(),
     adSlotBid: await prisma.adSlotBid.count(),
+    juryScore: await prisma.juryScore.count(),
+    bazaarStat: await prisma.bazaarStat.count(),
+    ideaRevision: await prisma.ideaRevision.count(),
     auction: await prisma.auction.count(),
     product: await prisma.product.count(),
     idea: await prisma.idea.count(),
@@ -153,9 +157,13 @@ async function main() {
     await tx.heart.deleteMany({});
     await tx.bid.deleteMany({});
     await tx.adSlotBid.deleteMany({});
+    await tx.juryScore.deleteMany({});
+    await tx.bazaarStat.deleteMany({});
+    await tx.ideaRevision.deleteMany({});
 
     // ۲) خودِ Auction/Product/Idea/AdSlot (بعد از پاک‌شدن فرزندانشان).
     await tx.auction.deleteMany({});
+    await tx.prize.updateMany({ data: { winnerProductId: null } }); // برندهٔ جایزه‌های ویژه به محصول پاک‌شده اشاره نکند
     await tx.product.deleteMany({});
     await tx.idea.deleteMany({});
     await tx.adSlot.deleteMany({});
@@ -175,6 +183,7 @@ async function main() {
       // ابتدا teamId کاربران را null کنیم چون User.teamId به Team اشاره دارد.
       await tx.user.updateMany({ data: { teamId: null } });
       await tx.teamInvite.deleteMany({});
+      await tx.moduleException.deleteMany({});
       await tx.team.deleteMany({});
     } else {
       // تیم‌ها می‌مانند ولی کسر امتیاز تقلب و ستون‌های قدیمی (خزانه/سرپرست) صفر می‌شوند.
@@ -202,7 +211,7 @@ async function main() {
       await tx.announcement.deleteMany({});
     }
 
-    // ۷) فاز بازی → REGISTRATION (همان الگوی src/lib/phase.ts / scripts/set-phase.ts).
+    // ۷) وضعیت مسابقه → LIVE (همان الگوی src/lib/phase.ts / scripts/set-phase.ts).
     await tx.setting.upsert({
       where: { key: "phase" },
       update: { value: firstPhase },

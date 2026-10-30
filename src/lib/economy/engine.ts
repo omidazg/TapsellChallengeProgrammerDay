@@ -2,39 +2,43 @@
  * موتور امتیاز — خالص، بدون وابستگی به پایگاه داده یا هر چیز خارجی.
  * پیاده‌سازی قرارداد در ./types.ts
  *
- * سه معیار (جمع وزن‌ها ۱۰۰۰):
- *   داوری انسانی  — میانگین سه پرسش داوری × ۱۰
- *   حمایت مردمی   — (Σ √min(سکهٔ هر حامی، سقف))²  (تأمین مالی درجه‌دو)
- *   داوری هوش مصنوعی — نمرهٔ ۰..۱۰۰ داور هوش مصنوعی
- * هر معیار نسبت به بهترین پروژهٔ همان معیار سنجیده می‌شود؛ سپس کسر تقلب کم می‌شود.
- * تعداد اعضای تیم (۱ تا ۳ نفر) در امتیاز هیچ اثری ندارد.
+ * هر ثبت (تیم در یک محور) فقط با ثبت‌های همان محور سنجیده می‌شود. سه بخش با وزن‌های همان محور (جمع ۱۰۰۰):
+ *   هوش مصنوعی — نمرهٔ ۰..۱۰۰ ارزیابی نهایی (پیش از آن، بازخورد موقت)
+ *   بازار       — حمایت با سکه + نصب فعال + درآمد + امتیاز ستاره‌ای + تعداد نظر
+ *   داوری       — میانگین نمرهٔ داوران
+ * نصب، درآمد و نظر با مقیاس لگاریتمی نسبت به بهترین ثبت محور سنجیده می‌شوند تا یک محصول
+ * پرطرفدار بقیه را به صفر نرساند. در پایان کسر تقلب کم می‌شود.
  */
 
-import { DEFAULTS, SCORE_WEIGHTS } from "@/lib/constants";
-import type { EconomyConfig, JuryScores, ScoreOutput, TeamInput, TeamResult } from "./types";
+import { DEFAULTS } from "@/lib/constants";
+import { DEFAULT_WEIGHTS, type TrackWeights } from "@/lib/tracks";
+import { entryKey } from "./types";
+import type { EconomyConfig, MarketPoints, ScoreOutput, TeamInput, TeamResult } from "./types";
 
 /** پیکربندی پیش‌فرض ساخته‌شده از ثابت‌های پروژه. */
 export function defaultConfig(): EconomyConfig {
   return {
     supportCap: DEFAULTS.supportCap,
-    weights: { ...SCORE_WEIGHTS },
+    trackWeights: {},
+    ratingMinComments: DEFAULTS.ratingMinComments,
   };
 }
 
-function sum(arr: number[]): number {
-  return arr.reduce((a, b) => a + b, 0);
-}
-
 /**
- * نمرهٔ ۰..۱۰۰ داوری انسانی: میانگین پرسش‌هایی که داور نمره داده (هر کدام ۰..۱۰) × ۱۰.
- * اگر هیچ پرسشی نمره نگرفته باشد null (هنوز داوری نشده).
+ * نمرهٔ ۰..۱۰۰ داوری: هر داور میانگین نمره‌هایی که به معیارها داده (هر کدام ۰..۱۰)،
+ * و نتیجه میانگین داورها × ۱۰. اگر هیچ نمره‌ای نباشد null (هنوز داوری نشده).
  */
-export function juryRawScore(jury: JuryScores | null): number | null {
-  if (!jury) return null;
-  const given = [jury.works, jury.value, jury.pitch].filter((v): v is number => typeof v === "number");
-  if (given.length === 0) return null;
-  const clamped = given.map((v) => Math.min(10, Math.max(0, v)));
-  return (sum(clamped) / clamped.length) * 10;
+export function juryRawScore(judges: Record<string, unknown>[], criterionKeys: string[]): number | null {
+  const perJudge: number[] = [];
+  for (const scores of judges) {
+    const given = criterionKeys
+      .map((k) => scores[k])
+      .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
+      .map((v) => Math.min(10, Math.max(0, v)));
+    if (given.length > 0) perJudge.push(given.reduce((a, b) => a + b, 0) / given.length);
+  }
+  if (perJudge.length === 0) return null;
+  return (perJudge.reduce((a, b) => a + b, 0) / perJudge.length) * 10;
 }
 
 /**
@@ -103,69 +107,106 @@ export function shouldExtendAuction(nowMs: number, endsAtMs: number, windowSec: 
 }
 
 /**
- * ترتیب قطعی رتبه‌بندی (و شکستن تساوی همهٔ جوایز خودکار):
+ * ترتیب قطعی رتبه‌بندی (و شکستن تساوی جوایز خودکار):
  * امتیاز کل بیشتر → حمایت مردمی بیشتر → نمرهٔ داوری بیشتر → ثبت نهایی محصول زودتر (بدون محصول = آخر)
- * → teamId صعودی. نتیجه مستقل از ترتیب ورودی/پایگاه‌داده است.
+ * → teamId و trackId صعودی. نتیجه مستقل از ترتیب ورودی/پایگاه‌داده است.
  */
 export function compareRank(
-  a: Pick<TeamResult, "teamId" | "total" | "people" | "juryAdjusted">,
-  b: Pick<TeamResult, "teamId" | "total" | "people" | "juryAdjusted">,
-  submittedAtById: Map<string, number | null> = new Map()
+  a: Pick<TeamResult, "teamId" | "trackId" | "total" | "people" | "juryAdjusted">,
+  b: Pick<TeamResult, "teamId" | "trackId" | "total" | "people" | "juryAdjusted">,
+  submittedAtByEntry: Map<string, number | null> = new Map()
 ): number {
   if (b.total !== a.total) return b.total - a.total;
   if (b.people !== a.people) return b.people - a.people;
   if (b.juryAdjusted !== a.juryAdjusted) return b.juryAdjusted - a.juryAdjusted;
-  const sa = submittedAtById.get(a.teamId) ?? null;
-  const sb = submittedAtById.get(b.teamId) ?? null;
+  const sa = submittedAtByEntry.get(entryKey(a)) ?? null;
+  const sb = submittedAtByEntry.get(entryKey(b)) ?? null;
   if (sa !== sb) {
     if (sa === null) return 1;
     if (sb === null) return -1;
     return sa - sb;
   }
-  return a.teamId < b.teamId ? -1 : a.teamId > b.teamId ? 1 : 0;
+  const ka = entryKey(a);
+  const kb = entryKey(b);
+  return ka < kb ? -1 : ka > kb ? 1 : 0;
 }
 
-/** موتور اصلی امتیازدهی: همهٔ تیم‌ها را می‌گیرد و نتیجهٔ کامل رتبه‌بندی‌شده برمی‌گرداند. */
+/** نسبت لگاریتمی به بهترین مقدار: log(1+x) / log(1+max) */
+export function logRatio(value: number, max: number): number {
+  if (max <= 0 || value <= 0) return 0;
+  return Math.log1p(value) / Math.log1p(max);
+}
+
+/** موتور اصلی امتیازدهی: همهٔ ثبت‌ها را می‌گیرد و نتیجهٔ کامل رتبه‌بندی‌شده برمی‌گرداند. */
 export function scoreGame(config: EconomyConfig, teams: TeamInput[]): ScoreOutput {
   const partials = teams.map((team) => {
-    const memberCount = team.memberIds.length;
-    const juryRaw = juryRawScore(team.jury);
-    // نمرهٔ داوری همان نمرهٔ خام است؛ اندازهٔ تیم اثری ندارد. داوری‌نشده = صفر.
-    const juryAdjusted = juryRaw ?? 0;
     const support = peopleSupport(team.supports, config.supportCap, new Set(team.memberIds));
+    // آمار پرچم‌خورده تا رفع پرچم در امتیاز حساب نمی‌شود.
+    const stats = team.stats && !team.stats.flagged ? team.stats : null;
     return {
       teamId: team.teamId,
-      memberCount,
-      juryRaw,
-      juryAdjusted,
+      trackId: team.trackId,
+      category: team.category,
+      productId: team.productId,
+      productName: team.productName,
+      memberCount: team.memberIds.length,
+      juryRaw: team.juryRaw,
+      juryAdjusted: team.juryRaw ?? 0,
       people: support.score,
       supporters: support.supporters,
       coinsReceived: support.coins,
       ai: team.aiQuality == null ? null : Math.min(100, Math.max(0, team.aiQuality)),
       cheatPenalty: Math.max(0, team.cheatPenalty),
+      stats,
     };
   });
 
-  const maxOf = (pick: (t: (typeof partials)[number]) => number) => Math.max(0, ...partials.map(pick));
-  const maxJury = maxOf((t) => t.juryAdjusted);
-  const maxPeople = maxOf((t) => t.people);
-  const maxAi = maxOf((t) => t.ai ?? 0);
+  const results: TeamResult[] = [];
   const ratio = (value: number, max: number) => (max > 0 ? value / max : 0);
 
-  const results: TeamResult[] = partials.map((t) => {
-    const pts = {
-      jury: config.weights.jury * ratio(t.juryAdjusted, maxJury),
-      people: config.weights.people * ratio(t.people, maxPeople),
-      ai: config.weights.ai * ratio(t.ai ?? 0, maxAi),
-    };
-    const total = Math.max(0, pts.jury + pts.people + pts.ai - t.cheatPenalty);
-    return { ...t, pts, total };
-  });
+  for (const trackId of new Set(partials.map((p) => p.trackId))) {
+    const group = partials.filter((p) => p.trackId === trackId);
+    const w: TrackWeights = config.trackWeights[trackId] ?? DEFAULT_WEIGHTS;
+    const maxOf = (pick: (t: (typeof group)[number]) => number) => Math.max(0, ...group.map(pick));
+    const maxJury = maxOf((t) => t.juryAdjusted);
+    const maxPeople = maxOf((t) => t.people);
+    const maxAi = maxOf((t) => t.ai ?? 0);
+    const maxInstalls = maxOf((t) => t.stats?.activeInstalls ?? 0);
+    const maxRevenue = maxOf((t) => t.stats?.revenueToman ?? 0);
+    const maxComments = maxOf((t) => t.stats?.commentCount ?? 0);
+    const marketPts = w.market * 10;
 
-  const submittedAtById = new Map(teams.map((t) => [t.teamId, t.productSubmittedAt ?? null]));
-  results.sort((a, b) => compareRank(a, b, submittedAtById));
+    for (const { stats, ...t } of group) {
+      const share = (pct: number, r: number) => (marketPts * pct * r) / 100;
+      const rating =
+        stats && stats.rating != null && stats.commentCount >= config.ratingMinComments
+          ? Math.min(5, Math.max(0, stats.rating)) / 5
+          : 0;
+      const marketDetail: MarketPoints = {
+        support: share(w.marketSub.support, ratio(t.people, maxPeople)),
+        activeInstalls: share(w.marketSub.activeInstalls, logRatio(stats?.activeInstalls ?? 0, maxInstalls)),
+        revenue: share(w.marketSub.revenue, logRatio(stats?.revenueToman ?? 0, maxRevenue)),
+        rating: share(w.marketSub.rating, rating),
+        comments: share(w.marketSub.comments, logRatio(stats?.commentCount ?? 0, maxComments)),
+      };
+      const pts = {
+        jury: w.jury * 10 * ratio(t.juryAdjusted, maxJury),
+        market: Object.values(marketDetail).reduce((a, b) => a + b, 0),
+        ai: w.ai * 10 * ratio(t.ai ?? 0, maxAi),
+      };
+      const total = Math.max(0, pts.jury + pts.market + pts.ai - t.cheatPenalty);
+      results.push({ ...t, pts, marketDetail, total });
+    }
+  }
+
+  const submittedAtByEntry = new Map(teams.map((t) => [entryKey(t), t.productSubmittedAt ?? null]));
+  results.sort((a, b) => compareRank(a, b, submittedAtByEntry));
+  const nextInTrack = new Map<string, number>();
   results.forEach((r, i) => {
-    r.rank = i + 1;
+    r.overallRank = i + 1;
+    const n = (nextInTrack.get(r.trackId) ?? 0) + 1;
+    nextInTrack.set(r.trackId, n);
+    r.rank = n;
   });
 
   return { teams: results };

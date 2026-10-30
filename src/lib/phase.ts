@@ -1,16 +1,14 @@
 import { prisma } from "./db";
-import { PHASES, type Phase } from "./phases";
+import type { Phase } from "./phases";
 import { invalidate } from "./ttl-cache";
 
 export * from "./phases";
 
-/** فاز جاری و زمان پایان آن (از جدول Setting) */
+/** وضعیت مسابقه و ددلاین نهایی (از جدول Setting). هر مقدار قدیمی جز CLOSED یعنی مسابقه در جریان است. */
 export async function getPhase(): Promise<{ phase: Phase; endsAt: Date | null }> {
   const rows = await prisma.setting.findMany({ where: { key: { in: ["phase", "phase_ends_at"] } } });
   const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  // «AUCTION» فاز قدیمی است (حراج حالا داخل روز بازار است) و معادل MARKET خوانده می‌شود.
-  const stored = map.phase === "AUCTION" ? "MARKET" : map.phase;
-  const phase = (PHASES as readonly string[]).includes(stored) ? (stored as Phase) : "REGISTRATION";
+  const phase: Phase = map.phase === "CLOSED" ? "CLOSED" : "LIVE";
   const endsAt = map.phase_ends_at ? new Date(map.phase_ends_at) : null;
   return { phase, endsAt };
 }

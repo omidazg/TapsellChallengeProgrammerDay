@@ -1,26 +1,36 @@
-import Link from "next/link";
+import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { getPhase, phaseIndex, PHASE_LABEL } from "@/lib/phase";
 import { prisma } from "@/lib/db";
-import { PageHeader, Container, Empty, Locked, Alert } from "@/components/ui";
+import { PageHeader, Container, Empty, Alert } from "@/components/ui";
+import { ModuleClosed, ModuleReadOnly } from "@/components/ModuleState";
+import { TrackSwitcher } from "@/components/TrackSwitcher";
+import { TrackProgress } from "@/components/TrackProgress";
 import { buildChecklist, parseImages, effectiveMaxPrice } from "@/lib/product";
 import { teamAccess } from "@/lib/team-access";
 import { LIVE_STATUS_LABEL, type LiveStatus } from "@/lib/studio";
-import { PRIZES } from "@/lib/prizes";
+import { moduleStatusFor, trackGate } from "@/lib/module-state";
+import { resolveTrack } from "@/lib/track-data";
+import { getBazaarSource } from "@/lib/bazaar";
 import { BuildForm } from "./BuildForm";
 import { ChecklistCard } from "./ChecklistCard";
 import { StudioCard } from "./StudioCard";
 
 export const metadata = { title: "مرکز ساخت" };
 
-export default async function BuildPage() {
+const TITLE = "مرکز ساخت";
+
+export default async function BuildPage({ searchParams }: { searchParams: Promise<{ track?: string }> }) {
   const user = await requireUser();
-  const { phase } = await getPhase();
+  const sp = await searchParams;
+
+  const status = await moduleStatusFor("build", user.teamId);
+  if (status === "hidden") notFound();
+  if (status === "closed") return <ModuleClosed moduleKey="build" title={TITLE} />;
 
   if (!user.teamId || !user.team) {
     return (
       <>
-        <PageHeader eyebrow="فاز فعلی" title="مرکز ساخت" desc="اینجا محصول تیمت را می‌سازی: توضیح، تیزر، تصاویر، قیمت و نسخهٔ ویژه." />
+        <PageHeader title={TITLE} desc="اینجا محصول تیمت را می‌سازی و تحویل می‌دهی." />
         <Container>
           <Empty
             title="هنوز عضو تیمی نیستی"
@@ -32,89 +42,135 @@ export default async function BuildPage() {
     );
   }
 
-  if (phaseIndex(phase) < phaseIndex("IDEATION")) {
+  const { track, tracks } = await resolveTrack(sp.track);
+  if (!track) {
     return (
       <>
-        <PageHeader
-          eyebrow={`از فاز «${PHASE_LABEL.IDEATION}» باز می‌شود`}
-          title="مرکز ساخت"
-          action={
-            <Link href="/" className="btn-ghost">
-              الان چه کنم؟
-            </Link>
-          }
-        />
+        <PageHeader title={TITLE} />
         <Container>
-          <Locked title="هنوز زود است" desc="مرکز ساخت از فاز «اتاق ایده» باز می‌شود." />
+          <Empty title="فعلاً محوری باز نیست" desc="به‌محض باز شدن محورها می‌توانی محصولت را ثبت کنی." />
         </Container>
       </>
     );
   }
 
-  const product = await prisma.product.findUnique({ where: { teamId: user.teamId } });
-  const phaseEditable = phaseIndex(phase) < phaseIndex("MARKET");
+  const key = { teamId_trackId: { teamId: user.teamId, trackId: track.id } };
+  const [product, idea, trackError, { canManage, reason }, maxPrice, bazaarSource, studioStatus, aiStatus, osIssues] = await Promise.all([
+    prisma.product.findUnique({ where: key }),
+    prisma.idea.findUnique({ where: key, select: { submittedAt: true } }),
+    trackGate(track.id, user.teamId),
+    teamAccess(user),
+    effectiveMaxPrice(),
+    getBazaarSource(),
+    moduleStatusFor("studio", user.teamId),
+    moduleStatusFor("ai", user.teamId),
+    track.kind === "OS"
+      ? prisma.osIssue.findMany({ where: { active: true }, orderBy: { createdAt: "asc" }, select: { id: true, title: true, url: true } })
+      : Promise.resolve([]),
+  ]);
+
+  const ideaSubmitted = !!idea?.submittedAt;
+  const nav = (
+    <>
+      <TrackSwitcher tracks={tracks} current={track.id} hrefFor={(id) => `/build?track=${encodeURIComponent(id ?? track.id)}`} />
+      <TrackProgress
+        trackId={track.id}
+        hasTeam
+        ideaSubmitted={ideaSubmitted}
+        productSubmitted={!!product?.submittedAt}
+        publish={track.kind === "PRODUCT" ? { requested: !!product?.liveStatus } : null}
+      />
+      {status === "ro" && <ModuleReadOnly moduleKey="build" />}
+      {trackError && <Alert kind="info">{trackError}</Alert>}
+      {reason && <Alert kind="info">{reason}</Alert>}
+    </>
+  );
+
+  // ترتیب داخلی تیم: محصول هر محور فقط پس از ثبت نهایی ایدهٔ همان محور (اکشن هم همین را چک می‌کند)
+  if (!ideaSubmitted && !product) {
+    return (
+      <>
+        <PageHeader eyebrow={track.name} title={TITLE} desc="هر تیم مراحلش را به ترتیب طی می‌کند: اول ایده، بعد محصول." />
+        <Container className="max-w-3xl space-y-6">
+          {nav}
+          <Empty
+            title="اول ایده‌ات را در همین محور ثبت نهایی کن"
+            desc={`مرکز ساخت محور «${track.name}» پس از ثبت نهایی ایده برای تیمت باز می‌شود.`}
+            cta={{ href: `/idea?track=${encodeURIComponent(track.id)}`, label: "رفتن به ثبت ایده" }}
+          />
+        </Container>
+      </>
+    );
+  }
+
   // هر عضو تیم (یا شرکت‌کنندهٔ فردی) محصول را مدیریت می‌کند.
-  const { canManage, reason } = await teamAccess(user);
-  const editable = phaseEditable && canManage;
-  const maxPrice = await effectiveMaxPrice();
+  const editable = status === "open" && !trackError && ideaSubmitted && canManage;
+  const lockNote = !ideaSubmitted
+    ? "ایدهٔ این محور برای ویرایش باز شده است؛ برای ادامهٔ ساخت، اول دوباره آن را ثبت نهایی کن."
+    : status !== "open" || trackError
+      ? null
+      : undefined;
 
-  const checklistInput = {
-    name: product?.name ?? "",
-    tagline: product?.tagline ?? "",
-    description: product?.description ?? "",
-    demoUrl: product?.demoUrl ?? "",
-    teaserUrl: product?.teaserUrl ?? "",
-    images: product?.images ?? "[]",
-    price: product?.price ?? 20,
-    specialName: product?.specialName ?? "",
-    submittedAt: product?.submittedAt ?? null,
-  };
-  const checklist = buildChecklist(checklistInput, maxPrice);
+  const checklist = buildChecklist(
+    {
+      trackKind: track.kind,
+      trackCategory: track.category,
+      category: product?.category ?? "",
+      deliverableUrl: product?.deliverableUrl ?? "",
+      name: product?.name ?? "",
+      tagline: product?.tagline ?? "",
+      description: product?.description ?? "",
+      demoUrl: product?.demoUrl ?? "",
+      teaserUrl: product?.teaserUrl ?? "",
+      images: product?.images ?? "[]",
+      price: product?.price ?? 20,
+      specialName: product?.specialName ?? "",
+      submittedAt: product?.submittedAt ?? null,
+    },
+    maxPrice
+  );
 
-  // بازار استودیو: درخواست انتشار در «ساخت محصول» و «روز بازار»
+  // بازار استودیو فقط برای محور ساخت محصول و وقتی منبع آمار خاموش نیست
+  const showStudio = track.kind === "PRODUCT" && bazaarSource !== "off" && studioStatus !== "hidden";
   const liveStatus = (product?.liveStatus ?? "") as LiveStatus;
-  const studioOpen = (phase === "BUILD" || phase === "MARKET") && !!product;
-  const studioClosedNote = !product
-    ? "اول پیش‌نویس محصول را ذخیره کن."
-    : phaseIndex(phase) < phaseIndex("BUILD")
-      ? `درخواست انتشار از فاز «${PHASE_LABEL.BUILD}» باز می‌شود.`
-      : phase === "CLOSED"
-        ? "بازی تمام شده است."
-        : null;
-  const livePrize = PRIZES.find((p) => p.key === "live");
+  const studioOpen = studioStatus === "open" && !!product?.submittedAt;
+  const studioClosedNote = !product?.submittedAt ? "اول محصولت را ثبت نهایی کن، بعد درخواست انتشار بده." : studioOpen ? null : "درخواست انتشار فعلاً باز نیست.";
 
   return (
     <>
       <PageHeader
-        eyebrow="فاز فعلی"
-        title="مرکز ساخت"
+        eyebrow={track.name}
+        title={TITLE}
         desc={
           editable
-            ? "محصولت را کامل کن و پیش از پایان فاز ساخت، ثبت نهایی کن. هر عضو تیم می‌تواند ویرایشش کند."
-            : "مرکز ساخت قفل شده است؛ فقط می‌توانی پیش‌نمایش را ببینی."
+            ? "محصولت را کامل کن و ثبت نهایی کن. بعد از ثبت، بازخورد هوش مصنوعی می‌آید و هر عضو تیم می‌تواند برای ویرایش دوباره آن را باز کند."
+            : "این صفحه الان قابل ویرایش نیست؛ فقط می‌توانی وضعیت محصول را ببینی."
         }
       />
-      {phaseEditable && reason && (
-        <Container className="mb-4">
-          <Alert kind="info">{reason}</Alert>
-        </Container>
-      )}
+      <Container className="space-y-4 mb-6">{nav}</Container>
       <Container className="grid lg:grid-cols-[320px_1fr] gap-6 items-start">
         <div className="order-2 lg:order-1">
           <ChecklistCard
             checklist={checklist}
             submitted={!!product?.submittedAt}
-            slug={user.team.slug}
+            slug={product?.slug ?? null}
             editable={editable}
-            aiQuality={product?.aiQuality ?? null}
-            aiNotes={product?.aiNotes ?? null}
+            trackId={track.id}
+            aiQuality={product?.aiFinal ?? product?.aiQuality ?? null}
+            aiNotes={product?.aiFinalNotes ?? product?.aiNotes ?? null}
+            canRecheck={!!product?.submittedAt && !product.aiRecheckUsed && canManage && aiStatus === "open"}
           />
         </div>
         <div className="order-1 lg:order-2 space-y-6">
           <BuildForm
-            draftKey={`${user.teamId}:${product?.id ?? "new"}`}
+            key={track.id}
+            trackId={track.id}
+            trackKind={track.kind}
+            trackCategory={track.category}
+            osIssues={osIssues}
+            draftKey={`${user.teamId}:${track.id}:${product?.id ?? "new"}`}
             editable={editable}
-            lockNote={phaseEditable ? null : undefined}
+            lockNote={lockNote}
             submitted={!!product?.submittedAt}
             maxPrice={maxPrice}
             initial={
@@ -130,22 +186,31 @@ export default async function BuildPage() {
                     specialName: product.specialName,
                     specialDesc: product.specialDesc,
                     specialStart: product.specialStart,
+                    category: product.category,
+                    deliverableUrl: product.deliverableUrl,
+                    contentType: product.contentType,
+                    osIssueId: product.osIssueId ?? "",
+                    preExistingNote: product.preExistingNote,
                   }
                 : null
             }
           />
-          <StudioCard
-            status={liveStatus}
-            statusLabel={liveStatus ? LIVE_STATUS_LABEL[liveStatus] : ""}
-            sourceUrl={product?.liveSourceUrl ?? ""}
-            requestNote={product?.liveRequestNote ?? ""}
-            liveUrl={product?.liveUrl ?? ""}
-            adminNote={product?.liveAdminNote ?? ""}
-            canManage={canManage}
-            open={studioOpen}
-            closedNote={studioClosedNote}
-            prizeLabel={livePrize?.label ?? "بهترین محصول لایو"}
-          />
+          {showStudio && (
+            <StudioCard
+              key={`studio-${track.id}`}
+              trackId={track.id}
+              status={liveStatus}
+              statusLabel={liveStatus ? LIVE_STATUS_LABEL[liveStatus] : ""}
+              sourceUrl={product?.liveSourceUrl ?? ""}
+              requestNote={product?.liveRequestNote ?? ""}
+              liveUrl={product?.liveUrl ?? ""}
+              adminNote={product?.liveAdminNote ?? ""}
+              bazaarPackage={product?.bazaarPackage ?? ""}
+              canManage={canManage}
+              open={studioOpen}
+              closedNote={studioClosedNote}
+            />
+          )}
         </div>
       </Container>
     </>

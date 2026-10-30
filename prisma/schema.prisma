@@ -28,6 +28,8 @@ model User {
   confidence   Int      @default(100)
   avatarSeed   String   @default("")
   isAdmin      Boolean  @default(false)
+  // نقش محدود در پنل: "" | JUDGE (فقط داوری) | STUDIO_OP (فقط بازار استودیو و آمار بازار)
+  staffRole    String   @default("")
   department   String   @default("")
   createdAt    DateTime @default(now())
 
@@ -53,6 +55,7 @@ model User {
   auditLogs         AuditLog[]
   surveyResponse    SurveyResponse?
   coinOrders        CoinOrder[]
+  juryScores        JuryScore[]
 
   @@index([teamId])
 }
@@ -76,11 +79,11 @@ model Team {
   solo            Boolean         @default(false)
   createdAt       DateTime        @default(now())
   members         User[]
-  idea            Idea?
-  product         Product?
+  ideas           Idea[]
+  products        Product[]
   invites         TeamInvite[]
   adSlotBids      AdSlotBid[]
-  score           TeamScore?
+  scores          TeamScore[]
   flags           CollusionFlag[]
 }
 
@@ -100,10 +103,56 @@ model TeamInvite {
 
 // ---------- ایده و سرمایه‌گذاری ----------
 
+// ---------- محورهای مسابقه ----------
+
+// هر تیم در هر محور حداکثر یک ایده و یک محصول دارد. شناسهٔ سه محور پیش‌فرض در مهاجرت ساخته می‌شود.
+model Track {
+  id           String    @id // general | content | os | ...
+  name         String
+  description  String    @default("")
+  kind         String    @default("PRODUCT") // PRODUCT | CONTENT | OS (نوع فرم ارسال)
+  category     String    @default("MIXED") // TECH | NON_TECH | MIXED (در MIXED هر محصول دستهٔ خودش را انتخاب می‌کند)
+  status       String    @default("open") // open | ro | closed | hidden
+  order        Int       @default(0)
+  weights      String    @default("{}") // JSON: TrackWeights
+  juryCriteria String    @default("[]") // JSON: [{key, label}]
+  aiRubric     String    @default("") // JSON: پارامترهایی که هوش مصنوعی برای امتیاز نهایی همین محور تعیین کرده
+  createdAt    DateTime  @default(now())
+  ideas        Idea[]
+  products     Product[]
+  prizes       Prize[]
+  scores       TeamScore[]
+}
+
+// ایشوهای محور «راهکار OS»؛ اگر فهرستی نباشد تیم مسئله را خودش تعریف می‌کند.
+model OsIssue {
+  id          String    @id @default(cuid())
+  title       String
+  description String    @default("")
+  url         String    @default("")
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  products    Product[]
+}
+
+// استثنای وضعیت یک بخش برای یک تیم (مثلاً بازکردن ثبت محصول فقط برای یک تیم)
+model ModuleException {
+  id        String   @id @default(cuid())
+  moduleKey String
+  teamId    String
+  createdBy String
+  createdAt DateTime @default(now())
+
+  @@unique([moduleKey, teamId])
+  @@index([teamId])
+}
+
 model Idea {
   id                 String                @id @default(cuid())
-  teamId             String                @unique
+  teamId             String
   team               Team                  @relation(fields: [teamId], references: [id])
+  trackId            String                @default("general")
+  track              Track                 @relation(fields: [trackId], references: [id])
   title              String
   oneLiner           String
   problem            String
@@ -115,12 +164,33 @@ model Idea {
   analystClarity     Int? // ۰..۱۰۰
   analystFeasibility Int?
   analystNovelty     Int?
-  analystSummary     String? // متن فارسی تحلیل‌گر
+  analystSummary     String? // متن فارسی تحلیل‌گر (برای حامی‌ها)
+  analystAdvice      String? // پیشنهاد تحلیل‌گر به خود تیم برای بهترکردن ایده
+  editedAt           DateTime? // آخرین تغییر محتوا پس از ثبت نهایی (حامی‌های قبلی می‌توانند حمایتشان را پس بگیرند)
   submittedAt        DateTime?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
   investments        Investment[]
   chats              DueDiligenceMessage[]
+  revisions          IdeaRevision[]
+
+  @@unique([teamId, trackId])
+  @@index([trackId])
+}
+
+// تاریخچهٔ تغییرات ایده پس از ثبت نهایی (نسخهٔ قبل از هر ویرایش)
+model IdeaRevision {
+  id        String   @id @default(cuid())
+  ideaId    String
+  idea      Idea     @relation(fields: [ideaId], references: [id])
+  title     String
+  oneLiner  String
+  problem   String
+  audience  String
+  buildPlan String
+  createdAt DateTime @default(now())
+
+  @@index([ideaId])
 }
 
 model Investment {
@@ -154,8 +224,17 @@ model DueDiligenceMessage {
 
 model Product {
   id              String     @id @default(cuid())
-  teamId          String     @unique
+  slug            String     @unique // نشانی /market/<slug>
+  teamId          String
   team            Team       @relation(fields: [teamId], references: [id])
+  trackId         String     @default("general")
+  track           Track      @relation(fields: [trackId], references: [id])
+  category        String     @default("") // TECH | NON_TECH (برای محور MIXED)؛ در بقیه از محور می‌آید
+  deliverableUrl  String     @default("") // لینک PR/MR در محور OS یا لینک محتوا در محور تولید محتوا
+  contentType     String     @default("") // نوع محتوا (فیلم، موسیقی، پادکست، …)
+  osIssueId       String?
+  osIssue         OsIssue?   @relation(fields: [osIssueId], references: [id])
+  preExistingNote String     @default("") // اعلام کد متن‌باز یا کار پیش از مسابقه (مشمول انتقال مالکیت نیست)
   name            String
   tagline         String     @default("")
   description     String     @default("")
@@ -167,15 +246,16 @@ model Product {
   specialDesc     String     @default("")
   specialStart    Int        @default(20)
   submittedAt     DateTime?
-  juryQuality     Int? // قدیمی (۰..۱۰۰)
-  juryTeaser      Int? // قدیمی (۰..۱۰۰)
-  // داوری انسانی: سه پرسش، هر کدام ۰..۱۰
-  juryWorks       Int? // آیا محصول واقعاً کار می‌کند؟
-  juryValue       Int? // ارزش واقعی برای کاربر یا گروه پگاه
-  juryPitch       Int? // تیزر و ارائه
-  aiQuality       Int? // داوری هوش مصنوعی ۰..۱۰۰ (همیشه جدا از داور انسانی)
+  // بازخورد هوش مصنوعی پس از ثبت (نمرهٔ موقت تا ارزیابی نهایی)
+  aiQuality       Int? // ۰..۱۰۰
   aiNotes         String?
+  aiRecheckUsed   Boolean    @default(false) // یک بار درخواست ارزیابی مجدد
+  // ارزیابی نهایی هوش مصنوعی در پایان، با پارامترهای محور (track.aiRubric)
+  aiFinal         Int? // ۰..۱۰۰
+  aiFinalNotes    String?
+  aiFinalDetail   String     @default("") // JSON: نمرهٔ هر پارامتر
   // انتشار روی بازار استودیو: "" | REQUESTED | PUBLISHING | LIVE | REJECTED
+  bazaarPackage   String     @default("") // شناسهٔ بسته (package name) برای آمار بازار
   liveStatus      String     @default("")
   liveSourceUrl   String     @default("") // لینک کد/بستهٔ محصول که تیم داده
   liveRequestNote String     @default("")
@@ -188,6 +268,60 @@ model Product {
   purchases       Purchase[]
   hearts          Heart[]
   auction         Auction?
+  juryScores      JuryScore[]
+  bazaarStat      BazaarStat?
+
+  @@unique([teamId, trackId])
+  @@index([trackId])
+}
+
+// نمرهٔ مستقل هر داور برای یک محصول
+model JuryScore {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  judgeId   String
+  judge     User     @relation(fields: [judgeId], references: [id])
+  scores    String   @default("{}") // JSON: {criterionKey: 0..10}
+  note      String   @default("")
+  updatedAt DateTime @updatedAt
+
+  @@unique([productId, judgeId])
+  @@index([judgeId])
+}
+
+// آمار محصول در بازار (فعلاً ورود دستی/اکسل؛ بعداً API بازار استودیو)
+model BazaarStat {
+  id             String    @id @default(cuid())
+  productId      String    @unique
+  product        Product   @relation(fields: [productId], references: [id])
+  activeInstalls Int       @default(0)
+  revenueToman   Int       @default(0)
+  rating         Float? // ۰..۵
+  commentCount   Int       @default(0)
+  source         String    @default("manual") // manual | excel | api
+  flagged        Boolean   @default(false) // مشکوک به نصب/نظر جعلی: تا رفع پرچم در امتیاز حساب نمی‌شود
+  flagNote       String    @default("")
+  snapshotAt     DateTime? // برداشت نهایی در ددلاین
+  updatedAt      DateTime  @updatedAt
+}
+
+// جوایز (مبلغ ثابت، قابل ویرایش در پنل)
+model Prize {
+  id              String   @id @default(cuid())
+  trackId         String
+  track           Track    @relation(fields: [trackId], references: [id])
+  category        String   @default("") // "" = همهٔ محور | TECH | NON_TECH
+  kind            String   @default("RANK") // RANK (خودکار از رتبه) | SPECIAL (انتخاب کمیته)
+  rank            Int      @default(1)
+  label           String
+  emoji           String   @default("🏆")
+  amountToman     Int? // null = هنوز نهایی نشده
+  winnerProductId String? // برای جوایز ویژه
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@index([trackId])
 }
 
 model Purchase {
@@ -254,8 +388,10 @@ model AdSlot {
   id           String      @id @default(cuid())
   kind         String // BANNER | FEATURED | PUSH
   hourStart    DateTime // بازهٔ یک‌ساعته در روز بازار
-  status       String      @default("OPEN") // OPEN | CLOSED
-  winnerTeamId String?
+  status       String      @default("OPEN") // OPEN | REFUNDED
+  winnerTeamId String? // بالاترین پیشنهاد فعلی؛ تا شروع بازه با پیشنهاد بالاتر عوض می‌شود
+  winnerProductId String?
+  winnerUserId String?
   pricePaid    Int?
   bids         AdSlotBid[]
 
@@ -268,10 +404,13 @@ model AdSlotBid {
   slot      AdSlot   @relation(fields: [slotId], references: [id])
   teamId    String
   team      Team     @relation(fields: [teamId], references: [id])
+  userId    String
+  productId String
   amount    Int
   createdAt DateTime @default(now())
 
-  @@unique([slotId, teamId])
+  @@index([slotId, amount])
+  @@index([teamId])
 }
 
 // ---------- دفتر کل، امتیاز، تنظیمات ----------
@@ -294,8 +433,15 @@ model LedgerEntry {
 
 model TeamScore {
   id              String   @id @default(cuid())
-  teamId          String   @unique
+  teamId          String
   team            Team     @relation(fields: [teamId], references: [id])
+  trackId         String   @default("general")
+  track           Track    @relation(fields: [trackId], references: [id])
+  productId       String?
+  category        String   @default("")
+  overallRank     Int      @default(0)
+  ptsMarket       Float    @default(0)
+  marketDetail    String   @default("{}") // JSON: امتیاز هر زیرشاخص بازار
   grossSales      Int      @default(0)
   dividendsPaid   Int      @default(0)
   netSales        Int      @default(0)
@@ -332,6 +478,8 @@ model TeamScore {
   ptsAi           Float    @default(0)
   cheatPenalty    Int      @default(0)
   computedAt      DateTime @default(now())
+
+  @@unique([teamId, trackId])
 }
 
 model CollusionFlag {

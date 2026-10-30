@@ -20,6 +20,10 @@ export const GAME_VALUE_SETTINGS = {
   adslot_price_featured: { field: "adslotPriceFeatured", kind: "int" },
   adslot_price_push: { field: "adslotPricePush", kind: "int" },
   adslot_max_per_team: { field: "adslotMaxPerTeam", kind: "int" },
+  adslot_hours: { field: "adslotHours", kind: "int" },
+  rating_min_comments: { field: "ratingMinComments", kind: "int" },
+  prize_min_entries: { field: "prizeMinEntries", kind: "int" },
+  prize_min_jury: { field: "prizeMinJury", kind: "int" },
 } as const satisfies Record<string, { field: keyof GameValues; kind: "int" | "float" }>;
 
 export type GameValueSettingKey = keyof typeof GAME_VALUE_SETTINGS;

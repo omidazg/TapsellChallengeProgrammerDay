@@ -1,56 +1,41 @@
-import { PHASE_LABEL, phaseIndex, type Phase } from "@/lib/phases";
+import { statusVisible, type ModuleKey, type ModuleStatus } from "@/lib/modules";
 
-/** یک مقصد منو. `opens`: فازی که صفحه از آن باز می‌شود؛ `live`: فازی که این صفحه مقصد اصلی آن است. */
-export type NavItem = { href: string; label: string; short?: string; icon: string; opens?: Phase; live?: Phase };
+export type ModuleStatuses = Record<ModuleKey, ModuleStatus>;
 
-// فاز بازشدن هر صفحه با شرط Locked خودِ همان صفحه هم‌خوان است (idea/build از IDEATION،
-// invest از SEED_ROUND، market و adslots از BUILD). حراج زنده فاز جدا ندارد و داخل «روز بازار» برگزار می‌شود.
+/** یک مقصد منو. `module`: بخشی که این صفحه به آن وابسته است؛ بخش مخفی لینک را از منو برمی‌دارد. */
+export type NavItem = { href: string; label: string; short?: string; icon: string; module?: ModuleKey };
+
 export const NAV: NavItem[] = [
-  { href: "/team", label: "اتاق تیم", short: "تیم", icon: "👥", live: "REGISTRATION" },
-  { href: "/idea", label: "اتاق ایده", short: "ایده", icon: "💡", opens: "IDEATION", live: "IDEATION" },
-  { href: "/invest", label: "حمایت از ایده‌ها", short: "حمایت", icon: "🌱", opens: "SEED_ROUND", live: "SEED_ROUND" },
-  { href: "/build", label: "مرکز ساخت", short: "ساخت", icon: "🛠️", opens: "IDEATION", live: "BUILD" },
-  { href: "/market", label: "بازار", icon: "🛒", opens: "BUILD", live: "MARKET" },
-  { href: "/auction", label: "حراج زنده", short: "حراج", icon: "🔨", opens: "MARKET", live: "MARKET" },
-  { href: "/adslots", label: "جایگاه تبلیغاتی", short: "تبلیغ", icon: "📣", opens: "BUILD" },
-  { href: "/leaderboard", label: "جدول", icon: "🏆" },
+  { href: "/team", label: "اتاق تیم", short: "تیم", icon: "👥", module: "team" },
+  { href: "/idea", label: "ثبت ایده", short: "ایده", icon: "💡", module: "idea" },
+  { href: "/invest", label: "حمایت از ایده‌ها", short: "حمایت", icon: "🌱", module: "invest" },
+  { href: "/build", label: "مرکز ساخت", short: "ساخت", icon: "🛠️", module: "build" },
+  { href: "/market", label: "بازار", icon: "🛒", module: "market" },
+  // حراج زنده بخشی از بازار است و وضعیت جدا ندارد.
+  { href: "/auction", label: "حراج زنده", short: "حراج", icon: "🔨", module: "market" },
+  { href: "/adslots", label: "جایگاه تبلیغاتی", short: "تبلیغ", icon: "📣", module: "adslots" },
+  { href: "/leaderboard", label: "جدول", icon: "🏆", module: "leaderboard" },
+  { href: "/results", label: "نتایج", icon: "🏁", module: "results" },
   { href: "/guide", label: "راهنما", icon: "📖" },
 ];
 
 /** کیف سکه و خرید سکه — در منوی موبایل (روی دسکتاپ از نشان موجودی در هدر در دسترس‌اند) */
 export const WALLET_ITEMS: NavItem[] = [
   { href: "/wallet", label: "کیف سکه", icon: "💰" },
-  { href: "/coins", label: "خرید سکه", icon: "🪙" },
+  { href: "/coins", label: "خرید سکه", icon: "🪙", module: "coins" },
 ];
 
-const RESULTS: NavItem = { href: "/results", label: "نتایج", icon: "🏁", live: "CLOSED" };
-const GUIDE = NAV.find((n) => n.href === "/guide")!;
+/** آیتم‌هایی که بخششان مخفی نیست */
+export function visibleItems(items: NavItem[], statuses: ModuleStatuses): NavItem[] {
+  return items.filter((n) => !n.module || statusVisible(statuses[n.module]));
+}
 
-// بعد از پایان بازی، صفحهٔ نتایج مهم‌ترین مقصد است و باید از منو در دسترس باشد
-export function navFor(phase: Phase): NavItem[] {
-  return phase === "CLOSED" ? [...NAV, RESULTS] : NAV;
+/** منوی اصلی بر اساس وضعیت بخش‌ها */
+export function navFor(statuses: ModuleStatuses): NavItem[] {
+  return visibleItems(NAV, statuses);
 }
 
 export function isActive(path: string, href: string) {
   if (href === "/") return path === "/";
   return path === href || path.startsWith(href + "/");
-}
-
-/** وضعیت فازی یک آیتم: «زنده» (مقصد فاز جاری) یا «قفل» (فازش هنوز نرسیده) */
-export function navState(item: NavItem, phase: Phase): { live: boolean; locked: boolean; lockHint: string | null } {
-  const locked = !!item.opens && phaseIndex(phase) < phaseIndex(item.opens);
-  return {
-    live: item.live === phase,
-    locked,
-    lockHint: locked && item.opens ? `از فاز «${PHASE_LABEL[item.opens]}» باز می‌شود` : null,
-  };
-}
-
-/**
- * مقصد اصلی فاز جاری برای نوار پایین موبایل. «اتاق تیم» خودش جایگاه ثابت دارد،
- * پس در فاز ثبت‌نام به‌جایش راهنما نشان داده می‌شود.
- */
-export function phaseDestination(phase: Phase): NavItem {
-  const item = navFor(phase).find((n) => n.live === phase);
-  return item && item.href !== "/team" ? item : GUIDE;
 }

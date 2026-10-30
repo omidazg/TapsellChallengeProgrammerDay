@@ -5,9 +5,9 @@
  *   DATABASE_URL=file:/abs/path/demo.db npx tsx scripts/seed-demo.ts [stage]
  *
  * stage:
- *   market  (پیش‌فرض) — ۱۰ تیم، ایده، سرمایه‌گذاری، محصول، فروش و قلب؛ فاز MARKET
- *   auction — به‌علاوهٔ حراج‌های تمام‌شده و یک حراج زنده؛ فاز AUCTION
- *   closed  — تسویهٔ نهایی و نتایج؛ فاز CLOSED
+ *   market  (پیش‌فرض) — ۱۰ تیم، ایده، حمایت، محصول، نمرهٔ داور، فروش و قلب؛ مسابقه در جریان
+ *   auction — به‌علاوهٔ حراج‌های تمام‌شده و یک حراج زنده؛ مسابقه در جریان
+ *   closed  — تسویهٔ نهایی و نتایج؛ مسابقه پایان‌یافته
  *
  * همهٔ نام‌ها، ایمیل‌ها و عددها ساختگی‌اند. فقط روی پایگاه‌داده‌ای اجرا می‌شود که نامش
  * «demo» دارد تا تصادفاً dev.db یا دادهٔ واقعی را آلوده نکند. رمز همهٔ کاربران: Demo#1404
@@ -479,7 +479,7 @@ async function seedBase(
   }
 
   // ---- دور سرمایه‌گذاری ----
-  await setPhase(prisma, "SEED_ROUND", new Date(Date.now() + 6 * HOUR));
+  await setPhase(prisma, "LIVE", new Date(Date.now() + 6 * HOUR));
   const ideas = await prisma.idea.findMany({ select: { id: true, teamId: true } });
   // جذابیت هر ایده (برای توزیع واقع‌نمای سرمایه): امتیاز تحلیلگر
   const appeal = new Map(TEAMS.map((t, i) => [teamIds[i], t.scores[0] + t.scores[1] + t.scores[2]]));
@@ -522,11 +522,20 @@ async function seedBase(
     if (top) await prisma.user.update({ where: { id: u.id }, data: { shieldTeamId: top.idea.teamId, powerUsed: true } });
   }
 
-  // ---- محصول‌ها ----
+  // ---- محصول‌ها و نمرهٔ داور ----
+  const judge = await prisma.user.create({
+    data: { email: `judge@${DOMAIN}`, passwordHash: await bcrypt.hash(PASSWORD, 8), nickname: "داور نمونه", role: "BUILDER", power: "", staffRole: "JUDGE" },
+  });
+  const generalTrack = await prisma.track.findUniqueOrThrow({ where: { id: "general" } });
+  const { parseCriteria } = await import("../src/lib/tracks");
+  const criteria = parseCriteria(generalTrack.juryCriteria);
   for (const [ti, t] of TEAMS.entries()) {
-    await prisma.product.create({
+    const owner = await prisma.team.findUniqueOrThrow({ where: { id: teamIds[ti] }, select: { slug: true } });
+    const product = await prisma.product.create({
       data: {
         teamId: teamIds[ti],
+        slug: `${owner.slug}-general`,
+        category: ti % 3 === 2 ? "NON_TECH" : "TECH",
         name: t.product.name,
         tagline: t.product.tagline,
         description: t.product.description,
@@ -538,16 +547,18 @@ async function seedBase(
         specialDesc: t.product.specialDesc,
         specialStart: t.product.start,
         submittedAt: new Date(t0 + 31 * HOUR + ti * 11 * 60000),
-        juryQuality: t.scores[3],
-        juryTeaser: t.scores[4],
         aiQuality: Math.round((t.scores[3] + t.scores[0]) / 2),
         aiNotes: "رابط کاربری تمیز و مسیر اصلی کامل است؛ صفحهٔ معرفی می‌تواند مزیت اصلی را زودتر نشان دهد.",
       },
     });
+    const juryValue = Math.round((t.scores[3] + t.scores[4]) / 2) / 10;
+    await prisma.juryScore.create({
+      data: { productId: product.id, judgeId: judge.id, scores: JSON.stringify(Object.fromEntries(criteria.map((c) => [c.key, juryValue]))) },
+    });
   }
 
-  // ---- روز بازار ----
-  await setPhase(prisma, "MARKET", new Date(Date.now() + 3 * HOUR + 25 * 60000));
+  // ---- بازار ----
+  await setPhase(prisma, "LIVE", new Date(Date.now() + 3 * HOUR + 25 * 60000));
   const products = await prisma.product.findMany({ select: { id: true, teamId: true } });
   const quality = new Map(TEAMS.map((t, i) => [teamIds[i], t.scores[3] + t.scores[4]]));
   for (const [ti, ids] of userIds.entries()) {
@@ -579,7 +590,7 @@ async function seedBase(
 async function seedAuctions(prisma: Prisma) {
   if ((await prisma.auction.count()) > 0) return;
   const { ensureAuctions, placeBid } = await import("../src/lib/auction");
-  await setPhase(prisma, "AUCTION", new Date(Date.now() + 55 * 60000));
+  await setPhase(prisma, "LIVE", new Date(Date.now() + 55 * 60000));
   await ensureAuctions();
   const auctions = await prisma.auction.findMany({ orderBy: { order: "asc" }, include: { product: { include: { team: true } } } });
   // حراج زنده (چهارمی) یک نسخهٔ ارزان باشد تا بیشتر بازیکنان هنوز بتوانند پیشنهاد بدهند
@@ -591,7 +602,7 @@ async function seedAuctions(prisma: Prisma) {
     [x.order, y.order] = [y.order, x.order];
     auctions.sort((m, n) => m.order - n.order);
   }
-  const players = await prisma.user.findMany({ where: { isAdmin: false }, select: { id: true, teamId: true } });
+  const players = await prisma.user.findMany({ where: { isAdmin: false, staffRole: "" }, select: { id: true, teamId: true } });
 
   // سه حراج اول تمام شده، چهارمی زنده است
   for (const [i, a] of auctions.slice(0, 4).entries()) {

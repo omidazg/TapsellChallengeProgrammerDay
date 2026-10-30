@@ -1,10 +1,12 @@
 import { prisma } from "./db";
-import { defaultConfig, scoreGame } from "./economy/engine";
-import type { EconomyConfig, ScoreOutput, TeamInput, TeamResult } from "./economy/types";
+import { defaultConfig, juryRawScore, scoreGame } from "./economy/engine";
+import type { EconomyConfig, ScoreOutput, TeamInput } from "./economy/types";
+import { entryKey } from "./economy/types";
 import { DEFAULTS } from "./constants";
-import { getSetting, getSettingInt } from "./phase";
+import { getSettingInt } from "./phase";
 import { cached } from "./ttl-cache";
-import { PRIZES, type PrizeKey } from "./prizes";
+import { computeAwards as computeAwardsPure, type Award, type PrizeRow } from "./prizes";
+import { entryCategory, parseCriteria, parseWeights, type TrackWeights } from "./tracks";
 
 /** پیشوند کلید کش امتیازها؛ برای invalidate("scores:") در جاهایی که امتیاز را تغییر می‌دهند استفاده می‌شود. */
 const SCORES_CACHE_PREFIX = "scores:";
@@ -13,12 +15,13 @@ const SCORES_CACHE_TTL_MS = 15_000;
 /** برچسب فارسی دلیل تراکنش‌های دفتر کل */
 export const LEDGER_REASON_LABEL: Record<string, string> = {
   INVEST: "حمایت از ایده",
+  INVEST_WITHDRAW: "پس‌گرفتن حمایت از ایدهٔ ویرایش‌شده",
   PURCHASE: "خرید",
   AUCTION_WIN: "برد حراج",
-  ADSLOT: "جایگاه تبلیغاتی",
+  ADSLOT: "پیشنهاد جایگاه تبلیغاتی",
   COIN_PURCHASE: "خرید سکه",
   ADMIN: "تنظیم برگزارکننده",
-  ADSLOT_REFUND: "بازپرداخت جایگاه تبلیغاتی تحویل‌نشده",
+  ADSLOT_REFUND: "بازگشت پیشنهاد جایگاه تبلیغاتی",
   // دلیل‌های قدیمی (پیش از بازطراحی)
   BID_HOLD: "توقیف پیشنهاد حراج",
   BID_RELEASE: "آزادسازی پیشنهاد حراج",
@@ -33,176 +36,132 @@ export const WALLET_LABEL: Record<string, string> = {
   TREASURY: "خزانهٔ تیم (قدیمی)",
 };
 
-/** پیکربندی امتیازدهی با اعمال مقادیر جدول Setting روی پیش‌فرض‌ها. */
+/** پیکربندی امتیازدهی با اعمال مقادیر جدول Setting و وزن‌های هر محور روی پیش‌فرض‌ها. */
 export async function configFromSettings(): Promise<EconomyConfig> {
   const base = defaultConfig();
-  const supportCap = await getSettingInt("support_cap", DEFAULTS.supportCap);
-  return { ...base, supportCap };
+  const [supportCap, ratingMinComments, tracks] = await Promise.all([
+    getSettingInt("support_cap", DEFAULTS.supportCap),
+    getSettingInt("rating_min_comments", DEFAULTS.ratingMinComments),
+    prisma.track.findMany({ select: { id: true, weights: true } }),
+  ]);
+  const trackWeights: Record<string, TrackWeights> = {};
+  for (const t of tracks) trackWeights[t.id] = parseWeights(t.weights);
+  return { ...base, supportCap, ratingMinComments, trackWeights };
+}
+
+function parseJson(raw: string): Record<string, unknown> {
+  try {
+    const v = JSON.parse(raw);
+    return v && typeof v === "object" ? v : {};
+  } catch {
+    return {};
+  }
 }
 
 /**
- * همهٔ داده‌های لازم برای امتیازدهی را از پایگاه‌داده جمع می‌کند
- * و به موتور خالص امتیاز (scoreGame) می‌سپارد.
+ * همهٔ داده‌های لازم برای امتیازدهی را از پایگاه‌داده جمع می‌کند و به موتور خالص امتیاز (scoreGame) می‌سپارد.
+ * هر ترکیب تیم و محور که ایده یا محصولی دارد یک ثبت است. محور مخفی در امتیاز نیست.
+ * includeJury=false برای نمایش زنده است: نمرهٔ داوری تا اعلام نتایج به شرکت‌کننده‌ها نشان داده نمی‌شود.
  */
-export async function computeScores(): Promise<ScoreOutput> {
+export async function computeScores(opts: { includeJury?: boolean } = {}): Promise<ScoreOutput> {
+  const includeJury = opts.includeJury ?? true;
   const config = await configFromSettings();
 
   // ترتیب ثابت (نه ترتیب دلخواه پایگاه‌داده)؛ رتبه‌بندی خودش هم قطعی است (compareRank).
-  const teams = await prisma.team.findMany({
-    orderBy: { id: "asc" },
-    include: {
-      members: { select: { id: true } },
-      idea: { include: { investments: { select: { userId: true, amount: true, selfFunded: true } } } },
-      product: { include: { purchases: { select: { userId: true, amount: true } } } },
-    },
-  });
+  const [teams, tracks] = await Promise.all([
+    prisma.team.findMany({
+      orderBy: { id: "asc" },
+      include: {
+        members: { select: { id: true } },
+        ideas: { include: { investments: { select: { userId: true, amount: true, selfFunded: true } } } },
+        products: {
+          include: {
+            purchases: { select: { userId: true, amount: true } },
+            juryScores: { select: { scores: true } },
+            bazaarStat: true,
+          },
+        },
+      },
+    }),
+    prisma.track.findMany({ select: { id: true, status: true, category: true, juryCriteria: true } }),
+  ]);
+  const trackById = new Map(tracks.map((t) => [t.id, t]));
 
-  const teamInputs: TeamInput[] = teams.map((t) => {
-    // حمایت مردمی = حمایت از ایده + خرید محصول (برندهٔ حراج هم در settleAuction یک Purchase می‌سازد).
-    const supports = [
-      ...(t.idea?.investments ?? []).filter((i) => !i.selfFunded).map((i) => ({ userId: i.userId, amount: i.amount })),
-      ...(t.product?.purchases ?? []).map((p) => ({ userId: p.userId, amount: p.amount })),
-    ];
-    const p = t.product;
-    return {
-      teamId: t.id,
-      memberIds: t.members.map((m) => m.id),
-      supports,
-      jury: p ? { works: p.juryWorks, value: p.juryValue, pitch: p.juryPitch } : null,
-      aiQuality: p?.aiQuality ?? null,
-      cheatPenalty: t.cheatPenalty,
-      productSubmittedAt: p?.submittedAt ? p.submittedAt.getTime() : null,
-    };
-  });
+  const inputs: TeamInput[] = [];
+  for (const t of teams) {
+    const trackIds = new Set([...t.ideas.map((i) => i.trackId), ...t.products.map((p) => p.trackId)]);
+    for (const trackId of trackIds) {
+      const track = trackById.get(trackId);
+      if (!track || track.status === "hidden") continue;
+      const idea = t.ideas.find((i) => i.trackId === trackId);
+      const p = t.products.find((x) => x.trackId === trackId);
+      const criteria = parseCriteria(track.juryCriteria).map((c) => c.key);
+      inputs.push({
+        teamId: t.id,
+        trackId,
+        category: entryCategory(track.category, p?.category),
+        // پیش‌نویس محصول رقیب نیست: نه جایزه می‌برد و نه محور را از کم‌جمعیت بودن درمی‌آورد.
+        productId: p?.submittedAt ? p.id : null,
+        productName: p?.name ?? idea?.title ?? "",
+        memberIds: t.members.map((m) => m.id),
+        // حمایت مردمی = حمایت از ایده + خرید محصول (برندهٔ حراج هم در settleAuction یک Purchase می‌سازد).
+        supports: [
+          ...(idea?.investments ?? []).filter((i) => !i.selfFunded).map((i) => ({ userId: i.userId, amount: i.amount })),
+          ...(p?.purchases ?? []).map((x) => ({ userId: x.userId, amount: x.amount })),
+        ],
+        juryRaw: includeJury && p ? juryRawScore(p.juryScores.map((j) => parseJson(j.scores)), criteria) : null,
+        // ارزیابی نهایی جای بازخورد موقت را می‌گیرد.
+        aiQuality: p?.aiFinal ?? p?.aiQuality ?? null,
+        stats: p?.bazaarStat
+          ? {
+              activeInstalls: p.bazaarStat.activeInstalls,
+              revenueToman: p.bazaarStat.revenueToman,
+              rating: p.bazaarStat.rating,
+              commentCount: p.bazaarStat.commentCount,
+              flagged: p.bazaarStat.flagged,
+            }
+          : null,
+        cheatPenalty: t.cheatPenalty,
+        productSubmittedAt: p?.submittedAt ? p.submittedAt.getTime() : null,
+      });
+    }
+  }
 
-  return scoreGame(config, teamInputs);
+  return scoreGame(config, inputs);
 }
 
 /**
- * نسخهٔ کش‌شدهٔ computeScores برای صفحات فقط-خواندنیِ عمومی (جدول امتیازات، نتایج پیش از تسویه و…).
+ * نسخهٔ کش‌شدهٔ نمایش زنده برای صفحات عمومی (جدول امتیازات و…): بدون نمرهٔ داوری.
  * TTL کوتاه (۱۵ ثانیه) است تا کوئری‌های سنگین روی هر بازدید تکرار نشوند.
  *
  * هشدار مهم: settleGame و پیش‌نمایش تسویهٔ ادمین باید همیشه از computeScores خام استفاده کنند
- * (نه این نسخه)، چون تسویه باید روی جدیدترین داده محاسبه شود. پس از نوشتن‌های مؤثر بر امتیاز
- * (تسویه، حمایت، خرید، داوری) با invalidate("scores:") این کش پاک می‌شود.
+ * (نه این نسخه)، چون تسویه باید روی جدیدترین داده و با نمرهٔ داوری محاسبه شود. پس از نوشتن‌های مؤثر بر
+ * امتیاز (تسویه، حمایت، خرید، داوری، آمار بازار) با invalidate("scores:") این کش پاک می‌شود.
  */
 export function computeScoresCached(): Promise<ScoreOutput> {
-  return cached(SCORES_CACHE_PREFIX, SCORES_CACHE_TTL_MS, computeScores);
+  return cached(SCORES_CACHE_PREFIX, SCORES_CACHE_TTL_MS, () => computeScores({ includeJury: false }));
 }
 
-/** کلیدهای Setting برای جوایزی که داوران انتخاب می‌کنند */
-export const AWARD_PICK_KEYS = { ai: "award_ai_team_id", live: "award_live_team_id" } as const;
-
-/** انتخاب‌های خام داوران (همان مقدار ذخیره‌شده، بدون بررسی شرط‌ها) — برای هشدار در پنل داوری. */
-export async function getRawAwardPicks(): Promise<{ ai: string | null; live: string | null }> {
-  const [ai, live] = await Promise.all([getSetting(AWARD_PICK_KEYS.ai, ""), getSetting(AWARD_PICK_KEYS.live, "")]);
-  return { ai: ai || null, live: live || null };
+/** جوایز تعریف‌شده به ترتیب نمایش */
+export async function listPrizes(): Promise<PrizeRow[]> {
+  return prisma.prize.findMany({ orderBy: [{ order: "asc" }, { createdAt: "asc" }] });
 }
 
-/**
- * انتخاب داوران برای جوایز «برترین کاربرد هوش مصنوعی» و «بهترین محصول لایو».
- * جایزهٔ لایو فقط به محصولی می‌رسد که هم‌اکنون روی بازار استودیو LIVE است؛ اگر محصول تیم انتخاب‌شده
- * بعداً از LIVE خارج شده باشد، انتخاب نادیده گرفته می‌شود (null).
- */
-export async function getAwardPicks(): Promise<{ ai: string | null; live: string | null }> {
-  const raw = await getRawAwardPicks();
-  if (raw.live) {
-    const product = await prisma.product.findUnique({ where: { teamId: raw.live }, select: { liveStatus: true } });
-    if (product?.liveStatus !== "LIVE") return { ai: raw.ai, live: null };
-  }
-  return raw;
+/** برندگان جوایز از روی یک خروجی امتیاز */
+export async function awardsFor(output: ScoreOutput): Promise<Award[]> {
+  const [prizes, teams, minEntries, minJury] = await Promise.all([
+    listPrizes(),
+    prisma.team.findMany({ select: { id: true, name: true } }),
+    getSettingInt("prize_min_entries", DEFAULTS.prizeMinEntries),
+    getSettingInt("prize_min_jury", DEFAULTS.prizeMinJury),
+  ]);
+  return computeAwardsPure(output, {
+    prizes,
+    teamNames: new Map(teams.map((t) => [t.id, t.name])),
+    minEntries,
+    minJury,
+  });
 }
 
-export type AwardKey = PrizeKey;
-
-export interface Award {
-  key: AwardKey;
-  label: string;
-  emoji: string;
-  sharePct: number;
-  teamId: string;
-  teamName: string;
-  value: number;
-}
-
-export interface AwardExtra {
-  teamNames: Map<string, string>;
-  /** تیم انتخاب‌شدهٔ داوران برای هر جایزهٔ انتخابی (null = هنوز انتخاب نشده) */
-  picks: { ai: string | null; live: string | null };
-}
-
-/** جوایز خودکاری که تیمِ دارای کسر تقلب نمی‌تواند ببرد (به تیم واجد شرایط بعدی می‌رسند). */
-const NO_CHEAT_PRIZES: ReadonlySet<PrizeKey> = new Set<PrizeKey>(["jury", "people"]);
-
-/** آیا تیم برای این جایزه واجد شرایط است؟ تیم بدون عضو هیچ جایزه‌ای نمی‌برد. */
-export function prizeEligible(prize: PrizeKey, t: Pick<TeamResult, "memberCount" | "cheatPenalty">): boolean {
-  if (t.memberCount <= 0) return false;
-  if (NO_CHEAT_PRIZES.has(prize) && t.cheatPenalty > 0) return false;
-  return true;
-}
-
-/**
- * پنج جایزهٔ پایان بازی به ترتیب PRIZES؛ هر پروژه حداکثر یک جایزه می‌گیرد.
- * جوایز خودکار به نفر بعدی می‌رسند اگر نفر اول قبلاً جایزه گرفته یا واجد شرایط نباشد (تیم بدون عضو؛
- * و برای «انتخاب داوران» و «انتخاب مردم» تیم دارای کسر تقلب)؛ جایزهٔ انتخابی داوران اگر تیم انتخاب‌شده
- * قبلاً جایزه گرفته یا بدون عضو باشد اهدا نمی‌شود (پنل داوری این را هشدار می‌دهد). جایزه‌ای که اهدا نشود
- * سهمش پرداخت نمی‌شود.
- *
- * تساوی معیار با همان ترتیب قطعی رتبه‌بندی شکسته می‌شود (امتیاز کل → مردم → داوری → ثبت زودتر → teamId)؛
- * output.teams به ترتیب رتبه است، پس جایگاه هر تیم در آن همین ترتیب را نمایندگی می‌کند.
- */
-export function computeAwards(output: ScoreOutput, extra: AwardExtra): Award[] {
-  const awarded = new Set<string>();
-  const awards: Award[] = [];
-  const byId = new Map(output.teams.map((t) => [t.teamId, t]));
-
-  // جایگاه در جدول رتبه (یا rank ثبت‌شده) برای شکستن تساوی؛ در نهایت teamId.
-  const position = new Map(output.teams.map((t, i) => [t.teamId, t.rank ?? i + 1]));
-  const tieBreak = (a: TeamResult, b: TeamResult) => {
-    const pa = position.get(a.teamId)!;
-    const pb = position.get(b.teamId)!;
-    if (pa !== pb) return pa - pb;
-    return a.teamId < b.teamId ? -1 : a.teamId > b.teamId ? 1 : 0;
-  };
-
-  const metricOf: Partial<Record<PrizeKey, (t: TeamResult) => number>> = {
-    champion: (t) => t.total,
-    jury: (t) => t.juryAdjusted,
-    people: (t) => t.people,
-  };
-
-  for (const prize of PRIZES) {
-    const give = (t: TeamResult, value: number) => {
-      awards.push({
-        key: prize.key,
-        label: prize.label,
-        emoji: prize.emoji,
-        sharePct: prize.sharePct,
-        teamId: t.teamId,
-        teamName: extra.teamNames.get(t.teamId) ?? "",
-        value,
-      });
-      awarded.add(t.teamId);
-    };
-
-    const metric = metricOf[prize.key];
-    if (metric) {
-      const sorted = [...output.teams].sort((a, b) => metric(b) - metric(a) || tieBreak(a, b));
-      for (const t of sorted) {
-        // جایزه به معیار صفر تعلق نمی‌گیرد (مثلاً «انتخاب داوران» وقتی هنوز کسی داوری نشده)
-        if (metric(t) <= 0) break;
-        if (awarded.has(t.teamId)) continue;
-        if (!prizeEligible(prize.key, t)) continue;
-        give(t, metric(t));
-        break;
-      }
-      continue;
-    }
-
-    const pickedId = prize.key === "ai" ? extra.picks.ai : prize.key === "live" ? extra.picks.live : null;
-    const picked = pickedId ? byId.get(pickedId) : undefined;
-    if (picked && !awarded.has(picked.teamId) && prizeEligible(prize.key, picked)) give(picked, picked.total);
-  }
-
-  return awards;
-}
+export { entryKey };
+export type { Award };

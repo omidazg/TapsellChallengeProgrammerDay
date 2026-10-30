@@ -1,208 +1,196 @@
-import { requireAdmin } from "@/lib/auth";
+import Link from "next/link";
+import { requireJudge } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { computeAwards, computeScoresCached, getAwardPicks, getRawAwardPicks } from "@/lib/scoring";
+import { listJuryRows } from "@/lib/jury";
 import { juryRawScore } from "@/lib/economy/engine";
-import { PRIZES } from "@/lib/prizes";
+import { getModuleStatus, MODULE_STATUS_LABEL } from "@/lib/module-state";
 import { productAiTag } from "@/lib/ai-tag";
 import { LIVE_STATUS_LABEL, type LiveStatus } from "@/lib/studio";
+import { listAllTracks } from "@/lib/track-data";
+import { ENTRY_CATEGORY_LABEL, entryCategory } from "@/lib/tracks";
 import { AiTag } from "@/components/AiTag";
 import { PageHeader, Container, Empty, Alert } from "@/components/ui";
 import { fa } from "@/lib/persian";
 import { JuryScoreForm } from "./JuryScoreForm";
-import { AwardPickForm, type PickGroup } from "./AwardPickForm";
 
-export const metadata = { title: "داوری و جوایز · پنل برگزارکننده" };
+export const metadata = { title: "داوری · پنل برگزارکننده" };
 
 /** نمرهٔ ۰..۱۰۰ با یک رقم اعشار */
 function round1(n: number) {
   return Math.round(n * 10) / 10;
 }
 
+function parseScores(raw: string): Record<string, unknown> {
+  try {
+    const v = JSON.parse(raw);
+    return v && typeof v === "object" ? v : {};
+  } catch {
+    return {};
+  }
+}
+
 export default async function AdminJuryPage() {
-  await requireAdmin();
-  const [products, picks, rawPicks, output] = await Promise.all([
+  const user = await requireJudge();
+  const [rows, products, tracks, flags, status] = await Promise.all([
+    listJuryRows(user.id),
     prisma.product.findMany({
       where: { submittedAt: { not: null } },
-      include: { team: { select: { id: true, name: true, slug: true, solo: true, _count: { select: { members: true } } } } },
-      orderBy: { submittedAt: "asc" },
+      select: {
+        id: true,
+        tagline: true,
+        description: true,
+        demoUrl: true,
+        teaserUrl: true,
+        deliverableUrl: true,
+        contentType: true,
+        preExistingNote: true,
+        category: true,
+        liveStatus: true,
+        aiQuality: true,
+        aiNotes: true,
+        aiFinal: true,
+        aiFinalNotes: true,
+        osIssue: { select: { title: true, url: true } },
+        team: { select: { _count: { select: { members: true } } } },
+      },
     }),
-    getAwardPicks(),
-    getRawAwardPicks(),
-    computeScoresCached(),
+    listAllTracks(),
+    prisma.bazaarStat.findMany({ where: { flagged: true }, select: { productId: true, flagNote: true } }),
+    getModuleStatus("jury"),
   ]);
+  // میانگین و تعداد داورها فقط برای ادمین کامل است؛ داور باید مستقل نمره بدهد.
+  const allScores = user.isAdmin ? await prisma.juryScore.findMany({ select: { productId: true, scores: true } }) : [];
 
-  const teamNames = new Map(products.map((p) => [p.team.id, p.team.name]));
-  // پیش‌نمایش جوایز با امتیازهای فعلی: هر پروژه حداکثر یک جایزه؛ جایزهٔ انتخابی به تیمی که جایزهٔ بالاتری برده نمی‌رسد.
-  const awards = computeAwards(output, { teamNames, picks });
-  const prizeOf = (key: "ai" | "live") => PRIZES.find((p) => p.key === key)!;
-
-  const optionLabel = (p: (typeof products)[number]) =>
-    `${p.team.name} — ${p.name} (🤖 ${p.aiQuality !== null ? fa(p.aiQuality) : "—"})`;
-  const byAi = [...products].sort((a, b) => (b.aiQuality ?? -1) - (a.aiQuality ?? -1));
-  const aiGroups: PickGroup[] = [
-    { label: "محصولات ثبت‌شده (به ترتیب نمرهٔ هوش مصنوعی)", options: byAi.map((p) => ({ teamId: p.team.id, label: optionLabel(p) })) },
-  ];
-  // فقط محصولات لایو روی بازار استودیو واجد شرایط «بهترین محصول لایو» هستند (سرور هم همین را بررسی می‌کند).
-  const liveGroups: PickGroup[] = [
-    {
-      label: "🚀 لایو روی بازار استودیو",
-      options: products.filter((p) => p.liveStatus === "LIVE").map((p) => ({ teamId: p.team.id, label: `🚀 ${p.team.name} — ${p.name}` })),
-    },
-  ];
-
-  /** هشدار وقتی تیم انتخاب‌شده طبق امتیازهای فعلی جایزهٔ بالاتری می‌برد و این جایزه به او نمی‌رسد */
-  function pickWarning(key: "ai" | "live"): string | null {
-    // انتخاب ذخیره‌شده‌ای که دیگر واجد شرایط نیست (محصول از LIVE خارج شده) نادیده گرفته می‌شود.
-    if (key === "live" && rawPicks.live && !picks.live) {
-      return `محصول «${teamNames.get(rawPicks.live) ?? "تیم انتخاب‌شده"}» دیگر روی بازار استودیو لایو نیست؛ این انتخاب حساب نمی‌شود. یک محصول لایو انتخاب کن.`;
-    }
-    const picked = picks[key];
-    if (!picked) return null;
-    if (awards.some((a) => a.key === key && a.teamId === picked)) return null;
-    const other = awards.find((a) => a.teamId === picked);
-    if (other) {
-      return `«${teamNames.get(picked) ?? "این تیم"}» با امتیازهای فعلی جایزهٔ «${other.label}» را می‌برد؛ چون هر پروژه فقط یک جایزه می‌گیرد، اگر همین بماند جایزهٔ «${prizeOf(key).label}» اهدا نمی‌شود. تیم دیگری انتخاب کن.`;
-    }
-    return "تیم انتخاب‌شده دیگر در جدول امتیازها نیست؛ دوباره انتخاب کن.";
+  const detail = new Map(products.map((p) => [p.id, p]));
+  const flagOf = new Map(flags.map((f) => [f.productId, f.flagNote]));
+  const scoresOf = new Map<string, Record<string, unknown>[]>();
+  for (const s of allScores) {
+    const list = scoresOf.get(s.productId) ?? [];
+    list.push(parseScores(s.scores));
+    scoresOf.set(s.productId, list);
   }
 
-  const fullyScored = products.filter((p) => p.juryWorks !== null && p.juryValue !== null && p.juryPitch !== null).length;
-  const liveCount = products.filter((p) => p.liveStatus === "LIVE").length;
+  const canScore = status === "open";
+  const myDone = rows.filter((r) => r.criteria.every((c) => typeof r.mine[c.key] === "number")).length;
+  const trackList = tracks.filter((t) => rows.some((r) => r.trackId === t.id));
 
   return (
     <>
       <PageHeader
         eyebrow="پنل برگزارکننده"
-        title="داوری و جوایز"
-        desc="نمرهٔ داوری انسانی هر محصول را ثبت کن و برندهٔ جوایز انتخابی داوران را برگزین."
+        title="داوری"
+        desc="هر داور مستقل به معیارهای محور از ۰ تا ۱۰ نمره می‌دهد و نمرهٔ نهایی میانگین داورهاست. همهٔ ثبت‌ها داوری می‌شوند."
       />
       <Container className="space-y-6">
-        <section id="award-picks" className="card p-4 sm:p-6 space-y-5 anim-rise scroll-mt-32" aria-labelledby="award-picks-title">
-          <div>
-            <h2 id="award-picks-title" className="text-lg font-black text-brand-navy">انتخاب جایزه‌ها</h2>
-            <p className="text-xs text-brand-slate mt-1">
-              «بنیان‌گذار برتر»، «انتخاب داوران» و «انتخاب مردم» خودکار از امتیازها تعیین می‌شوند؛ این دو جایزه را داوران انتخاب
-              می‌کنند. هر پروژه حداکثر یک جایزه می‌برد.
-            </p>
-          </div>
-          {products.length === 0 ? (
-            <p className="text-sm text-brand-slate">پس از ثبت اولین محصول می‌توانی برنده‌ها را انتخاب کنی.</p>
-          ) : (
-            <div className="grid gap-6 md:grid-cols-2">
-              {(["ai", "live"] as const).map((key) => {
-                const prize = prizeOf(key);
-                const warning = pickWarning(key);
-                return (
-                  <div key={key} className="space-y-2">
-                    <AwardPickForm
-                      award={key}
-                      title={`${prize.emoji} ${prize.label} (${fa(prize.sharePct)}٪ صندوق جایزه)`}
-                      hint={
-                        key === "live"
-                          ? `${prize.criterion}. ${liveCount > 0 ? `${fa(liveCount)} محصول لایو است.` : "هنوز محصولی لایو نشده است."}`
-                          : `${prize.criterion}. نمرهٔ داور هوش مصنوعی فقط راهنماست.`
-                      }
-                      current={picks[key]}
-                      groups={key === "ai" ? aiGroups : liveGroups}
-                    />
-                    {warning && <Alert kind="error">{warning}</Alert>}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        <section className="space-y-4" aria-labelledby="jury-products-title">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 id="jury-products-title" className="text-lg font-black text-brand-navy">داوری انسانی محصولات</h2>
-            {products.length > 0 && (
-              <span className="text-xs text-brand-slate">
-                {fa(fullyScored)} از {fa(products.length)} محصول کامل داوری شده
-              </span>
-            )}
-          </div>
+        {!canScore && (
           <Alert kind="info">
-            هر پرسش از ۰ تا ۱۰. نمرهٔ داوری = میانگین × ۱۰؛ تعداد اعضای تیم در امتیاز هیچ اثری ندارد. نمرهٔ داور هوش مصنوعی
-            جدا حساب می‌شود و فقط برای اطلاع نمایش داده شده است.
+            بخش داوری فعلاً «{MODULE_STATUS_LABEL[status]}» است و ثبت نمره ممکن نیست.
+            {user.isAdmin && (
+              <>
+                {" "}
+                از <Link href="/admin/control" className="underline font-bold">مرکز کنترل</Link> بازش کن.
+              </>
+            )}
           </Alert>
+        )}
+        {rows.length > 0 && (
+          <p className="text-xs text-brand-slate fa-num">
+            {fa(myDone)} از {fa(rows.length)} ثبت را کامل نمره داده‌ای.
+          </p>
+        )}
 
-          {products.length === 0 ? (
-            <Empty title="هنوز محصولی ثبت نشده" />
-          ) : (
-            products.map((p) => {
-              const members = p.team._count.members;
-              const raw = juryRawScore({ works: p.juryWorks, value: p.juryValue, pitch: p.juryPitch });
-              const liveStatus = p.liveStatus as LiveStatus;
-              const aiTag = productAiTag(p);
-              return (
-                <article key={p.id} className="card p-4 sm:p-6 space-y-4 anim-rise" aria-labelledby={`product-${p.id}`}>
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h3 id={`product-${p.id}`} className="font-black text-brand-navy break-words">
-                        {p.name} <span className="text-xs text-brand-slate font-normal">— {p.team.name}</span>
-                      </h3>
-                      {p.tagline && <div className="text-sm text-brand-slate break-words">{p.tagline}</div>}
-                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs font-bold">
-                        <a href={`/market/${p.team.slug}`} target="_blank" rel="noreferrer" className="text-brand-cyan-dark hover:underline">
-                          صفحهٔ محصول ↗
-                        </a>
-                        {p.demoUrl && (
-                          <a href={p.demoUrl} target="_blank" rel="noreferrer noopener" className="text-brand-cyan-dark hover:underline">
-                            دمو ↗
-                          </a>
-                        )}
-                        {p.teaserUrl && (
-                          <a href={p.teaserUrl} target="_blank" rel="noreferrer noopener" className="text-brand-cyan-dark hover:underline">
-                            تیزر ↗
-                          </a>
-                        )}
+        {rows.length === 0 ? (
+          <Empty title="هنوز محصولی ثبت نهایی نشده" />
+        ) : (
+          trackList.map((track) => (
+            <section key={track.id} className="space-y-4" aria-labelledby={`jury-track-${track.id}`}>
+              <h2 id={`jury-track-${track.id}`} className="text-lg font-black text-brand-navy">{track.name}</h2>
+              {rows
+                .filter((r) => r.trackId === track.id)
+                .map((r) => {
+                  const p = detail.get(r.productId);
+                  const flagNote = flagOf.get(r.productId);
+                  const liveStatus = (p?.liveStatus ?? "") as LiveStatus;
+                  const aiTag = p ? productAiTag({ aiQuality: p.aiFinal ?? p.aiQuality, aiNotes: p.aiFinalNotes ?? p.aiNotes }) : null;
+                  const aiNotes = p?.aiFinalNotes ?? p?.aiNotes;
+                  const category = p ? entryCategory(track.category, p.category) : "";
+                  const members = p?.team._count.members ?? 0;
+                  const average = user.isAdmin ? juryRawScore(scoresOf.get(r.productId) ?? [], r.criteria.map((c) => c.key)) : null;
+                  return (
+                    <article key={r.productId} className="card p-4 sm:p-6 space-y-4 anim-rise" aria-labelledby={`product-${r.productId}`}>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 id={`product-${r.productId}`} className="font-black text-brand-navy break-words">
+                            {r.productName} <span className="text-xs text-brand-slate font-normal">— {r.teamName}</span>
+                          </h3>
+                          {p?.tagline && <div className="text-sm text-brand-slate break-words">{p.tagline}</div>}
+                          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs font-bold">
+                            <a href={`/market/${r.productSlug}`} target="_blank" rel="noreferrer" className="text-brand-cyan-dark hover:underline">
+                              صفحهٔ محصول ↗
+                            </a>
+                            {p?.demoUrl && (
+                              <a href={p.demoUrl} target="_blank" rel="noreferrer noopener" className="text-brand-cyan-dark hover:underline">
+                                دمو ↗
+                              </a>
+                            )}
+                            {p?.teaserUrl && (
+                              <a href={p.teaserUrl} target="_blank" rel="noreferrer noopener" className="text-brand-cyan-dark hover:underline">
+                                تیزر ↗
+                              </a>
+                            )}
+                            {p?.deliverableUrl && (
+                              <a href={p.deliverableUrl} target="_blank" rel="noreferrer noopener" className="text-brand-cyan-dark hover:underline">
+                                لینک تحویل ↗
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          {category && <span className="chip-navy">{ENTRY_CATEGORY_LABEL[category]}</span>}
+                          {p?.contentType && <span className="chip-navy">{p.contentType}</span>}
+                          <span className="chip-navy">{members <= 1 ? "👤 شرکت فردی" : `👥 ${fa(members)} نفره`}</span>
+                          {liveStatus && (
+                            <span className={liveStatus === "LIVE" ? "chip-ok" : "chip-navy"}>{LIVE_STATUS_LABEL[liveStatus]}</span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <span className="chip-navy">{members <= 1 ? "👤 شرکت فردی" : `👥 ${fa(members)} نفره`}</span>
-                      {liveStatus && (
-                        <span className={liveStatus === "LIVE" ? "chip-ok" : "chip-navy"}>
-                          {liveStatus === "LIVE" ? LIVE_STATUS_LABEL.LIVE : `بازار استودیو: ${LIVE_STATUS_LABEL[liveStatus]}`}
-                        </span>
-                      )}
-                    </div>
-                  </div>
 
-                  <div className="rounded-2xl bg-brand-ice p-3 space-y-1.5">
-                    <div className="flex flex-wrap items-center gap-2 text-sm">
-                      <span className="font-bold text-brand-navy">داوری هوش مصنوعی</span>
-                      {aiTag ? (
-                        <>
-                          <AiTag tag={aiTag} compact />
-                          <span className="fa-num text-brand-slate">{fa(aiTag.score)} از ۱۰۰</span>
-                        </>
-                      ) : (
-                        <span className="text-brand-slate">هنوز ارزیابی نشده</span>
+                      {p?.osIssue && <p className="text-sm text-brand-navy break-words">ایشو: {p.osIssue.title}</p>}
+                      {p?.description && <p className="text-sm text-brand-slate break-words whitespace-pre-line">{p.description}</p>}
+                      {p?.preExistingNote && (
+                        <p className="text-xs text-brand-slate break-words whitespace-pre-line">کار پیش از مسابقه: {p.preExistingNote}</p>
                       )}
-                    </div>
-                    {p.aiNotes && <p className="text-sm text-brand-slate break-words whitespace-pre-line">{p.aiNotes}</p>}
-                  </div>
+                      {flagNote !== undefined && <Alert kind="error">🚩 آمار بازار مشکوک است: {flagNote || "بدون یادداشت"}</Alert>}
 
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2 text-sm">
-                      <span className="font-bold text-brand-navy">داوری انسانی</span>
-                      {raw === null ? (
-                        <span className="text-brand-slate">هنوز نمره‌ای ثبت نشده</span>
-                      ) : (
-                        <span className="fa-num text-brand-slate">نمرهٔ داوری {fa(round1(raw))} از ۱۰۰</span>
+                      <div className="rounded-2xl bg-brand-ice p-3 space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <span className="font-bold text-brand-navy">ارزیابی هوش مصنوعی</span>
+                          {aiTag ? (
+                            <>
+                              <AiTag tag={aiTag} compact />
+                              <span className="fa-num text-brand-slate">{fa(aiTag.score)} از ۱۰۰</span>
+                            </>
+                          ) : (
+                            <span className="text-brand-slate">هنوز ارزیابی نشده</span>
+                          )}
+                        </div>
+                        {aiNotes && <p className="text-sm text-brand-slate break-words whitespace-pre-line">{aiNotes}</p>}
+                      </div>
+
+                      {user.isAdmin && (
+                        <p className="text-sm font-bold text-brand-navy fa-num">
+                          میانگین داوران: {average === null ? "هنوز نمره‌ای ثبت نشده" : `${fa(round1(average))} از ۱۰۰`}
+                          <span className="text-xs font-normal text-brand-slate"> · {fa(r.judgeCount)} داور</span>
+                        </p>
                       )}
-                    </div>
-                    <JuryScoreForm
-                      productId={p.id}
-                      values={{ juryWorks: p.juryWorks, juryValue: p.juryValue, juryPitch: p.juryPitch }}
-                    />
-                  </div>
-                </article>
-              );
-            })
-          )}
-        </section>
+
+                      <JuryScoreForm productId={r.productId} criteria={r.criteria} mine={r.mine} note={r.myNote} disabled={!canScore} />
+                    </article>
+                  );
+                })}
+            </section>
+          ))
+        )}
       </Container>
     </>
   );

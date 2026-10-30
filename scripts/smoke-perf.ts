@@ -79,6 +79,10 @@ async function main() {
     const newTeam = await prisma.team.create({
       data: { name: "تیم دود-پرف کش", slug: `smoke-perf-cache-team-${process.pid}` },
     });
+    // فقط تیم + محور دارای ایده یا محصول در امتیاز می‌آید
+    await prisma.idea.create({
+      data: { teamId: newTeam.id, title: "ایدهٔ کش", oneLiner: "x", problem: "x", audience: "x", buildPlan: "x", fundingCap: 0, revenueShare: 0, submittedAt: new Date() },
+    });
     // بدون invalidate، کش هنوز باید تیم جدید را نبیند (در بازهٔ TTL است)
     const stillCached = await computeScoresCached();
     eq("پیش از invalidate: تیم تازه هنوز در کش نیست", stillCached.teams.length, staleTeamCount);
@@ -97,7 +101,7 @@ async function main() {
     // ---------- ۴. getMarketProducts: sold/bought با کوئری خام یکی باشد ----------
     const team = await prisma.team.create({ data: { name: "تیم دود-پرف", slug: `smoke-perf-team-${process.pid}` } });
     const product = await prisma.product.create({
-      data: { teamId: team.id, name: "محصول دود-پرف", price: 20, submittedAt: new Date() },
+      data: { teamId: team.id, slug: "smoke-perf-general", name: "محصول دود-پرف", price: 20, submittedAt: new Date() },
     });
     const buyer1 = await prisma.user.create({
       data: {

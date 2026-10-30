@@ -6,6 +6,7 @@ import { prisma } from "./db";
 import { redirect } from "next/navigation";
 import { safeNext } from "@/app/login/next";
 import { REQUEST_PATH_HEADER, SESSION_COOKIE as COOKIE, loginUrlFor } from "./session-cookie";
+import { panelHome, panelRoleOf } from "./panel-roles";
 
 /**
  * تنبل (lazy) و فقط هنگام امضا/تأیید بررسی می‌شود؛ نه هنگام بارگذاری ماژول.
@@ -122,9 +123,39 @@ export async function requireUser() {
   return user;
 }
 
+/** کاربر را به صفحهٔ مجاز خودش در پنل می‌فرستد؛ اگر نقشی ندارد به صفحهٔ اصلی. */
+function redirectToOwnPanel(user: { isAdmin: boolean; staffRole: string }): never {
+  const role = panelRoleOf(user);
+  redirect(role ? panelHome(role) : "/");
+}
+
 export async function requireAdmin() {
   const user = await requireUser();
-  if (!user.isAdmin) redirect("/");
+  if (!user.isAdmin) redirectToOwnPanel(user);
+  return user;
+}
+
+/** هر کسی که نقشی در پنل دارد (چارچوب مشترک پنل)؛ هر صفحه و اکشن نگهبان نقش خودش را هم دارد. */
+export async function requirePanelUser() {
+  const user = await requireUser();
+  const role = panelRoleOf(user);
+  if (!role) redirect("/");
+  return { user, role };
+}
+
+/** ادمین کامل یا داور */
+export async function requireJudge() {
+  const user = await requireUser();
+  const role = panelRoleOf(user);
+  if (role !== "ADMIN" && role !== "JUDGE") redirectToOwnPanel(user);
+  return user;
+}
+
+/** ادمین کامل یا اپراتور بازار استودیو */
+export async function requireStudioOp() {
+  const user = await requireUser();
+  const role = panelRoleOf(user);
+  if (role !== "ADMIN" && role !== "STUDIO_OP") redirectToOwnPanel(user);
   return user;
 }
 

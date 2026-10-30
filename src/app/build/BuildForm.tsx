@@ -9,6 +9,7 @@ import { ImageUploadField } from "@/components/ImageUploadField";
 import { useDraftAutosave, type DraftValues } from "@/hooks/useDraftAutosave";
 import { DEFAULTS } from "@/lib/constants";
 import { parseTeaser, randomImageUrl, MAX_IMAGES, isLocalUploadUrl, imageUrlError } from "@/lib/product-utils";
+import { ENTRY_CATEGORY_LABEL, type TrackCategory, type TrackKind } from "@/lib/tracks";
 import { saveProductAction, type ProductActionState } from "./actions";
 import { DraftBanner } from "./DraftBanner";
 import { ChecklistLink } from "./ChecklistLink";
@@ -24,10 +25,31 @@ type ProductInput = {
   specialName: string;
   specialDesc: string;
   specialStart: number;
+  category: string;
+  deliverableUrl: string;
+  contentType: string;
+  osIssueId: string;
+  preExistingNote: string;
 };
 
-/** فیلدهایی که پیش‌نویس محلی‌شان ذخیره می‌شود */
-const DRAFT_FIELDS = ["name", "tagline", "description", "demoUrl", "teaserUrl", "images", "price", "specialName", "specialDesc", "specialStart"] as const;
+export type OsIssueOption = { id: string; title: string; url: string };
+
+/** پیشنهادهای نوع محتوا؛ کاربر آزاد است هر چیز دیگری بنویسد */
+const CONTENT_TYPE_SUGGESTIONS = ["ویدیو", "پادکست", "دورهٔ آموزشی", "پست شبکه‌های اجتماعی", "فیلم", "موسیقی", "برنامهٔ دنباله‌دار", "راهکار اختصاصی تولید محتوا"];
+
+/** فیلدهایی که پیش‌نویس محلی‌شان ذخیره می‌شود؛ بسته به نوع محور فرق دارند */
+function draftFields(kind: TrackKind, category: TrackCategory, hasIssues: boolean): string[] {
+  const base = ["name", "tagline", "description", "images", "price", "preExistingNote"];
+  if (kind === "CONTENT") return [...base, "contentType", "deliverableUrl"];
+  if (kind === "OS") return [...base, "deliverableUrl", ...(hasIssues ? ["osIssueId"] : [])];
+  return [...base, "demoUrl", "teaserUrl", "specialName", "specialDesc", "specialStart", ...(category === "MIXED" ? ["category"] : [])];
+}
+
+const NAME_LABEL: Record<TrackKind, { name: string; description: string; descriptionHint: string }> = {
+  PRODUCT: { name: "نام محصول", description: "توضیح محصول", descriptionHint: "محصول را کامل توضیح بده (خط جدید مجاز است)" },
+  CONTENT: { name: "عنوان محتوا", description: "توضیح محتوا", descriptionHint: "این محتوا دربارهٔ چیست و برای چه کسی است؟" },
+  OS: { name: "عنوان راهکار", description: "شرح راهکار", descriptionHint: "چه مشکلی را حل کردی و راهکارت چطور کار می‌کند؟" },
+};
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.round(n)));
@@ -49,17 +71,26 @@ function SubmitButtons({ disabled }: { disabled: boolean }) {
 }
 
 export function BuildForm({
+  trackId,
+  trackKind,
+  trackCategory,
+  osIssues,
   draftKey,
   editable,
   submitted,
   initial,
   maxPrice = DEFAULTS.maxPrice,
-  lockNote = "مرکز ساخت قفل شده و فقط قابل مشاهده است.",
+  lockNote = "این فرم الان قابل ویرایش نیست و فقط قابل مشاهده است.",
 }: {
-  /** کلید پیش‌نویس محلی (بر پایهٔ تیم و شناسهٔ محصول) */
+  trackId: string;
+  trackKind: TrackKind;
+  trackCategory: TrackCategory;
+  /** ایشوهای فعال محور OS؛ اگر خالی باشد تیم راهکارش را آزاد شرح می‌دهد */
+  osIssues: OsIssueOption[];
+  /** کلید پیش‌نویس محلی (بر پایهٔ تیم، محور و شناسهٔ محصول) */
   draftKey: string;
   editable: boolean;
-  /** پیام نمایش‌داده‌شده وقتی فرم قابل ویرایش نیست (قفل فاز) */
+  /** پیام نمایش‌داده‌شده وقتی فرم قابل ویرایش نیست */
   lockNote?: string | null;
   submitted: boolean;
   initial: ProductInput | null;
@@ -72,6 +103,8 @@ export function BuildForm({
   const [price, setPrice] = useState(() => Math.min(initial?.price ?? 20, maxPrice));
   const [specialStart, setSpecialStart] = useState(initial?.specialStart ?? 20);
   const locked = !editable || submitted;
+  const labels = NAME_LABEL[trackKind];
+  const isProduct = trackKind === "PRODUCT";
 
   // مقادیر فعلی سرور، به همان شکلی که در FormData ظاهر می‌شوند
   const baseline: DraftValues = {
@@ -85,11 +118,16 @@ export function BuildForm({
     specialName: [initial?.specialName ?? ""],
     specialDesc: [initial?.specialDesc ?? ""],
     specialStart: [String(initial?.specialStart ?? 20)],
+    category: [initial?.category ?? ""],
+    deliverableUrl: [initial?.deliverableUrl ?? ""],
+    contentType: [initial?.contentType ?? ""],
+    osIssueId: [initial?.osIssueId ?? ""],
+    preExistingNote: [initial?.preExistingNote ?? ""],
   };
   const draft = useDraftAutosave({
     key: `build:${draftKey}`,
     formRef,
-    fields: DRAFT_FIELDS,
+    fields: draftFields(trackKind, trackCategory, osIssues.length > 0),
     baseline,
     enabled: !locked,
     controlled: {
@@ -118,6 +156,7 @@ export function BuildForm({
 
   return (
     <form ref={formRef} action={formAction} className="card p-6 space-y-6 anim-rise">
+      <input type="hidden" name="trackId" value={trackId} />
       {draft.found && <DraftBanner savedAt={draft.found.savedAt} onRestore={draft.restore} onDismiss={draft.dismiss} />}
       {state.error &&
         (state.missing && state.missing.length > 0 ? (
@@ -141,7 +180,7 @@ export function BuildForm({
       <fieldset disabled={locked} className="space-y-6 disabled:opacity-70">
         <div className="grid md:grid-cols-2 gap-5">
           <div>
-            <label className="label" htmlFor="name">نام محصول</label>
+            <label className="label" htmlFor="name">{labels.name}</label>
             <input id="name" name="name" defaultValue={v.name ?? initial?.name} required maxLength={80} className="input" placeholder="مثلاً: صف‌یار" />
           </div>
           <div>
@@ -151,10 +190,62 @@ export function BuildForm({
         </div>
 
         <div>
-          <label className="label" htmlFor="description">توضیح محصول</label>
-          <textarea id="description" name="description" defaultValue={v.description ?? initial?.description} maxLength={4000} rows={6} className="input" placeholder="محصول را کامل توضیح بده (خط جدید مجاز است)" />
+          <label className="label" htmlFor="description">{labels.description}</label>
+          <textarea id="description" name="description" defaultValue={v.description ?? initial?.description} maxLength={4000} rows={6} className="input" placeholder={labels.descriptionHint} />
         </div>
 
+        {isProduct && trackCategory === "MIXED" && (
+          <div>
+            <label className="label" htmlFor="category">دسته</label>
+            <select id="category" name="category" defaultValue={v.category ?? initial?.category ?? ""} className="input">
+              <option value="">انتخاب کن…</option>
+              <option value="TECH">{ENTRY_CATEGORY_LABEL.TECH}</option>
+              <option value="NON_TECH">{ENTRY_CATEGORY_LABEL.NON_TECH}</option>
+            </select>
+            <p className="mt-1 text-xs text-brand-slate">جایزهٔ نفر اول این محور برای هر دسته جداست.</p>
+          </div>
+        )}
+
+        {trackKind === "CONTENT" && (
+          <div className="grid md:grid-cols-2 gap-5">
+            <div>
+              <label className="label" htmlFor="contentType">نوع محتوا</label>
+              <input id="contentType" name="contentType" list="contentTypeSuggestions" defaultValue={v.contentType ?? initial?.contentType} maxLength={80} className="input" placeholder="مثلاً ویدیو، پادکست، یا هر چیز دیگر" />
+              <datalist id="contentTypeSuggestions">
+                {CONTENT_TYPE_SUGGESTIONS.map((s) => (
+                  <option key={s} value={s} />
+                ))}
+              </datalist>
+            </div>
+            <div>
+              <label className="label" htmlFor="deliverableUrl">لینک محتوای تولیدشده</label>
+              <input id="deliverableUrl" name="deliverableUrl" type="url" defaultValue={v.deliverableUrl ?? initial?.deliverableUrl} maxLength={500} className="input" placeholder="https://…" dir="ltr" />
+            </div>
+          </div>
+        )}
+
+        {trackKind === "OS" && (
+          <div className="grid md:grid-cols-2 gap-5">
+            {osIssues.length > 0 && (
+              <div>
+                <label className="label" htmlFor="osIssueId">ایشوی انتخابی</label>
+                <select id="osIssueId" name="osIssueId" defaultValue={v.osIssueId ?? initial?.osIssueId ?? ""} className="input">
+                  <option value="">انتخاب کن…</option>
+                  {osIssues.map((i) => (
+                    <option key={i.id} value={i.id}>{i.title}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-brand-slate">چند تیم می‌توانند یک ایشو را بردارند؛ بهترین راهکار برنده است.</p>
+              </div>
+            )}
+            <div>
+              <label className="label" htmlFor="deliverableUrl">لینک PR یا MR</label>
+              <input id="deliverableUrl" name="deliverableUrl" type="url" defaultValue={v.deliverableUrl ?? initial?.deliverableUrl} maxLength={500} className="input" placeholder="https://…" dir="ltr" />
+            </div>
+          </div>
+        )}
+
+        {isProduct && (
         <div className="grid md:grid-cols-2 gap-5">
           <div>
             <label className="label" htmlFor="demoUrl">لینک دمو</label>
@@ -173,19 +264,20 @@ export function BuildForm({
             />
           </div>
         </div>
+        )}
 
-        {teaser.kind === "video" && teaser.embedSrc && (
+        {isProduct && teaser.kind === "video" && teaser.embedSrc && (
           <p className="text-xs text-brand-slate">
             این لینک یوتیوب یا آپارات نیست؛ در صفحهٔ محصول به‌جای پخش‌کننده، دکمهٔ «تماشای تیزر» نشان داده می‌شود.
           </p>
         )}
-        {(teaser.kind === "youtube" || teaser.kind === "aparat") && teaser.embedSrc && (
+        {isProduct && (teaser.kind === "youtube" || teaser.kind === "aparat") && teaser.embedSrc && (
           <div className="relative w-full max-w-md aspect-video rounded-2xl overflow-hidden border border-brand-mist anim-pop bg-black">
             <iframe src={teaser.embedSrc} className="w-full h-full" allowFullScreen title="پیش‌نمایش تیزر" />
           </div>
         )}
 
-        <ImagesField images={images} setImages={setImages} disabled={locked} />
+        <ImagesField images={images} setImages={setImages} disabled={locked} required={isProduct} />
 
         <div>
           <label className="label" htmlFor="price">قیمت ({fa(DEFAULTS.minPrice)} تا {fa(maxPrice)} سکه): {coins(price)}</label>
@@ -201,11 +293,15 @@ export function BuildForm({
           />
         </div>
 
+        {/* محور غیر ساخت محصول نسخهٔ ویژه ندارد؛ اکشن همچنان قیمت شروع معتبر لازم دارد */}
+        {!isProduct && <input type="hidden" name="specialStart" value={initial?.specialStart ?? 20} />}
+
+        {isProduct && (
         <div className="rounded-2xl border border-brand-mist p-4 space-y-4">
           <div>
             <div className="text-sm font-black text-brand-navy">نسخهٔ ویژه (برای حراج زنده)</div>
             <p className="mt-1 text-xs text-brand-slate">
-              در «روز بازار» هر عضو تیم می‌تواند این نسخه را به صف حراج زنده بفرستد؛ حراج از «قیمت شروع» آغاز می‌شود.
+              پس از ثبت نهایی، هر عضو تیم می‌تواند این نسخه را از صفحهٔ محصول یا صفحهٔ حراج به صف حراج زنده بفرستد؛ حراج از «قیمت شروع» آغاز می‌شود.
             </p>
           </div>
           <div className="grid md:grid-cols-2 gap-5">
@@ -232,6 +328,13 @@ export function BuildForm({
             <textarea id="specialDesc" name="specialDesc" defaultValue={v.specialDesc ?? initial?.specialDesc} maxLength={400} rows={3} className="input" placeholder="این نسخه چه امتیاز اضافه‌ای دارد؟" />
           </div>
         </div>
+        )}
+
+        <div>
+          <label className="label" htmlFor="preExistingNote">کد متن‌باز یا کار پیش از مسابقه (اگر دارد)</label>
+          <textarea id="preExistingNote" name="preExistingNote" defaultValue={v.preExistingNote ?? initial?.preExistingNote} maxLength={1000} rows={2} className="input" placeholder="مثلاً کتابخانهٔ متن‌باز X یا نمونهٔ اولیه‌ای که قبل از مسابقه ساخته بودیم" />
+          <p className="mt-1 text-xs text-brand-slate">استفاده از این‌ها مجاز است ولی باید همین‌جا اعلام شود؛ کار اعلام‌شده مشمول انتقال مالکیت نمی‌شود.</p>
+        </div>
       </fieldset>
 
       {editable && <SubmitButtons disabled={submitted} />}
@@ -239,7 +342,7 @@ export function BuildForm({
   );
 }
 
-function ImagesField({ images, setImages, disabled }: { images: string[]; setImages: React.Dispatch<React.SetStateAction<string[]>>; disabled: boolean }) {
+function ImagesField({ images, setImages, disabled, required }: { images: string[]; setImages: React.Dispatch<React.SetStateAction<string[]>>; disabled: boolean; required: boolean }) {
   const [draft, setDraft] = useState("");
   const [urlError, setUrlError] = useState("");
   const full = images.length >= MAX_IMAGES;
@@ -272,7 +375,7 @@ function ImagesField({ images, setImages, disabled }: { images: string[]; setIma
   return (
     <div>
       <label className="label" htmlFor="productImageUrl">
-        تصاویر (حداقل ۳، حداکثر {fa(MAX_IMAGES)}) — {fa(images.length)} تصویر افزوده شده
+        تصاویر ({required ? "حداقل ۳، " : "اختیاری، "}حداکثر {fa(MAX_IMAGES)}) — {fa(images.length)} تصویر افزوده شده
       </label>
       {images.map((url) => (
         <input key={url} type="hidden" name="images" value={url} />

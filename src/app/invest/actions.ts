@@ -4,10 +4,10 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { getPhase } from "@/lib/phase";
 import { createHash } from "crypto";
 import { askText, dueDiligencePrompt } from "@/lib/ai";
-import { investCore } from "@/lib/invest";
+import { investCore, withdrawInvestment } from "@/lib/invest";
+import { moduleGate } from "@/lib/module-state";
 import { checkDailyBudget, checkUserDailyMessageCap, normalizeQuestion } from "@/lib/ai-budget";
 import { rateLimit, rateLimitMessage } from "@/lib/rate-limit";
 import { cached } from "@/lib/ttl-cache";
@@ -19,7 +19,7 @@ function ideaIdOf(formData: FormData): string {
   return String(formData.get("ideaId") ?? "");
 }
 
-/** حمایت از یک ایده با سکه در «دور حمایت» (همهٔ قواعد داخل investCore است) */
+/** حمایت از یک ایده با سکه (همهٔ قواعد داخل investCore است) */
 export async function investAction(_prevState: InvestActionState, formData: FormData): Promise<InvestActionState> {
   const user = await requireUser();
   const ideaId = ideaIdOf(formData);
@@ -38,6 +38,22 @@ export async function investAction(_prevState: InvestActionState, formData: Form
   return { ok: true };
 }
 
+/** پس‌گرفتن حمایتی که پیش از آخرین ویرایش ایده ثبت شده (قواعد داخل withdrawInvestment است) */
+export async function withdrawInvestmentAction(ideaId: string): Promise<{ error?: string; refunded?: number }> {
+  const user = await requireUser();
+  if (!ideaId) return { error: "این ایده یافت نشد" };
+  const limit = rateLimit("invest", user.id, { limit: 30, windowMs: 60_000 });
+  if (!limit.ok) return { error: rateLimitMessage(limit.retryAfterSec) };
+
+  const result = await withdrawInvestment(prisma, user.id, ideaId);
+  if (!result.ok) return { error: result.error };
+
+  revalidatePath(`/invest/${ideaId}`);
+  revalidatePath("/invest");
+  revalidatePath("/wallet");
+  return { refunded: result.refunded };
+}
+
 const questionSchema = z.string().trim().min(3, "سؤال را کامل‌تر بنویس").max(300, "سؤال خیلی طولانی است");
 
 /** پرسش‌وپاسخ بررسی دقیق: فقط بر اساس متن ایده پاسخ می‌دهد */
@@ -47,9 +63,9 @@ export async function dueDiligenceAction(_prevState: ChatActionState, formData: 
   const parsed = questionSchema.safeParse(String(formData.get("question") ?? ""));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "سؤال نامعتبر است" };
 
-  // فقط در دور حمایت: پیش از آن متن ایده‌ها هنوز عمومی نیست و پس از آن پرسش فقط بودجهٔ AI را مصرف می‌کند.
-  const { phase } = await getPhase();
-  if (phase !== "SEED_ROUND") return { error: "چت بررسی دقیق فقط در «دور حمایت» فعال است" };
+  // فقط وقتی حمایت و هوش مصنوعی باز است؛ وگرنه پرسش فقط بودجهٔ AI را مصرف می‌کند.
+  const gate = (await moduleGate("invest", user.teamId)) ?? (await moduleGate("ai", user.teamId));
+  if (gate) return { error: gate };
 
   const idea = ideaId ? await prisma.idea.findUnique({ where: { id: ideaId } }) : null;
   if (!idea || !idea.submittedAt) return { error: "این ایده یافت نشد" };

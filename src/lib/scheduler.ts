@@ -6,20 +6,13 @@
  */
 import { prisma } from "./db";
 import { getPhase, getSetting, getSettingInt } from "./phase";
-import { PHASES, type Phase } from "./phases";
 import { transitionTo } from "./phase-transition";
 import { startNextAuction, settleIfEnded } from "./auction";
-import { recordMarketWindow, sendDuePushSlots } from "./adslots";
+import { sendDuePushSlots } from "./adslots";
+import { syncBazaarStats } from "./bazaar";
+import { moduleOpen } from "./module-state";
 import { log } from "./log";
 import { alert } from "./alert";
-
-/** مدت پیش‌فرض هر فاز بر حسب ساعت؛ فازهای بدون مقدار (REGISTRATION، CLOSED) زمان پایان ندارند. */
-const DEFAULT_PHASE_HOURS: Partial<Record<Phase, number>> = {
-  IDEATION: 24,
-  SEED_ROUND: 24,
-  BUILD: 48,
-  MARKET: 8,
-};
 
 const DEFAULT_AUCTION_GAP_SEC = 60;
 
@@ -28,21 +21,6 @@ const NOTIFICATION_CLEANUP_INTERVAL_MS = 3600_000;
 const NOTIFICATION_READ_TTL_MS = 7 * 24 * 3600_000;
 const NOTIFICATION_MAX_AGE_MS = 30 * 24 * 3600_000;
 let lastNotificationCleanupAt = 0;
-
-function nextPhaseOf(p: Phase): Phase | null {
-  const idx = PHASES.indexOf(p);
-  if (idx < 0 || idx >= PHASES.length - 1) return null;
-  return PHASES[idx + 1];
-}
-
-/**
- * زمان پایان فاز از مدت پیکربندی‌شده (phase_hours_X): مقدار صفر/منفی/نامعتبر یعنی «بدون زمان پایان»
- * (endsAt = null؛ فاز تا تغییر دستی ادامه دارد)، نه «همین حالا تمام شود».
- */
-export function phaseEndsAtFromHours(hours: number | null, nowMs: number): Date | null {
-  if (hours == null || !Number.isFinite(hours) || hours <= 0) return null;
-  return new Date(nowMs + hours * 3600 * 1000);
-}
 
 /** قفل در-فرآیندی: اجراهای هم‌پوشان نادیده گرفته می‌شوند. */
 let running = false;
@@ -69,17 +47,14 @@ export async function runScheduledTasks(): Promise<void> {
   }
   running = true;
   try {
-    await autoAdvancePhase().catch((e) => reportTickFailure("autoAdvancePhase", e));
+    await closeAtDeadline().catch((e) => reportTickFailure("closeAtDeadline", e));
     await cleanupOldNotifications().catch((e) => reportTickFailure("cleanupOldNotifications", e));
+    await syncBazaarStats().catch((e) => reportTickFailure("syncBazaarStats", e));
 
     const { phase } = await getPhase();
-    if (phase === "MARKET") {
-      // بازهٔ واقعی روز بازار (برای سنجش تحویل جایگاه‌های تبلیغاتی و بازپرداخت در پایان بازی) ثبت می‌شود؛
-      // idempotent است و اگر فاز از مسیری جز transitionTo به MARKET رسیده باشد هم بازه باز می‌شود.
-      await recordMarketWindow("MARKET").catch((e) => reportTickFailure("recordMarketWindow", e));
+    if (phase !== "CLOSED") {
+      // بازار و حراج یک بخش‌اند: وقتی بازار باز نیست حراج تازه‌ای شروع نمی‌شود، ولی حراج زندهٔ تمام‌شده باید تسویه شود.
       await runAuctionTasks().catch((e) => reportTickFailure("runAuctionTasks", e));
-      // اعلان «جایگاه اعلان به همه» فقط در روز بازار فرستاده می‌شود؛ جایگاهی که ساعتش بیرون از روز بازار
-      // گذشت فرستاده نمی‌شود و در پایان بازی بازپرداخت می‌شود (refundUndeliveredAdSlots).
       await sendDuePushSlots().catch((e) => reportTickFailure("sendDuePushSlots", e));
     }
     tickGlobal.__arenaLastTickAt = Date.now();
@@ -98,38 +73,23 @@ export function getLastSchedulerTickAt(): number | null {
   return tickGlobal.__arenaLastTickAt ?? null;
 }
 
-/** ۱.الف: پیشروی خودکار فاز وقتی زمانش تمام شده باشد. */
-async function autoAdvancePhase() {
-  const autoAdvance = await getSetting("auto_advance", "0");
-  if (autoAdvance !== "1") return;
-
+/** ۱.الف: ددلاین نهایی تنها زمان‌بندی مسابقه است و با رسیدنش مسابقه خودکار بسته می‌شود. */
+async function closeAtDeadline() {
   const { phase, endsAt } = await getPhase();
-  if (phase === "CLOSED") return;
-  if (!endsAt || endsAt.getTime() > Date.now()) return;
+  if (phase === "CLOSED" || !endsAt || endsAt.getTime() > Date.now()) return;
 
-  const next = nextPhaseOf(phase);
-  if (!next) return;
-
-  const defaultHours = DEFAULT_PHASE_HOURS[next] ?? null;
-  const hours = defaultHours != null ? await getSettingInt(`phase_hours_${next}`, defaultHours) : null;
-  const nextEndsAt = phaseEndsAtFromHours(hours, Date.now());
-
-  // محافظت در برابر مسابقه با تغییر دستی فاز از پنل برگزارکننده (یا تمدید زمان همان فاز)
-  // بین خواندن بالا و نوشتن: فقط اگر فاز و زمان پایان هنوز همانی است که دیدیم پیش می‌رویم،
-  // و خودِ پیشروی با یک به‌روزرسانی شرطی (compare-and-set روی مقدار فاز) ادعا می‌شود.
-  const fresh = await getPhase();
-  if (fresh.phase !== phase || fresh.endsAt?.getTime() !== endsAt.getTime()) return;
-  const claimed = await prisma.setting.updateMany({ where: { key: "phase", value: phase }, data: { value: next } });
+  // ادعای شرطی برای جلوگیری از مسابقه با بستن دستی از پنل
+  const claimed = await prisma.setting.updateMany({ where: { key: "phase", NOT: { value: "CLOSED" } }, data: { value: "CLOSED" } });
   if (claimed.count === 0) return;
 
-  const res = await transitionTo(next, nextEndsAt);
-  if (res.settleFailed) reportTickFailure("settleGame", new Error("تسویهٔ خودکار پس از رفتن به CLOSED شکست خورد"));
-  console.log(
-    `[scheduler] فاز خودکار از ${phase} به ${next} رفت${nextEndsAt ? ` (پایان: ${nextEndsAt.toISOString()})` : ""}`
-  );
+  const res = await transitionTo("CLOSED", endsAt);
+  // همان ردیفی که پایان دستی می‌نویسد؛ خبر عمومی «مسابقه به پایان رسید» در فید از این می‌آید.
+  await prisma.auditLog.create({ data: { actorId: null, action: "contest.end", target: "", detail: JSON.stringify({ auto: true }) } });
+  if (res.settleFailed) reportTickFailure("settleGame", new Error("تسویهٔ خودکار پس از ددلاین نهایی شکست خورد"));
+  console.log("[scheduler] ددلاین نهایی رسید و مسابقه بسته شد");
 }
 
-/** ۱.ب: در روز بازار، تسویهٔ حراج‌های تمام‌شده و شروع خودکار حراج بعدیِ صف (صف را تیم‌ها پر می‌کنند). */
+/** ۱.ب: تسویهٔ حراج‌های تمام‌شده و شروع خودکار حراج بعدیِ صف (صف را تیم‌ها پر می‌کنند). */
 async function runAuctionTasks() {
   const liveAuctions = await prisma.auction.findMany({ where: { status: "LIVE" } });
   for (const a of liveAuctions) {
@@ -142,7 +102,7 @@ async function runAuctionTasks() {
   }
 
   const autoAuction = await getSetting("auto_auction", "1");
-  if (autoAuction !== "1") return;
+  if (autoAuction !== "1" || !(await moduleOpen("market"))) return;
 
   const stillLive = await prisma.auction.findFirst({ where: { status: "LIVE" } });
   if (stillLive) return;

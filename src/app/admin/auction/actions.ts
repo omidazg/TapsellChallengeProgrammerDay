@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
-import { getPhase, getSettingInt } from "@/lib/phase";
+import { getSettingInt } from "@/lib/phase";
 import { DEFAULTS } from "@/lib/constants";
 import { ensureAuctions, startNextAuction, settleAuction } from "@/lib/auction";
 import { publishAuctionChange } from "@/lib/auction-events";
@@ -11,12 +11,13 @@ import { prisma } from "@/lib/db";
 import { ensureAdSlots, marketStartFromSettings } from "@/lib/adslots";
 import { audit } from "@/lib/audit";
 import { setSetting } from "@/lib/admin";
+import { moduleGate } from "@/lib/module-state";
 
 export type AuctionAdminState = { error?: string; ok?: boolean };
 
 /**
  * ابزار برگزارکننده: همهٔ محصولات ثبت‌شده‌ای که تیمشان هنوز به صف حراج نفرستاده، (با ترتیب تصادفی) ته صف می‌روند.
- * در جریان عادی هر تیم خودش در روز بازار محصولش را به صف می‌فرستد.
+ * در جریان عادی هر تیم خودش محصولش را به صف می‌فرستد.
  */
 export async function ensureAuctionsAction(): Promise<AuctionAdminState> {
   const admin = await requireAdmin();
@@ -38,9 +39,9 @@ export async function ensureAuctionsAction(): Promise<AuctionAdminState> {
 
 export async function startNextAuctionAction(): Promise<AuctionAdminState> {
   const admin = await requireAdmin();
-  // حراج زنده بخشی از «روز بازار» است؛ حراجی که بیرون از آن شروع شود بی‌پیشنهاد می‌سوزد.
-  const { phase } = await getPhase();
-  if (phase !== "MARKET") return { error: "حراج فقط در فاز «روز بازار» شروع می‌شود" };
+  // حراج زنده بخشی از بازار است؛ حراجی که با بازار بسته شروع شود بی‌پیشنهاد می‌سوزد.
+  const gate = await moduleGate("market");
+  if (gate) return { error: gate };
   const live = await prisma.auction.findFirst({ where: { status: "LIVE" }, select: { id: true } });
   if (live) return { error: "یک حراج هنوز زنده است؛ اول آن را تمام کن" };
   const dur = await getSettingInt("auction_duration_sec", DEFAULTS.auctionDurationSec);
@@ -85,7 +86,7 @@ export async function moveAuctionAction(prevState: AuctionAdminState, formData: 
 export async function ensureAdSlotsAction(): Promise<AuctionAdminState> {
   const admin = await requireAdmin();
   const marketStart = await marketStartFromSettings();
-  // بدون مدت صریح: به اندازهٔ مدت فاز روز بازار (phase_hours_MARKET) جایگاه ساخته می‌شود
+  // از زمان شروع تا ددلاین نهایی، برای هر بازه و هر نوع یک جایگاه ساخته می‌شود (idempotent).
   await ensureAdSlots(marketStart);
   await audit(admin.id, "adslot.ensure", "", { marketStart: marketStart.toISOString() });
   revalidatePath("/admin/auction");

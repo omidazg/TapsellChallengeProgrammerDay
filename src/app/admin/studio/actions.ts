@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireStudioOp } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { adminSetLiveStatus } from "@/lib/studio";
 
@@ -18,7 +18,7 @@ const schema = z.object({
 
 /** تغییر وضعیت انتشار یک محصول روی بازار استودیو (لایو به لینک http نیاز دارد) */
 export async function setLiveStatusAction(prevState: StudioActionState, formData: FormData): Promise<StudioActionState> {
-  const admin = await requireAdmin();
+  const admin = await requireStudioOp();
   const parsed = schema.safeParse({
     productId: formData.get("productId"),
     status: formData.get("status"),
@@ -42,6 +42,7 @@ export async function setLiveStatusAction(prevState: StudioActionState, formData
     after: { status, liveUrl: status === "LIVE" ? liveUrl : before.liveUrl, note },
   });
   revalidatePath("/admin/studio");
+  revalidatePath("/admin/bazaar");
   revalidatePath("/admin/jury");
   revalidatePath("/build");
   revalidatePath("/market");

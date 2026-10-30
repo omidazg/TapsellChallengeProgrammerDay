@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/auth";
+import { requireStudioOp } from "@/lib/auth";
 import { listStudioRequests, LIVE_STATUS_LABEL } from "@/lib/studio";
 import { PageHeader, Container, Empty, Alert } from "@/components/ui";
 import { fa, jdatetime } from "@/lib/persian";
@@ -14,7 +14,7 @@ const STATUS_CHIP: Record<string, string> = {
 };
 
 export default async function AdminStudioPage() {
-  await requireAdmin();
+  await requireStudioOp();
   const rows = await listStudioRequests();
   const count = (s: string) => rows.filter((r) => r.status === s).length;
 
@@ -23,7 +23,7 @@ export default async function AdminStudioPage() {
       <PageHeader
         eyebrow="پنل برگزارکننده"
         title="بازار استودیو"
-        desc="درخواست‌های انتشار محصول تیم‌ها روی بازار استودیو را پیگیری کن. محصول لایو نشان «🚀 لایو» می‌گیرد و نامزد جایزهٔ «بهترین محصول لایو» است."
+        desc="درخواست‌های انتشار محصول تیم‌ها روی بازار استودیو را پیگیری کن. محصول لایو نشان «🚀 لایو» می‌گیرد و آمار واقعی‌اش در بخش بازار امتیاز حساب می‌شود."
       />
       <Container className="space-y-4">
         <div className="flex flex-wrap gap-2 text-xs">
@@ -33,7 +33,7 @@ export default async function AdminStudioPage() {
           <span className="chip-ok">{LIVE_STATUS_LABEL.LIVE}: {fa(count("LIVE"))}</span>
         </div>
         <Alert kind="info">
-          انتشار اختیاری است و مستقیم در امتیاز اثری ندارد. با هر تغییر وضعیت (جز «درخواست ثبت شده») تیم اعلان می‌گیرد؛
+          با هر تغییر وضعیت (جز «درخواست ثبت شده») تیم اعلان می‌گیرد؛
           یادداشت تو هم برایشان نمایش داده می‌شود.
         </Alert>
 

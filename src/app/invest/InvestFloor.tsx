@@ -17,23 +17,33 @@ export function InvestFloor({
   ownTeamId,
   interactive,
   filter,
+  trackId = null,
   aiOff = false,
 }: {
   ideas: IdeaCardData[];
   ownTeamId: string | null;
   interactive: boolean;
   filter: FloorFilter;
+  /** فیلتر محور جاری؛ با عوض کردن مرتب‌سازی حفظ می‌شود */
+  trackId?: string | null;
   aiOff?: boolean;
 }) {
   // بدون هوش مصنوعی، ارزیابی تحلیل‌گر وجود ندارد؛ این گزینهٔ مرتب‌سازی پنهان می‌شود.
   const visibleFilters = aiOff ? FILTERS.filter((f) => f.key !== "topAnalyst") : FILTERS;
+  const hrefFor = (key: FloorFilter) => {
+    const q = new URLSearchParams();
+    if (key !== "all") q.set("filter", key);
+    if (trackId) q.set("track", trackId);
+    const s = q.toString();
+    return s ? `/invest?${s}` : "/invest";
+  };
   return (
     <div>
       <div className="flex flex-wrap gap-2 mb-6">
         {visibleFilters.map((f) => (
           <Link
             key={f.key}
-            href={f.key === "all" ? "/invest" : `/invest?filter=${f.key}`}
+            href={hrefFor(f.key)}
             aria-current={filter === f.key ? "page" : undefined}
             className={`chip transition ${filter === f.key ? "bg-brand-navy text-white" : "chip-navy hover:bg-brand-mist"}`}
           >

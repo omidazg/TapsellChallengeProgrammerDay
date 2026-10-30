@@ -79,13 +79,19 @@ function useInviteLink(inviteToken: string, teamName: string) {
 export function TeamPanel({
   team,
   currentUserId,
-  registrationOpen,
   formingOpen,
+  lockTitle,
+  lockDesc,
+  progress,
 }: {
   team: TeamWithMembers;
   currentUserId: string;
-  registrationOpen: boolean;
+  /** تشکیل و تغییر اعضا الان ممکن است (بخش تیم باز و محصولی ثبت نهایی نشده) */
   formingOpen: boolean;
+  lockTitle: string;
+  lockDesc: string;
+  /** پیشرفت تیم در هر محور */
+  progress: { trackId: string; trackName: string; ideaDone: boolean; productDone: boolean }[];
 }) {
   const size = team.members.length;
   const full = size >= TEAM_FULL;
@@ -147,26 +153,34 @@ export function TeamPanel({
           <InviteForm full={full} solo={solo} pendingInvites={team.invites} inviteToken={team.inviteToken ?? ""} />
         ) : (
           <Locked
-            title="دعوت و پیوستن به تیم بسته است"
-            desc="فاز اتاق ایده به پایان رسیده؛ برای تغییر ترکیب تیم با برگزارکننده هماهنگ کن."
+            title={lockTitle}
+            desc={lockDesc}
           />
         )}
 
-        {registrationOpen && <LeaveButton lastMember={size <= 1} />}
+        {formingOpen && <LeaveButton lastMember={size <= 1} />}
       </div>
 
       <div className="space-y-4">
         <div className="card p-5 anim-rise">
           <h3 className="mb-2 font-black text-brand-navy">🤝 همه هم‌اختیارند</h3>
           <p className="text-sm text-brand-slate leading-7">
-            هر عضو تیم می‌تواند ایده و محصول را ثبت و ویرایش کند، محصول را به صف حراج بفرستد، جایگاه تبلیغاتی بخرد و
+            هر عضو تیم می‌تواند ایده و محصول را ثبت و ویرایش کند، محصول را به صف حراج بفرستد، برای جایگاه تبلیغاتی پیشنهاد بدهد و
             درخواست انتشار در بازار استودیو بدهد. هر خرجی از کیف سکهٔ خود همان نفر برداشته می‌شود.
           </p>
         </div>
         <div className="card p-5 anim-rise">
-          <h3 className="mb-3 font-black text-brand-navy">پیشرفت تیم</h3>
-          <ChecklistItem done={!!team.idea?.submittedAt} label="ایده ثبت شده؟" href="/idea" />
-          <ChecklistItem done={!!team.product?.submittedAt} label="محصول ثبت شده؟" href="/build" />
+          <h3 className="mb-1 font-black text-brand-navy">پیشرفت تیم</h3>
+          <p className="mb-3 text-xs text-brand-slate leading-6">هر تیم با سرعت خودش جلو می‌رود: اول ایده، بعد محصول. می‌توانی در چند محور با ایده و محصول جدا شرکت کنی.</p>
+          <div className="space-y-3">
+            {progress.map((p) => (
+              <div key={p.trackId}>
+                <div className="mb-1 text-xs font-bold text-brand-slate">{p.trackName}</div>
+                <ChecklistItem done={p.ideaDone} label="ایده ثبت شده؟" href={`/idea?track=${encodeURIComponent(p.trackId)}`} />
+                <ChecklistItem done={p.productDone} label="محصول ثبت شده؟" href={`/build?track=${encodeURIComponent(p.trackId)}`} />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -212,7 +226,7 @@ function TeamSizeCard({
         ) : (
           <>
             تیم‌ها ۱ تا ۳ نفره‌اند و تعداد اعضای تیم در امتیاز هیچ اثری ندارد.
-            {!full && formingOpen && " اگر خواستی، تا پایان فاز «اتاق ایده» هم‌تیمی دعوت کن."}
+            {!full && formingOpen && " اگر خواستی، تا پیش از ثبت نهایی محصول هم‌تیمی دعوت کن."}
           </>
         )}
       </p>
@@ -224,7 +238,7 @@ function TeamSizeCard({
           type="button"
           disabled={pending}
           onClick={() =>
-            run(openSoloTeamAction, "تیمت برای پذیرفتن هم‌تیمی باز شود؟ دیگر «شرکت فردی» نیستی و تا پایان فاز «اتاق ایده» می‌توانی هم‌تیمی دعوت کنی.")
+            run(openSoloTeamAction, "تیمت برای پذیرفتن هم‌تیمی باز شود؟ دیگر «شرکت فردی» نیستی و تا پیش از ثبت نهایی محصول می‌توانی هم‌تیمی دعوت کنی.")
           }
           className="btn-cyan"
         >

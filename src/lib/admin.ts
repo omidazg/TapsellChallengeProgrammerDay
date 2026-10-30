@@ -30,7 +30,11 @@ export const SETTING_KEYS = [
   "adslot_price_featured",
   "adslot_price_push",
   "adslot_max_per_team",
+  "adslot_hours",
   "market_starts_at",
+  "rating_min_comments",
+  "prize_min_entries",
+  "prize_min_jury",
 ] as const;
 export type SettingKey = (typeof SETTING_KEYS)[number];
 
@@ -40,11 +44,15 @@ export const SETTING_LABELS: Record<SettingKey, string> = {
   max_bought_coins_per_user: "سقف خرید سکه برای هر نفر",
   bid_increment: "حداقل افزایش پیشنهاد حراج",
   auction_duration_sec: "مدت هر حراج (ثانیه)",
-  adslot_price_banner: "قیمت یک ساعت بنر بالای بازار (سکه)",
-  adslot_price_featured: "قیمت یک ساعت کارت محصول ویژه (سکه)",
-  adslot_price_push: "قیمت اعلان به همه (سکه)",
+  adslot_price_banner: "کمترین پیشنهاد بنر بالای بازار (سکه)",
+  adslot_price_featured: "کمترین پیشنهاد کارت محصول ویژه (سکه)",
+  adslot_price_push: "کمترین پیشنهاد اعلان به همه (سکه)",
   adslot_max_per_team: "سقف جایگاه تبلیغاتی هر تیم",
-  market_starts_at: "زمان شروع روز بازار",
+  adslot_hours: "طول هر بازهٔ جایگاه تبلیغاتی (ساعت)",
+  market_starts_at: "زمان شروع نخستین جایگاه تبلیغاتی",
+  rating_min_comments: "حداقل تعداد نظر برای حساب‌شدن امتیاز ستاره‌ای",
+  prize_min_entries: "حداقل ثبت در یک جایزه (کمتر از این، حداقل نمرهٔ داوری لازم است)",
+  prize_min_jury: "حداقل نمرهٔ داوری برای جایزه با شرکت‌کنندهٔ کم (۰ تا ۱۰۰)",
 };
 
 const SETTING_DEFAULTS: Record<SettingKey, string> = {
@@ -57,7 +65,11 @@ const SETTING_DEFAULTS: Record<SettingKey, string> = {
   adslot_price_featured: String(DEFAULTS.adslotPriceFeatured),
   adslot_price_push: String(DEFAULTS.adslotPricePush),
   adslot_max_per_team: String(DEFAULTS.adslotMaxPerTeam),
+  adslot_hours: String(DEFAULTS.adslotHours),
   market_starts_at: "",
+  rating_min_comments: String(DEFAULTS.ratingMinComments),
+  prize_min_entries: String(DEFAULTS.prizeMinEntries),
+  prize_min_jury: String(DEFAULTS.prizeMinJury),
 };
 
 /** مقادیر جاری تنظیمات قابل‌تغییر بازی، با مقدار پیش‌فرض در نبود ردیف */
@@ -67,6 +79,14 @@ export async function getSettingsMap(): Promise<Record<SettingKey, string>> {
   const out = {} as Record<SettingKey, string>;
   for (const key of SETTING_KEYS) out[key] = map[key] ?? SETTING_DEFAULTS[key];
   return out;
+}
+
+/** دلیل‌های دفتر کل که یعنی کسی سکه خرج کرده است؛ از اولین خرج، کلیدهای اقتصادی قفل می‌شوند. */
+const SPEND_REASONS = ["INVEST", "PURCHASE", "ADSLOT", "AUCTION_WIN"];
+
+/** آیا تنظیمات اقتصادی قفل است؟ (دفتر کل دست‌کم یک خرج سکه دارد) */
+export async function areEconomySettingsLocked(): Promise<boolean> {
+  return (await prisma.ledgerEntry.count({ where: { reason: { in: SPEND_REASONS } } })) > 0;
 }
 
 export async function setSetting(key: string, value: string) {
@@ -79,45 +99,22 @@ export async function setSetting(key: string, value: string) {
  * (که مالک آن تیم دیگری است) مجموعهٔ کلیدهای بالا را با zod ثابت اعتبارسنجی می‌کند؛
  * این کلیدها با سرور-اکشن مستقل خودشان (scheduler-actions.ts) ذخیره می‌شوند.
  */
-export const SCHEDULER_SETTING_KEYS = [
-  "auto_advance",
-  "auto_auction",
-  "auction_gap_sec",
-  "phase_hours_IDEATION",
-  "phase_hours_SEED_ROUND",
-  "phase_hours_BUILD",
-  "phase_hours_MARKET",
-] as const;
+export const SCHEDULER_SETTING_KEYS = ["auto_auction", "auction_gap_sec"] as const;
 export type SchedulerSettingKey = (typeof SCHEDULER_SETTING_KEYS)[number];
 
 export const SCHEDULER_SETTING_LABELS: Record<SchedulerSettingKey, string> = {
-  auto_advance: "پیشروی خودکار فاز",
-  auto_auction: "شروع خودکار حراج بعدیِ صف (در روز بازار)",
+  auto_auction: "شروع خودکار حراج بعدیِ صف (وقتی بازار باز است)",
   auction_gap_sec: "فاصلهٔ شروع حراج بعدی (ثانیه)",
-  phase_hours_IDEATION: "مدت فاز اتاق ایده (ساعت)",
-  phase_hours_SEED_ROUND: "مدت فاز دور حمایت (ساعت)",
-  phase_hours_BUILD: "مدت فاز ساخت (ساعت)",
-  phase_hours_MARKET: "مدت فاز روز بازار (ساعت)",
 };
 
 export const SCHEDULER_SETTING_KINDS: Record<SchedulerSettingKey, "boolean" | "number"> = {
-  auto_advance: "boolean",
   auto_auction: "boolean",
   auction_gap_sec: "number",
-  phase_hours_IDEATION: "number",
-  phase_hours_SEED_ROUND: "number",
-  phase_hours_BUILD: "number",
-  phase_hours_MARKET: "number",
 };
 
 const SCHEDULER_SETTING_DEFAULTS: Record<SchedulerSettingKey, string> = {
-  auto_advance: "0",
   auto_auction: "1",
   auction_gap_sec: "60",
-  phase_hours_IDEATION: "24",
-  phase_hours_SEED_ROUND: "24",
-  phase_hours_BUILD: "48",
-  phase_hours_MARKET: "8",
 };
 
 /** مقادیر جاری تنظیمات زمان‌بند، با مقدار پیش‌فرض در نبود ردیف */

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./db";
-import { getPhase, phaseIndex } from "./phase";
+import { moduleOpen } from "./module-state";
 import { ROLES, type RoleKey } from "./constants";
 import { notifyUser } from "./notifications";
 import { fa } from "./persian";
@@ -16,8 +16,8 @@ export type TeamResult = { ok?: boolean; error?: string };
 
 const ERR = {
   noUser: "کاربر یافت نشد.",
-  phase: "این کار فقط تا پایان فاز «اتاق ایده» ممکن است.",
-  leavePhase: "خروج از تیم فقط در فاز ثبت‌نام و تیم امکان‌پذیر است.",
+  phase: "بخش تیم فعلاً باز نیست.",
+  leavePhase: "بخش تیم فعلاً باز نیست و خروج از تیم ممکن نیست.",
   alreadyInTeam: "تو قبلاً عضو یک تیم هستی.",
   notInTeam: "تو عضو هیچ تیمی نیستی.",
   teamFull: "تیم پر است؛ ظرفیت هر تیم سه نفر است.",
@@ -28,6 +28,7 @@ const ERR = {
   inviteDuplicate: "این ایمیل قبلاً دعوت شده است.",
   inviteInvalid: "این دعوت‌نامه دیگر معتبر نیست.",
   leaveHasIdea: "تیمت ایده یا محصول ثبت کرده؛ برای ترک تیم با برگزارکننده هماهنگ کن.",
+  rosterLocked: "این تیم محصولش را ثبت نهایی کرده و اعضایش دیگر عوض نمی‌شوند.",
   raced: "وضعیت تیم تغییر کرده است؛ صفحه را تازه کن و دوباره تلاش کن.",
   teamNotFound: "تیمی با این لینک پیدا نشد.",
   inviteLinkSolo: "تیم فردی لینک دعوت ندارد؛ اول تیمت را برای هم‌تیمی باز کن.",
@@ -52,8 +53,8 @@ export async function getTeamWithMembers(teamId: string) {
     where: { id: teamId },
     include: {
       members: { orderBy: { createdAt: "asc" }, select: PUBLIC_MEMBER },
-      idea: true,
-      product: true,
+      ideas: true,
+      products: true,
       invites: {
         where: { status: "PENDING" },
         include: { inviter: { select: PUBLIC_MEMBER } },
@@ -133,15 +134,14 @@ export async function nextAutoTeamName() {
   return `تیم شمارهٔ ${n}`;
 }
 
-async function isRegistrationPhase() {
-  const { phase } = await getPhase();
-  return phase === "REGISTRATION";
+/** تشکیل/تکمیل تیم (ساخت، دعوت، پیوستن) تا وقتی بخش «تیم» باز است ممکن است. */
+async function isTeamFormingOpen(teamId?: string | null) {
+  return moduleOpen("team", teamId);
 }
 
-/** تشکیل/تکمیل تیم (ساخت، دعوت، پیوستن) تا پایان فاز «اتاق ایده» باز است */
-async function isTeamFormingPhase() {
-  const { phase } = await getPhase();
-  return phaseIndex(phase) <= phaseIndex("IDEATION");
+/** اعضای تیمی که محصولش را ثبت نهایی کرده دیگر عوض نمی‌شوند (مگر با بازکردن محصول برای ویرایش). */
+async function teamRosterLocked(teamId: string): Promise<boolean> {
+  return (await prisma.product.count({ where: { teamId, submittedAt: { not: null } } })) > 0;
 }
 
 /** به اعضای فعلی تیم (به‌جز خود عضو تازه) اطلاع می‌دهد که عضو جدیدی پیوست */
@@ -175,6 +175,7 @@ async function assertJoinableTx(tx: Prisma.TransactionClient, teamId: string) {
   const team = await tx.team.findUnique({ where: { id: teamId }, select: { solo: true } });
   if (!team) throw new Error("GONE");
   if (team.solo) throw new Error("SOLO");
+  if ((await tx.product.count({ where: { teamId, submittedAt: { not: null } } })) > 0) throw new Error("LOCKED");
   const memberCount = await tx.user.count({ where: { teamId } });
   if (memberCount >= TEAM_FULL) throw new Error("FULL");
 }
@@ -189,9 +190,9 @@ async function deleteEmptyTeamTx(tx: Prisma.TransactionClient, teamId: string): 
   if ((await tx.user.count({ where: { teamId } })) > 0) return false;
   const team = await tx.team.findUnique({
     where: { id: teamId },
-    select: { idea: { select: { id: true } }, product: { select: { id: true } } },
+    select: { ideas: { select: { id: true } }, products: { select: { id: true } } },
   });
-  if (!team || team.idea || team.product) return false;
+  if (!team || team.ideas.length > 0 || team.products.length > 0) return false;
   await tx.teamInvite.deleteMany({ where: { teamId } });
   await tx.adSlotBid.deleteMany({ where: { teamId } });
   await tx.collusionFlag.deleteMany({ where: { OR: [{ teamId }, { otherTeamId: teamId }] } });
@@ -209,7 +210,7 @@ const createTeamSchema = z.object({
 export async function createTeamForUser(userId: string, name: string): Promise<TeamResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return { error: ERR.noUser };
-  if (!(await isTeamFormingPhase())) return { error: ERR.phase };
+  if (!(await isTeamFormingOpen(user.teamId))) return { error: ERR.phase };
   if (user.teamId) return { error: ERR.alreadyInTeam };
 
   const parsed = createTeamSchema.safeParse({ name });
@@ -241,7 +242,7 @@ export async function createTeamForUser(userId: string, name: string): Promise<T
 export async function goSolo(userId: string): Promise<TeamResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return { error: ERR.noUser };
-  if (!(await isTeamFormingPhase())) return { error: ERR.phase };
+  if (!(await isTeamFormingOpen(user.teamId))) return { error: ERR.phase };
 
   if (user.teamId) {
     const teamId = user.teamId;
@@ -288,7 +289,7 @@ export async function goSolo(userId: string): Promise<TeamResult> {
 export async function openSoloTeam(userId: string): Promise<TeamResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return { error: ERR.noUser };
-  if (!(await isTeamFormingPhase())) return { error: ERR.phase };
+  if (!(await isTeamFormingOpen(user.teamId))) return { error: ERR.phase };
   if (!user.teamId) return { error: ERR.notInTeam };
   await prisma.team.update({ where: { id: user.teamId }, data: { solo: false } });
   return { ok: true };
@@ -301,11 +302,11 @@ export async function openSoloTeam(userId: string): Promise<TeamResult> {
 export async function joinMatchmaking(userId: string): Promise<TeamResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return { error: ERR.noUser };
-  if (!(await isTeamFormingPhase())) return { error: ERR.phase };
+  if (!(await isTeamFormingOpen(user.teamId))) return { error: ERR.phase };
   if (user.teamId) return { error: ERR.alreadyInTeam };
 
   const teams = await prisma.team.findMany({
-    where: { solo: false },
+    where: { solo: false, products: { none: { submittedAt: { not: null } } } },
     include: { members: { select: { role: true } } },
     orderBy: { createdAt: "asc" },
   });
@@ -345,8 +346,9 @@ const inviteSchema = z.object({
 export async function inviteToTeam(userId: string, email: string): Promise<TeamResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return { error: ERR.noUser };
-  if (!(await isTeamFormingPhase())) return { error: ERR.phase };
+  if (!(await isTeamFormingOpen(user.teamId))) return { error: ERR.phase };
   if (!user.teamId) return { error: "ابتدا باید عضو یک تیم باشی." };
+  if (await teamRosterLocked(user.teamId)) return { error: ERR.rosterLocked };
 
   const parsed = inviteSchema.safeParse({ email });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "ایمیل نامعتبر است." };
@@ -391,7 +393,6 @@ export async function inviteToTeam(userId: string, email: string): Promise<TeamR
 export async function acceptInvite(userId: string, inviteId: string): Promise<TeamResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return { error: ERR.noUser };
-  if (!(await isTeamFormingPhase())) return { error: ERR.phase };
   if (user.teamId) return { error: ERR.alreadyInTeam };
 
   if (typeof inviteId !== "string" || !inviteId) return { error: ERR.inviteInvalid };
@@ -399,6 +400,8 @@ export async function acceptInvite(userId: string, inviteId: string): Promise<Te
   if (!invite || invite.status !== "PENDING" || invite.email !== user.email.trim().toLowerCase()) {
     return { error: ERR.inviteInvalid };
   }
+  // استثنای بخش تیم برای تیم مقصد است، چون پیوندنده هنوز تیمی ندارد.
+  if (!(await isTeamFormingOpen(invite.teamId))) return { error: ERR.phase };
   if (invite.team.solo) return { error: ERR.soloClosed };
 
   try {
@@ -416,6 +419,7 @@ export async function acceptInvite(userId: string, inviteId: string): Promise<Te
     const m = e instanceof Error ? e.message : "";
     if (m === "FULL") return { error: ERR.targetFull };
     if (m === "SOLO") return { error: ERR.soloClosed };
+    if (m === "LOCKED") return { error: ERR.rosterLocked };
     if (m === "RACED") return { error: ERR.alreadyInTeam };
     if (m === "INVALID" || m === "GONE") return { error: ERR.inviteInvalid };
     return { error: ERR.raced };
@@ -437,12 +441,13 @@ function validTokenShape(token: unknown): token is string {
 export async function joinByInviteToken(userId: string, token: string): Promise<TeamResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return { error: ERR.noUser };
-  if (!(await isTeamFormingPhase())) return { error: ERR.phase };
   if (user.teamId) return { error: ERR.alreadyInTeam };
 
   if (!validTokenShape(token)) return { error: ERR.teamNotFound };
   const team = await prisma.team.findUnique({ where: { inviteToken: token }, select: { id: true, solo: true } });
   if (!team) return { error: ERR.teamNotFound };
+  // استثنای بخش تیم برای تیم مقصد است، چون پیوندنده هنوز تیمی ندارد.
+  if (!(await isTeamFormingOpen(team.id))) return { error: ERR.phase };
   if (team.solo) return { error: ERR.soloClosed };
 
   try {
@@ -463,6 +468,7 @@ export async function joinByInviteToken(userId: string, token: string): Promise<
     const m = e instanceof Error ? e.message : "";
     if (m === "FULL") return { error: ERR.targetFull };
     if (m === "SOLO") return { error: ERR.soloClosed };
+    if (m === "LOCKED") return { error: ERR.rosterLocked };
     if (m === "GONE") return { error: ERR.teamNotFound };
     if (m === "RACED") return { error: ERR.alreadyInTeam };
     return { error: ERR.raced };
@@ -478,7 +484,7 @@ export async function joinByInviteToken(userId: string, token: string): Promise<
 export async function regenerateInviteToken(userId: string): Promise<TeamResult> {
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { team: { select: { solo: true } } } });
   if (!user) return { error: ERR.noUser };
-  if (!(await isTeamFormingPhase())) return { error: ERR.phase };
+  if (!(await isTeamFormingOpen(user.teamId))) return { error: ERR.phase };
   if (!user.teamId || !user.team) return { error: ERR.notInTeam };
   if (user.team.solo) return { error: ERR.inviteLinkSolo };
   await prisma.team.update({ where: { id: user.teamId }, data: { inviteToken: newInviteToken() } });
@@ -545,12 +551,15 @@ export async function declineInvite(userId: string, inviteId: string): Promise<T
 export async function leaveTeam(userId: string): Promise<TeamResult> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return { error: ERR.noUser };
-  if (!(await isRegistrationPhase())) return { error: ERR.leavePhase };
+  if (!(await isTeamFormingOpen(user.teamId))) return { error: ERR.leavePhase };
   if (!user.teamId) return { error: ERR.notInTeam };
 
   const teamId = user.teamId;
-  const team = await prisma.team.findUnique({ where: { id: teamId }, include: { idea: true, product: true } });
-  if (team?.idea || team?.product) return { error: ERR.leaveHasIdea };
+  const team = await prisma.team.findUnique({ where: { id: teamId }, include: { ideas: { select: { id: true } }, products: { select: { id: true } } } });
+  if (await teamRosterLocked(teamId)) return { error: ERR.leaveHasIdea };
+  // تیم با ایده یا محصول نباید با رفتن آخرین عضو بی‌صاحب بماند؛ آن‌وقت deleteEmptyTeamTx حذفش نمی‌کند.
+  const others = await prisma.user.count({ where: { teamId, NOT: { id: userId } } });
+  if (others === 0 && team && (team.ideas.length > 0 || team.products.length > 0)) return { error: ERR.leaveHasIdea };
 
   await prisma.$transaction(async (tx) => {
     await tx.user.update({ where: { id: userId }, data: { teamId: null } });
@@ -605,10 +614,10 @@ export async function adminMergeTeams(teamAId: string, teamBId: string): Promise
 
   const [teamA, teamB] = await Promise.all([
     prisma.team.findUnique({ where: { id: teamAId }, include: { members: true } }),
-    prisma.team.findUnique({ where: { id: teamBId }, include: { members: true, idea: true, product: true } }),
+    prisma.team.findUnique({ where: { id: teamBId }, include: { members: true, ideas: { select: { id: true } }, products: { select: { id: true } } } }),
   ]);
   if (!teamA || !teamB) return { error: "یکی از تیم‌ها پیدا نشد." };
-  if (teamB.idea || teamB.product) {
+  if (teamB.ideas.length > 0 || teamB.products.length > 0) {
     return { error: "تیم دوم ایده یا محصول ثبت کرده؛ ادغام ممکن نیست." };
   }
   const total = teamA.members.length + teamB.members.length;
