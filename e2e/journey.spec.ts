@@ -152,7 +152,7 @@ test("full journey: register → team/solo → idea → support → build → bu
   // ---------- ۹) نتایج: بخش نتایج به‌طور پیش‌فرض مخفی است و برگزارکننده بازش می‌کند ----------
   await setModuleViaAdmin(adminPage, "results", "ro");
   await page.goto("/results");
-  await expect(page.getByRole("heading", { name: /رتبه‌بندی نهایی همهٔ تیم‌ها/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /رتبه‌بندی کلی همهٔ محورها/ })).toBeVisible();
 
   await rivalContext.close();
   await adminContext.close();

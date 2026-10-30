@@ -111,8 +111,8 @@ export async function endContestViaAdmin(page: Page) {
   await page.goto("/admin/control");
   await page.getByRole("button", { name: "پایان مسابقه" }).click();
   // پنجرهٔ تأیید هم دکمه‌ای با همین نام دارد.
-  await page.getByRole("dialog").getByRole("button", { name: "پایان مسابقه" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "مسابقه تمام شد" })).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("alertdialog").getByRole("button", { name: "پایان مسابقه" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "مسابقه تمام شد" }).first()).toBeVisible({ timeout: 60_000 });
 }
 
 /**
