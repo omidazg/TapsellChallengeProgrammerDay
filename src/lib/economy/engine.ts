@@ -131,10 +131,10 @@ export function compareRank(
   return ka < kb ? -1 : ka > kb ? 1 : 0;
 }
 
-/** نسبت لگاریتمی به بهترین مقدار: log(1+x) / log(1+max) */
+/** نسبت لگاریتمی به بهترین مقدار: log(1+x) / log(1+max)، حداکثر ۱ */
 export function logRatio(value: number, max: number): number {
   if (max <= 0 || value <= 0) return 0;
-  return Math.log1p(value) / Math.log1p(max);
+  return Math.min(1, Math.log1p(value) / Math.log1p(max));
 }
 
 /** موتور اصلی امتیازدهی: همهٔ ثبت‌ها را می‌گیرد و نتیجهٔ کامل رتبه‌بندی‌شده برمی‌گرداند. */
@@ -162,12 +162,14 @@ export function scoreGame(config: EconomyConfig, teams: TeamInput[]): ScoreOutpu
   });
 
   const results: TeamResult[] = [];
-  const ratio = (value: number, max: number) => (max > 0 ? value / max : 0);
+  const ratio = (value: number, max: number) => (max > 0 ? Math.min(1, value / max) : 0);
 
   for (const trackId of new Set(partials.map((p) => p.trackId))) {
     const group = partials.filter((p) => p.trackId === trackId);
     const w: TrackWeights = config.trackWeights[trackId] ?? DEFAULT_WEIGHTS;
-    const maxOf = (pick: (t: (typeof group)[number]) => number) => Math.max(0, ...group.map(pick));
+    // بهترین مقدار محور را فقط رقیب‌های واقعی (دارای محصول ثبت‌شده) تعیین می‌کنند؛ ثبت فقط‌ایده سقف را بالا نمی‌برد.
+    const contenders = group.some((t) => t.productId) ? group.filter((t) => t.productId) : group;
+    const maxOf = (pick: (t: (typeof group)[number]) => number) => Math.max(0, ...contenders.map(pick));
     const maxJury = maxOf((t) => t.juryAdjusted);
     const maxPeople = maxOf((t) => t.people);
     const maxAi = maxOf((t) => t.ai ?? 0);

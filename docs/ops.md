@@ -35,7 +35,9 @@
 
 ```bash
 # اجرای یک‌بارهٔ دستی (مثلاً بلافاصله قبل از یک تغییر پرخطر):
-docker compose run --rm backup node /app/scripts/backup.mjs --once
+# (داخل کانتینر backup که در حال اجراست؛ `run` اینجا --once را نادیده می‌گیرد
+#  و حلقهٔ بی‌پایان را شروع می‌کند. deploy.sh هم پیش از migrate همین را اجرا می‌کند.)
+docker compose exec -T -u node backup node /app/scripts/backup.mjs --once
 
 # دیدن لاگ‌های بک‌آپ خودکار:
 docker compose logs -f backup
@@ -55,7 +57,12 @@ SERVER=root@188.121.125.246 KEY=~/.ssh/tapsell_qeysar COUNT=10 ./deploy/pull-bac
 ```
 
 بک‌آپ‌ها در `./backups/` محلی ذخیره می‌شوند (skip می‌کند اگر فایل از قبل
-موجود باشد).
+موجود باشد). فایل‌های آپلودی (`/srv/arena/data/uploads`) در بک‌آپ دیتابیس
+نیستند؛ همین اسکریپت هر بار یک `uploads-<تاریخ>.tgz` هم از آن‌ها می‌کشد.
+بک‌آپ‌های روی سرور هم‌دیسک با دیتابیس‌اند، پس این اسکریپت را مرتب اجرا کنید.
+
+اگر `ALERT_WEBHOOK_URL` در `.env` باشد، هر بک‌آپ ناموفق یک JSON POST به آن
+می‌فرستد.
 
 ## ۲. ریستور (Restore) — تمرین و اجرای واقعی
 
@@ -65,7 +72,8 @@ SERVER=root@188.121.125.246 KEY=~/.ssh/tapsell_qeysar COUNT=10 ./deploy/pull-bac
 deploy/restore.sh /srv/arena/backups/dev-20260923-163559.db.gz
 ```
 
-این اسکریپت: `web` را متوقف می‌کند، یک نسخهٔ ایمنی از دیتابیس فعلی نگه
+این اسکریپت: اول با `gunzip -t` سالم بودن فایل gz را چک می‌کند (پیش از
+متوقف کردن هر چیزی)، `web` را متوقف می‌کند، یک نسخهٔ ایمنی از دیتابیس فعلی نگه
 می‌دارد (`dev.db.before-restore-<timestamp>`)، بک‌آپ را gunzip و جایگزین
 می‌کند، با یک کانتینر یک‌بارهٔ `migrate` (که `better-sqlite3` دارد)
 `PRAGMA integrity_check` اجرا می‌کند، و اگر سالم بود `web` را دوباره بالا
@@ -238,7 +246,7 @@ ssh -i ~/.ssh/tapsell_qeysar root@188.121.125.246 'bash /root/harden-server.sh'
 | `BACKUP_DIR` | `/backups` | `scripts/backup.mjs`, سرویس `backup` |
 | `BACKUP_INTERVAL_MIN` | `15` | `scripts/backup.mjs`, سرویس `backup` |
 | `BACKUP_KEEP` | `96` | `scripts/backup.mjs`, سرویس `backup` |
-| `ALERT_WEBHOOK_URL` | (خالی = بدون هشدار) | `deploy/uptime-check.sh` |
+| `ALERT_WEBHOOK_URL` | (خالی = بدون هشدار) | `deploy/uptime-check.sh`, `scripts/backup.mjs` |
 | `FALLBACK_URL` | `.../api/phase` | `deploy/uptime-check.sh` |
 | `TIMEOUT_SECS` | `10` | `deploy/uptime-check.sh` |
 | `COMPOSE_DIR` | `/srv/arena/app` | `deploy/restore.sh` |

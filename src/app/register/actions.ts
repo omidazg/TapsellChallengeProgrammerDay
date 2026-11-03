@@ -19,6 +19,7 @@ import {
 } from "@/lib/rate-limit";
 import { normalizePhone } from "@/lib/phone";
 import { requestOtp, verifyOtp, signPhoneProof, checkPhoneProof } from "@/lib/otp";
+import { smsEnabled } from "@/lib/sms";
 import { toEnDigits } from "@/lib/persian";
 import { DEPARTMENTS } from "./departments";
 import { safeNext } from "./next";
@@ -84,8 +85,23 @@ function verifiedPhone(raw: string | null | undefined, proof: string | null | un
   return { phone };
 }
 
+const LISTED_PHONE = "برای این ایمیل باید همان شمارهٔ موبایلی را که برگزارکننده در لیست سفید ثبت کرده با کد پیامکی تأیید کنی.";
+
+/**
+ * ایمیل ثبت‌نام هیچ‌وقت تأیید نمی‌شود؛ پس اگر ردیف لیست سفیدِ این ایمیل شماره دارد، فقط کسی
+ * که همان شماره را با کد پیامکی تأیید کرده حساب را می‌سازد (وگرنه هر غریبه‌ای با ایمیل فهرست ثبت‌نام می‌کرد).
+ * shortcut: ردیف بدون شماره، یا وقتی پیامک خاموش است، هنوز با ایمیل تنها ثبت‌نام می‌شود؛ رفع کامل = تأیید ایمیل.
+ */
+async function listedPhoneMismatch(email: string, phone: string | null): Promise<RegisterFailure | null> {
+  if (!smsEnabled()) return null;
+  const listed = await prisma.allowedEmail.findUnique({ where: { email }, select: { phone: true } });
+  return listed?.phone && listed.phone !== phone ? fieldFail("phone", LISTED_PHONE) : null;
+}
+
 /** ارسال کد تأیید به شمارهٔ ثبت‌نام */
 export async function requestRegisterOtpAction(rawPhone: string): Promise<{ ok: true; resendSec: number; devCode?: string } | { error: string }> {
+  // این مرحله بدون ورود است و پیامک هزینه دارد؛ وقتی ثبت‌نام بسته است کدی فرستاده نمی‌شود
+  if (!(await moduleOpen("registration"))) return { error: "ثبت‌نام بسته شده است." };
   const phone = normalizePhone(rawPhone);
   if (!phone) return { error: "شمارهٔ موبایل معتبر نیست؛ مثلاً ۰۹۱۲۱۲۳۴۵۶۷." };
   const ipLimit = rateLimit("otp:ip", await clientIp(), OTP_IP_RULE());
@@ -131,6 +147,8 @@ export async function checkRegisterEmailAction(
   const ph = verifiedPhone(rawPhone, phoneProof);
   if ("error" in ph) return ph;
   if (ph.phone && (await prisma.user.findUnique({ where: { phone: ph.phone }, select: { id: true } }))) return fieldFail("phone", PHONE_TAKEN);
+  const mismatch = await listedPhoneMismatch(email.data, ph.phone);
+  if (mismatch) return mismatch;
   // شمارهٔ تأییدشده‌ای که در لیست سفید است هم کافی است
   if (ph.phone && (await canRegister(email.data, ph.phone))) return { ok: true };
   const state: AccessState = await accessState(email.data);
@@ -182,12 +200,12 @@ export async function registerAction(input: RegisterInput): Promise<RegisterFail
     return fieldFail("email", EMAIL_TAKEN, "LOGIN");
   }
 
-  // شماره: یا همان که کاربر تأیید کرده، یا شماره‌ای که برگزارکننده کنار ایمیلش در لیست سفید ثبت کرده
-  let phone = ph.phone;
-  if (!phone) {
-    const listed = await prisma.allowedEmail.findUnique({ where: { email: data.email }, select: { phone: true } });
-    if (listed?.phone && !(await prisma.user.findUnique({ where: { phone: listed.phone }, select: { id: true } }))) phone = listed.phone;
-  } else if (await prisma.user.findUnique({ where: { phone }, select: { id: true } })) {
+  const mismatch = await listedPhoneMismatch(data.email, ph.phone);
+  if (mismatch) return mismatch;
+
+  // فقط شماره‌ای که کاربر خودش با کد تأیید کرده وصل می‌شود؛ شمارهٔ لیست سفید بدون تأیید وصل نمی‌شود تا ورود پیامکی آن شماره به حساب غریبه نرسد
+  const phone = ph.phone;
+  if (phone && (await prisma.user.findUnique({ where: { phone }, select: { id: true } }))) {
     return fieldFail("phone", PHONE_TAKEN);
   }
 

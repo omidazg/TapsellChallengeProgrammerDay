@@ -19,7 +19,8 @@ export function aiClient(): Anthropic | null {
   if (!key) return null;
   // ANTHROPIC_BASE_URL اختیاری است: برای هدایت به یک گیت‌وی سازگار (مثل متیس) به‌جای api.anthropic.com مستقیم.
   const baseURL = process.env.ANTHROPIC_BASE_URL || undefined;
-  return new Anthropic({ apiKey: key, baseURL });
+  // پیش‌فرض SDK ده دقیقه با ۲ تلاش دوباره است؛ گیت‌وی گیرکرده نباید درخواست ثبت نهایی را نیم ساعت معطل کند.
+  return new Anthropic({ apiKey: key, baseURL, timeout: 60_000, maxRetries: 1 });
 }
 
 export const AI_MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5";

@@ -10,26 +10,6 @@
  */
 
 import { createTempDb, type TempDb } from "./lib/temp-db";
-import { createRequire } from "node:module";
-import path from "node:path";
-
-// اگر ماژولی پکیج `server-only` را import کند بیرون از Next خطا می‌دهد؛
-// آن را با یک ماژول خالی در کش require جایگزین می‌کنیم.
-const nodeRequire = createRequire(__filename);
-try {
-  const id = nodeRequire.resolve("server-only");
-  nodeRequire.cache[id] = {
-    id,
-    filename: id,
-    path: path.dirname(id),
-    loaded: true,
-    exports: {},
-    children: [],
-    paths: [],
-  } as unknown as NodeJS.Module;
-} catch {
-  // نصب نیست؛ کاری لازم نیست
-}
 
 let tempDb: TempDb | null = null;
 

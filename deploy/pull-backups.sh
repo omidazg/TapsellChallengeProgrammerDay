@@ -6,6 +6,7 @@
 #
 # Optional:
 #   COUNT=10                 how many of the newest *.gz backups to pull (default 5)
+# Also pulls a tarball of /srv/arena/data/uploads as uploads-<date>.tgz.
 #   REMOTE_BACKUP_DIR=/srv/arena/backups
 #   LOCAL_DIR=./backups
 set -euo pipefail
@@ -38,6 +39,13 @@ echo "$FILES" | while IFS= read -r f; do
   echo "    pulling $f"
   "${SCP[@]}" "$SERVER:$REMOTE_BACKUP_DIR/$f" "$LOCAL_DIR/$f"
 done
+
+# Uploaded images/files are not in the db backups; take them off the server too.
+UPLOADS_TGZ="$LOCAL_DIR/uploads-$(date +%Y%m%d-%H%M).tgz"
+echo "==> Pulling /srv/arena/data/uploads -> $UPLOADS_TGZ"
+"${SSH[@]}" "tar -czf - -C /srv/arena/data uploads" > "$UPLOADS_TGZ.part" ||
+  { rm -f "$UPLOADS_TGZ.part"; echo "!! uploads tarball failed" >&2; exit 1; }
+mv "$UPLOADS_TGZ.part" "$UPLOADS_TGZ"
 
 echo "==> Done. Local backups in $LOCAL_DIR:"
 ls -la "$LOCAL_DIR"

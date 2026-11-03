@@ -25,7 +25,7 @@ const IDS_TTL_MS = 30_000;
  */
 function stateIpRule(): RateRule {
   const n = Number(process.env.AUCTION_STATE_IP_RATE);
-  return { limit: Number.isFinite(n) && n > 0 ? Math.floor(n) : 1000, windowMs: 10_000 };
+  return { limit: Number.isFinite(n) && n > 0 ? Math.floor(n) : 5000, windowMs: 10_000 };
 }
 
 function notFound() {

@@ -10,6 +10,7 @@
 //   BACKUP_DIR            default /backups
 //   BACKUP_INTERVAL_MIN    default 15
 //   BACKUP_KEEP            default 96 (most recent interval backups to keep)
+//   ALERT_WEBHOOK_URL      optional; a failed run POSTs a JSON alert here
 //
 // Retention: keeps the newest BACKUP_KEEP interval backups, plus one backup
 // per calendar day for the last 14 days (the newest backup of that day).
@@ -68,7 +69,29 @@ async function integrityCheck(filePath) {
 }
 
 async function gzipFile(srcPath, destPath) {
-  await pipeline(createReadStream(srcPath), zlib.createGzip({ level: 9 }), createWriteStream(destPath));
+  // Write to .part and rename, so a failed gzip never leaves a truncated
+  // file that looks like the newest valid backup.
+  const partPath = `${destPath}.part`;
+  try {
+    await pipeline(createReadStream(srcPath), zlib.createGzip({ level: 9 }), createWriteStream(partPath));
+    await fs.rename(partPath, destPath);
+  } catch (err) {
+    await fs.rm(partPath, { force: true });
+    throw err;
+  }
+}
+
+// Same JSON shape as deploy/uptime-check.sh. Bounded and never throws: a
+// broken webhook must not break the backup loop.
+async function alert(text) {
+  const url = process.env.ALERT_WEBHOOK_URL;
+  if (!url) return;
+  await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, ts: new Date().toISOString() }),
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => {});
 }
 
 async function runRetention(backupDir, keepCount) {
@@ -112,30 +135,29 @@ async function backupOnce({ srcPath, backupDir }) {
 
   await fs.mkdir(backupDir, { recursive: true });
 
-  let srcDb;
+  let stat;
   try {
-    srcDb = new Database(srcPath, { readonly: true, fileMustExist: true });
-    await srcDb.backup(tmpDbPath);
-  } finally {
-    if (srcDb) srcDb.close();
-  }
+    let srcDb;
+    try {
+      srcDb = new Database(srcPath, { readonly: true, fileMustExist: true });
+      await srcDb.backup(tmpDbPath);
+    } finally {
+      if (srcDb) srcDb.close();
+    }
 
-  const ok = await integrityCheck(tmpDbPath);
-  if (!ok) {
+    if (!(await integrityCheck(tmpDbPath))) throw new Error("integrity_check failed on backup copy");
+
+    await gzipFile(tmpDbPath, finalPath);
+    stat = await fs.stat(finalPath);
+  } finally {
+    // Always drop the temp copy (retention only matches *.db.gz, so a leftover
+    // .tmp would never be cleaned). The backup destination inherits WAL mode
+    // from the source page header, so SQLite may leave -shm/-wal siblings
+    // next to the temp copy even after the backup handle is closed.
     await fs.rm(tmpDbPath, { force: true });
     await fs.rm(`${tmpDbPath}-shm`, { force: true });
     await fs.rm(`${tmpDbPath}-wal`, { force: true });
-    throw new Error("integrity_check failed on backup copy");
   }
-
-  await gzipFile(tmpDbPath, finalPath);
-  const stat = await fs.stat(finalPath);
-  await fs.rm(tmpDbPath, { force: true });
-  // The backup destination inherits WAL mode from the source page header,
-  // so SQLite may leave -shm/-wal siblings next to the temp copy even
-  // after the backup handle is closed. Clean them up too.
-  await fs.rm(`${tmpDbPath}-shm`, { force: true });
-  await fs.rm(`${tmpDbPath}-wal`, { force: true });
 
   return {
     file: finalName,
@@ -158,7 +180,9 @@ async function main() {
       await log({ event: "backup", ok: true, ...result, retention });
       return true;
     } catch (err) {
-      await log({ event: "backup", ok: false, error: String(err && err.message ? err.message : err) });
+      const error = String(err && err.message ? err.message : err);
+      await log({ event: "backup", ok: false, error });
+      await alert(`arena db backup FAILED: ${error}`);
       return false;
     }
   }

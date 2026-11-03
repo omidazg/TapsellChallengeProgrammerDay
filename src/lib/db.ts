@@ -100,6 +100,9 @@ function makeClient() {
   return client;
 }
 
-export const prisma = globalForPrisma.prisma ?? makeClient();
-
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+/**
+ * همیشه روی globalThis (در production هم): بیلد Next این ماژول را در چند bundle جدا بارگذاری می‌کند و
+ * هر نسخه کلاینت خودش را می‌ساخت (دو اتصال، دو Lock، تراکنش‌های هم‌زمان timeout). Lock و inTransaction
+ * در closureهای همین یک کلاینت‌اند، پس نسخه‌های دیگر ماژول هم همان قفل و AsyncLocalStorage را می‌بینند.
+ */
+export const prisma = (globalForPrisma.prisma ??= makeClient());

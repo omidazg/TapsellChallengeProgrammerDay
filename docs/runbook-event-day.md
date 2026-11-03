@@ -16,7 +16,7 @@
 - [ ] یک بک‌آپ دستی تازه گرفته و به لپ‌تاپ کشیده شده (off-server، برای
       شبی که سرور کلاً در دسترس نیست):
       ```bash
-      docker compose run --rm backup node /app/scripts/backup.mjs --once
+      docker compose exec -T -u node backup node /app/scripts/backup.mjs --once
       SERVER=root@188.121.125.246 KEY=~/.ssh/tapsell_qeysar ./deploy/pull-backups.sh
       ```
 - [ ] یک تمرین ریستور (drill) روی staging یا یک کپی محلی انجام شده — نه
@@ -60,7 +60,7 @@
   بخواهید قبل از یک عملیات پرخطر (مثل تغییر فاز یا اجرای settlement) یک
   بک‌آپ فوری بگیرید:
   ```bash
-  docker compose run --rm backup node /app/scripts/backup.mjs --once
+  docker compose exec -T -u node backup node /app/scripts/backup.mjs --once
   ```
 - اگر مانیتور uptime هشدار داد: اول `docker compose ps` و
   `docker compose logs --tail=100 web` را چک کنید (به `docs/ops.md` برای

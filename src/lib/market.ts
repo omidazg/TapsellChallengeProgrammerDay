@@ -206,12 +206,6 @@ export async function getBuyers(productId: string): Promise<Buyer[]> {
   return [...byUser.values()];
 }
 
-/** آیا کاربر حداقل یک خرید از این محصول دارد (شرط لازم برای قلب‌دادن) */
-export async function hasPurchased(userId: string, productId: string): Promise<boolean> {
-  const count = await prisma.purchase.count({ where: { userId, productId } });
-  return count > 0;
-}
-
 /** آیا کاربر قبلاً به این محصول قلب داده */
 export async function hasHearted(userId: string, productId: string): Promise<boolean> {
   const heart = await prisma.heart.findUnique({ where: { productId_userId: { productId, userId } } });

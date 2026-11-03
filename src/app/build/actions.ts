@@ -117,13 +117,11 @@ export async function saveProductAction(prevState: ProductActionState, formData:
 
   const intent = String(formData.get("intent") ?? "draft");
 
-  // محصول ثبت‌نهایی‌شده فقط پس از «بازکردن برای ویرایش» با پیش‌نویس عوض می‌شود؛
-  // وگرنه یک تب قدیمی می‌تواند محتوا را بی‌صدا و بدون داوری دوباره تغییر دهد.
-  if (intent !== "submit") {
-    const existing = await prisma.product.findUnique({ where: { teamId_trackId: { teamId: user.teamId, trackId } }, select: { submittedAt: true } });
-    if (existing?.submittedAt) {
-      return { error: "محصول ثبت نهایی شده است؛ برای تغییر، صفحه را تازه کن و ابتدا «بازکردن برای ویرایش» را بزن", values };
-    }
+  // محصول ثبت‌نهایی‌شده (چه پیش‌نویس چه ثبت دوباره) فقط پس از «بازکردن برای ویرایش» عوض می‌شود؛
+  // وگرنه یک تب قدیمی می‌تواند محتوا را بی‌صدا، بدون بازبینی ویترین و با نمره‌های داوری قبلی تغییر دهد.
+  const existing = await prisma.product.findUnique({ where: { teamId_trackId: { teamId: user.teamId, trackId } }, select: { submittedAt: true } });
+  if (existing?.submittedAt) {
+    return { error: "محصول ثبت نهایی شده است؛ برای تغییر، صفحه را تازه کن و ابتدا «بازکردن برای ویرایش» را بزن", values };
   }
 
   const images = formData.getAll("images").map((v) => String(v)).filter((v) => v.trim().length > 0);

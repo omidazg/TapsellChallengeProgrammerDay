@@ -50,7 +50,7 @@
   --warn: #b45309;           /* text-amber-700 */
   --warn-soft: #fffbeb;      /* bg-amber-50 */
 
-  /* نام‌های قدیمی (در TrendChart و ChecklistCard استفاده شده‌اند) — نام مستعار توکن‌های بالا */
+  /* نام‌های قدیمی (--line در ChecklistCard استفاده می‌شود) — نام مستعار توکن‌های بالا */
   --bg-soft: var(--surface-2);
   --ink: var(--text);
   --muted: var(--text-muted);

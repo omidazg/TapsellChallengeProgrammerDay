@@ -15,12 +15,3 @@ export const PHASE_DESC: Record<Phase, string> = {
   LIVE: "همهٔ مراحل باز است؛ هر تیم با سرعت خودش جلو می‌رود.",
   CLOSED: "مسابقه تمام شد. نتایج را ببین.",
 };
-
-export function phaseIndex(p: Phase) {
-  return PHASES.indexOf(p);
-}
-
-/** آیا وضعیت جاری حداقل به وضعیت داده‌شده رسیده است */
-export function phaseAtLeast(current: Phase, target: Phase) {
-  return phaseIndex(current) >= phaseIndex(target);
-}

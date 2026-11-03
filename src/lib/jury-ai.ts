@@ -294,12 +294,18 @@ async function runFinalAiForProduct(productId: string): Promise<boolean> {
 
 let finalRunning = false;
 
-/** ارزیابی نهایی همهٔ محصول‌های ثبت‌شده؛ در پایان مسابقه و با دکمهٔ پنل اجرا می‌شود. */
-export async function runFinalAiEvaluation(): Promise<{ done: number; failed: number }> {
+/**
+ * ارزیابی نهایی محصول‌های ثبت‌شده؛ در پایان مسابقه و با دکمهٔ پنل اجرا می‌شود.
+ * فقط محصول‌هایی که هنوز ارزیابی نهایی ندارند (مثلاً تماسشان شکست خورده) دوباره ارزیابی می‌شوند؛ force همه را از نو می‌سنجد.
+ */
+export async function runFinalAiEvaluation(opts: { force?: boolean } = {}): Promise<{ done: number; failed: number }> {
   if (!aiClient() || finalRunning) return { done: 0, failed: 0 };
   finalRunning = true;
   try {
-    const products = await prisma.product.findMany({ where: { submittedAt: { not: null } }, select: { id: true } });
+    const products = await prisma.product.findMany({
+      where: { submittedAt: { not: null }, ...(opts.force ? {} : { aiFinal: null }) },
+      select: { id: true },
+    });
     let done = 0;
     let failed = 0;
     for (const p of products) {

@@ -8,7 +8,7 @@ import { prisma } from "./db";
 import { getPhase, getSetting, getSettingInt } from "./phase";
 import { transitionTo } from "./phase-transition";
 import { startNextAuction, settleIfEnded } from "./auction";
-import { sendDuePushSlots } from "./adslots";
+import { CLOSED_AT_KEY, refundUndeliveredAdSlots, sendDuePushSlots } from "./adslots";
 import { syncBazaarStats } from "./bazaar";
 import { moduleOpen } from "./module-state";
 import { log } from "./log";
@@ -56,6 +56,9 @@ export async function runScheduledTasks(): Promise<void> {
       // بازار و حراج یک بخش‌اند: وقتی بازار باز نیست حراج تازه‌ای شروع نمی‌شود، ولی حراج زندهٔ تمام‌شده باید تسویه شود.
       await runAuctionTasks().catch((e) => reportTickFailure("runAuctionTasks", e));
       await sendDuePushSlots().catch((e) => reportTickFailure("sendDuePushSlots", e));
+    } else {
+      // بازپرداخت جایگاه‌هایی که در پایان بازی شکست خوردند (idempotent؛ مبنا لحظهٔ پایان، نه اکنون).
+      await retryAdSlotRefunds().catch((e) => reportTickFailure("refundUndeliveredAdSlots", e));
     }
     tickGlobal.__arenaLastTickAt = Date.now();
   } catch (e) {
@@ -87,6 +90,13 @@ async function closeAtDeadline() {
   await prisma.auditLog.create({ data: { actorId: null, action: "contest.end", target: "", detail: JSON.stringify({ auto: true }) } });
   if (res.settleFailed) reportTickFailure("settleGame", new Error("تسویهٔ خودکار پس از ددلاین نهایی شکست خورد"));
   console.log("[scheduler] ددلاین نهایی رسید و مسابقه بسته شد");
+}
+
+async function retryAdSlotRefunds() {
+  const closedAt = new Date(await getSetting(CLOSED_AT_KEY, ""));
+  // بدون لحظهٔ پایان ثبت‌شده، «اکنون» مبنای غلطی است (جایگاه‌هایی که بعد از پایان شروع شدند تحویل‌شده حساب می‌شوند).
+  if (Number.isNaN(closedAt.getTime())) return;
+  await refundUndeliveredAdSlots(closedAt);
 }
 
 /** ۱.ب: تسویهٔ حراج‌های تمام‌شده و شروع خودکار حراج بعدیِ صف (صف را تیم‌ها پر می‌کنند). */

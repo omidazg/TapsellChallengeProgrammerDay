@@ -10,9 +10,11 @@
 # goes forward to the build you just left.
 #
 # What it does NOT do:
-#   - re-run migrate: database migrations applied by the newer build stay
-#     (they are additive in this project; an older build simply ignores new
-#     columns/indexes). An older build never needs a migration the db lacks.
+#   - re-run migrate or undo one: migrations applied by the newer build stay.
+#     They are NOT always additive (the v2 migration drops/rebuilds tables and
+#     deletes AdSlot rows), so an older build may break on the new schema. Then
+#     restore the backup deploy.sh took just before migrating
+#     (deploy/restore.sh, see docs/ops.md section 2).
 #   - touch the uploaded compose file / Caddyfile on the server (they stay at
 #     whatever the last deploy.sh uploaded), or the server's .env.
 # To go FORWARD to a newer build, use deploy.sh (IMAGE_TAG=<sha>) so migrations run.

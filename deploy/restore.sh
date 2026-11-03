@@ -26,6 +26,9 @@ if [ ! -f "$BACKUP_GZ" ]; then
   exit 1
 fi
 
+echo "==> Checking $BACKUP_GZ is a complete gzip file"
+gunzip -t "$BACKUP_GZ" || { echo "!! $BACKUP_GZ is corrupt or truncated; nothing was stopped." >&2; exit 1; }
+
 cd "$COMPOSE_DIR"
 
 STAMP="$(date -u +%Y%m%d-%H%M%S)"
@@ -37,6 +40,8 @@ docker compose stop web
 echo "==> Safety copy of current db -> $SAFETY_COPY"
 if [ -f "$DB_PATH" ]; then
   cp -a "$DB_PATH" "$SAFETY_COPY"
+  # Committed rows may still live only in the WAL, which is deleted below.
+  if [ -f "$DB_PATH-wal" ]; then cp -a "$DB_PATH-wal" "$SAFETY_COPY-wal"; fi
 else
   echo "    (no existing db at $DB_PATH, skipping safety copy)"
 fi
@@ -78,4 +83,4 @@ docker compose up -d web
 
 echo "==> Restore complete. Safety copy kept at: $SAFETY_COPY"
 echo "    Delete it manually once you've confirmed the app is healthy:"
-echo "      rm '$SAFETY_COPY'"
+echo "      rm -f '$SAFETY_COPY' '$SAFETY_COPY-wal'"

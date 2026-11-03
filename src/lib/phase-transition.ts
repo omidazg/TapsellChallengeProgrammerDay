@@ -2,7 +2,8 @@ import { setPhase, type Phase } from "./phase";
 import { notifyPhaseChange } from "./notifications";
 import { resettleGame, settleGame } from "./settlement";
 import { closeAuctionsForGameEnd } from "./auction";
-import { refundUndeliveredAdSlots } from "./adslots";
+import { prisma } from "./db";
+import { CLOSED_AT_KEY, refundUndeliveredAdSlots } from "./adslots";
 import { snapshotBazaarStats } from "./bazaar";
 import { runFinalAiEvaluation } from "./jury-ai";
 import { log } from "./log";
@@ -40,8 +41,13 @@ export async function transitionTo(phase: Phase, endsAt: Date | null): Promise<T
     // اگر این گام شکست بخورد، تسویه ادامه می‌یابد و حراج زندهٔ باقی‌مانده دیگر تسویه نمی‌شود
     // (settleCore پس از CLOSED جز در مسیر پایان بازی تسویه نمی‌کند) — پس خطا باید بلند گزارش شود.
     await closeAuctionsForGameEnd().catch((e) => reportGameEndFailure("closeAuctionsForGameEnd", e));
-    // جایگاه‌های تبلیغاتی تحویل‌نشده به خریدار برمی‌گردند (اثری بر امتیاز ندارد).
-    await refundUndeliveredAdSlots().catch((e) => reportGameEndFailure("refundUndeliveredAdSlots", e));
+    // جایگاه‌های تبلیغاتی تحویل‌نشده به خریدار برمی‌گردند (اثری بر امتیاز ندارد). لحظهٔ پایان ذخیره
+    // می‌شود تا زمان‌بند جایگاه‌های جامانده را بعداً با همین مبنا بازپرداخت کند.
+    const closedAt = new Date();
+    await prisma.setting
+      .upsert({ where: { key: CLOSED_AT_KEY }, update: { value: closedAt.toISOString() }, create: { key: CLOSED_AT_KEY, value: closedAt.toISOString() } })
+      .catch((e) => reportGameEndFailure("closed_at", e));
+    await refundUndeliveredAdSlots(closedAt).catch((e) => reportGameEndFailure("refundUndeliveredAdSlots", e));
     try {
       await settleGame();
     } catch (e) {
@@ -49,7 +55,8 @@ export async function transitionTo(phase: Phase, endsAt: Date | null): Promise<T
       return { settleFailed: true };
     }
     // ارزیابی نهایی هوش مصنوعی زمان‌بر است و نباید پنل را نگه دارد؛ بعد از آن امتیازها بازمحاسبه می‌شوند.
-    void runFinalAiEvaluation()
+    // force: در پایان همه از نو ارزیابی می‌شوند (ارزیابی زودهنگام ادمین ممکن است کهنه باشد)؛ دکمهٔ ادمین فقط جاافتاده‌ها را پر می‌کند.
+    void runFinalAiEvaluation({ force: true })
       .then((r) => (r.done > 0 ? resettleGame() : undefined))
       .catch((e) => reportGameEndFailure("runFinalAiEvaluation", e));
   }

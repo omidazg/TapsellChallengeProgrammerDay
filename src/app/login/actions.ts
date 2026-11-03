@@ -11,6 +11,7 @@ import {
   clientIp,
   LOGIN_IP_RULE,
   LOGIN_EMAIL_RULE,
+  LOGIN_EMAIL_GLOBAL_RULE,
   OTP_IP_RULE,
   OTP_VERIFY_PHONE_RULE,
 } from "@/lib/rate-limit";
@@ -47,14 +48,23 @@ export async function loginAction(input: { email: string; password: string; next
   // شمردن ورودهای موفق همه را قفل می‌کند. محافظ اصلی، سقف هر ایمیل است.
   // هر تلاش پیش از bcrypt ثبت و فقط در صورت موفقیت پس گرفته می‌شود؛ وگرنه ده‌ها تلاش هم‌زمان
   // پیش از ثبت اولین شکست از سقف رد می‌شدند.
+  // سقف ایمیل با IP جفت شده تا مهاجم از جای دیگر با چند رمز غلط صاحب رمز درست را قفل نکند؛
+  // سقف سراسری بالاتر هر ایمیل همچنان جلوی حدس رمز از IPهای متعدد را می‌گیرد.
   const ip = await clientIp();
   const email = parsed.data.email;
+  const emailIp = `${email}|${ip}`;
   const ipLimit = rateLimit("login:ip", ip, LOGIN_IP_RULE());
   if (!ipLimit.ok) return { error: rateLimitMessage(ipLimit.retryAfterSec) };
-  const emailLimit = rateLimit("login:email", email, LOGIN_EMAIL_RULE());
+  const emailLimit = rateLimit("login:email", emailIp, LOGIN_EMAIL_RULE());
   if (!emailLimit.ok) {
     rateLimitRefund("login:ip", ip);
     return { error: rateLimitMessage(emailLimit.retryAfterSec) };
+  }
+  const globalLimit = rateLimit("login:email-global", email, LOGIN_EMAIL_GLOBAL_RULE());
+  if (!globalLimit.ok) {
+    rateLimitRefund("login:ip", ip);
+    rateLimitRefund("login:email", emailIp);
+    return { error: rateLimitMessage(globalLimit.retryAfterSec) };
   }
 
   const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
@@ -73,7 +83,8 @@ export async function loginAction(input: { email: string; password: string; next
   if (user.blockedAt) return { error: BLOCKED };
 
   rateLimitRefund("login:ip", ip);
-  rateLimitRefund("login:email", email);
+  rateLimitRefund("login:email", emailIp);
+  rateLimitRefund("login:email-global", email);
   await createSession(user.id, user.sessionVersion);
   // redirect یک NEXT_REDIRECT پرتاب می‌کند؛ باید بیرون از try/catch بماند
   redirect(safeNext(input.next) ?? "/");

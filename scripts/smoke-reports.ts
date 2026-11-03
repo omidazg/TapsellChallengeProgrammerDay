@@ -1,33 +1,15 @@
 /**
- * دود-تست آیتم‌های ۴۸ (روند فروش/حمایت) و ۴۹ (خروجی اکسل کامل).
+ * دود-تست آیتم ۴۹ (خروجی اکسل کامل).
  * اجرا: npx tsx scripts/smoke-reports.ts
  *
  * روی یک پایگاه‌دادهٔ SQLite موقت (createTempDb در scripts/lib/temp-db.ts) کار می‌کند؛
  * پایگاه‌دادهٔ اصلی لمس نمی‌شود.
  *
- * سناریو: ۲ تیم، چند حمایت و خرید در زمان‌های پخش‌شده (برای آزمودن سطل‌های زمانی)،
+ * سناریو: ۲ تیم، چند حمایت و خرید در زمان‌های پخش‌شده،
  * سپس settleGame، و در پایان خروجی xlsx کامل با exceljs خوانده و بررسی می‌شود.
  */
 
 import { createTempDb, isTempDatabaseUrl } from "./lib/temp-db";
-import { createRequire } from "node:module";
-import path from "node:path";
-
-const nodeRequire = createRequire(__filename);
-try {
-  const id = nodeRequire.resolve("server-only");
-  nodeRequire.cache[id] = {
-    id,
-    filename: id,
-    path: path.dirname(id),
-    loaded: true,
-    exports: {},
-    children: [],
-    paths: [],
-  } as unknown as NodeJS.Module;
-} catch {
-  // نصب نیست؛ کاری لازم نیست
-}
 
 // DATABASE_URL باید پیش از import شدن src/lib/db تنظیم شود.
 const ownTempDb = isTempDatabaseUrl(process.env.DATABASE_URL) ? null : createTempDb("reports");
@@ -44,7 +26,6 @@ async function main() {
   const { settleGame } = await import("../src/lib/settlement");
   const { setPhase } = await import("../src/lib/phase");
   const { parseCriteria } = await import("../src/lib/tracks");
-  const { loadTimeline } = await import("../src/lib/timeline");
   const { buildExportWorkbookBuffer } = await import("../src/app/admin/export/xlsx/workbook");
   const ExcelJS = (await import("exceljs")).default;
 
@@ -142,41 +123,6 @@ async function main() {
     await buy("alpha", "beta2", 15, T0 + 20 * HOUR);
     await buy("beta", "alpha1", 20, T0 + 12 * HOUR);
     await buy("beta", "alpha2", 10, T0 + 30 * HOUR);
-
-    // ---------- آیتم ۴۸: سری‌های زمانی ----------
-    const timeline = await loadTimeline();
-    check("bucketEndsAt غیرخالی است", timeline.bucketEndsAt.length > 0, `=${timeline.bucketEndsAt.length}`);
-    check(
-      "تعداد سطل‌ها بین ۲۴ و ۴۸ است",
-      timeline.bucketEndsAt.length >= 24 && timeline.bucketEndsAt.length <= 48,
-      `=${timeline.bucketEndsAt.length}`
-    );
-    check("سری هر دو تیم موجود است", timeline.series.length === 2, `=${timeline.series.length}`);
-
-    const totalSalesByTeam = { alpha: 25 + 15, beta: 20 + 10 };
-    const totalCapitalByTeam = { alpha: 50 + 30, beta: 40 };
-
-    for (const key of ["alpha", "beta"] as const) {
-      const s = timeline.series.find((x) => x.teamId === teamIds[key]);
-      if (!s) {
-        check(`سری تیم ${key} پیدا شد`, false);
-        continue;
-      }
-      const salesMonotonic = s.sales.every((v, i) => i === 0 || v >= s.sales[i - 1]);
-      const capitalMonotonic = s.capital.every((v, i) => i === 0 || v >= s.capital[i - 1]);
-      check(`سری فروش ${key} صعودی/ثابت است (تجمعی)`, salesMonotonic);
-      check(`سری سرمایهٔ ${key} صعودی/ثابت است (تجمعی)`, capitalMonotonic);
-      check(
-        `مقدار پایانی فروش ${key} با مجموع کل برابر است`,
-        s.sales[s.sales.length - 1] === totalSalesByTeam[key],
-        `=${s.sales[s.sales.length - 1]} انتظار=${totalSalesByTeam[key]}`
-      );
-      check(
-        `مقدار پایانی سرمایهٔ ${key} با مجموع کل برابر است`,
-        s.capital[s.capital.length - 1] === totalCapitalByTeam[key],
-        `=${s.capital[s.capital.length - 1]} انتظار=${totalCapitalByTeam[key]}`
-      );
-    }
 
     // ---------- تسویه (برای اینکه شیت Teams and scores مقدار داشته باشد) ----------
     await setPhase("CLOSED", null);

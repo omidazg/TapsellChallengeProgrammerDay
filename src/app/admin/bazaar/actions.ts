@@ -32,6 +32,8 @@ export async function saveBazaarStatAction(prevState: BazaarActionState, formDat
   if ([input.activeInstalls, input.revenueToman, input.commentCount].some((v) => Number(v) > MAX_STAT_VALUE)) {
     return { error: "عدد بیشتر از سقف مجاز است" };
   }
+  const product = await prisma.product.findUnique({ where: { id: productId }, select: { teamId: true } });
+  if (product && product.teamId === user.teamId) return { error: "آمار محصول تیم خودت را نمی‌توانی تغییر دهی" };
   const before = await prisma.bazaarStat.findUnique({
     where: { productId },
     select: { activeInstalls: true, revenueToman: true, rating: true, commentCount: true, source: true },
@@ -52,7 +54,7 @@ export async function importBazaarAction(prevState: BazaarActionState, formData:
 
   const parsed = await parseBazaarWorkbook(await file.arrayBuffer());
   if ("error" in parsed) return { error: parsed.error };
-  const { saved, skipped } = await importBazaarRows(parsed.rows);
+  const { saved, skipped } = await importBazaarRows(parsed.rows, user.teamId);
   const allSkipped = [...parsed.rejected, ...skipped];
   await audit(user.id, "bazaar.import", file.name.slice(0, 120), { saved, skipped: allSkipped });
   revalidateBazaarPages();
@@ -67,8 +69,9 @@ export async function setBazaarFlagAction(prevState: BazaarActionState, formData
   const note = String(formData.get("note") ?? "").trim();
   if (flagged && !note) return { error: "دلیل پرچم را بنویس؛ به داوران نشان داده می‌شود" };
 
-  const product = await prisma.product.findUnique({ where: { id: productId }, select: { id: true } });
+  const product = await prisma.product.findUnique({ where: { id: productId }, select: { teamId: true } });
   if (!product) return { error: "محصول پیدا نشد" };
+  if (product.teamId === user.teamId) return { error: "پرچم محصول تیم خودت را نمی‌توانی تغییر دهی" };
   await setBazaarFlag(productId, flagged, note);
   await audit(user.id, flagged ? "bazaar.flag" : "bazaar.unflag", productId, { note });
   revalidateBazaarPages();

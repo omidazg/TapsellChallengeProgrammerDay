@@ -45,17 +45,6 @@ export function rateLimit(bucket: string, key: string, rule: RateRule): RateResu
 }
 
 /**
- * فقط بررسی می‌کند، بدون ثبت برخورد.
- * برای جاهایی که می‌خواهیم تنها تلاش‌های ناموفق شمرده شوند (مثل ورود).
- */
-export function rateLimitPeek(bucket: string, key: string, rule: RateRule): RateResult {
-  const now = Date.now();
-  const recent = (state.store.get(`${bucket}:${key}`) ?? []).filter((t: number) => now - t < rule.windowMs);
-  if (recent.length < rule.limit) return { ok: true };
-  return { ok: false, retryAfterSec: Math.max(1, Math.ceil((recent[0] + rule.windowMs - now) / 1000)) };
-}
-
-/**
  * آخرین برخورد ثبت‌شده برای `bucket:key` را پس می‌گیرد.
  * الگوی «اول ثبت کن، در صورت موفقیت پس بگیر» جلوی دورزدن سقف با درخواست‌های هم‌زمان را می‌گیرد
  * (با peek، ده‌ها تلاش موازی پیش از ثبت اولین شکست همه از بررسی رد می‌شدند).
@@ -78,9 +67,12 @@ function envInt(name: string, fallback: number): number {
 }
 
 /** ورود ناموفق از یک IP؛ چون کل سالن یک IP دارد، سقف بالاست */
-export const LOGIN_IP_RULE = (): RateRule => ({ limit: envInt("LOGIN_IP_RATE", 100), windowMs: 10 * 60 * 1000 });
-/** ورود ناموفق برای یک ایمیل؛ محافظ اصلی در برابر حدس رمز */
+// سالن ۵۰۰ نفره پشت یک NAT است؛ سقف کمتر همه را با چند تلاش اشتباه یک نفر قفل می‌کند.
+export const LOGIN_IP_RULE = (): RateRule => ({ limit: envInt("LOGIN_IP_RATE", 1000), windowMs: 10 * 60 * 1000 });
+/** ورود ناموفق برای یک ایمیل از یک IP (کلید email|ip تا کسی از جای دیگر صاحب حساب را قفل نکند) */
 export const LOGIN_EMAIL_RULE = (): RateRule => ({ limit: envInt("LOGIN_EMAIL_RATE", 8), windowMs: 10 * 60 * 1000 });
+/** ورود ناموفق برای یک ایمیل از همهٔ IPها؛ محافظ حدس رمز توزیع‌شده */
+export const LOGIN_EMAIL_GLOBAL_RULE = (): RateRule => ({ limit: envInt("LOGIN_EMAIL_GLOBAL_RATE", 50), windowMs: 10 * 60 * 1000 });
 /** ثبت‌نام از یک IP؛ در روز رویداد ده‌ها نفر از یک شبکه ثبت‌نام می‌کنند */
 export const REGISTER_IP_RULE = (): RateRule => ({ limit: envInt("REGISTER_IP_RATE", 150), windowMs: 60 * 60 * 1000 });
 /** درخواست دسترسی (لیست سفید) از یک IP */

@@ -270,12 +270,16 @@ export function isAdSlotDelivered(slot: { kind: string; hourStart: Date }, pushS
   return slot.hourStart.getTime() <= nowMs;
 }
 
+/** Setting لحظهٔ رسیدن به CLOSED (ISO)؛ مبنای «تحویل‌شده» در بازپرداخت‌های بعدی زمان‌بند. */
+export const CLOSED_AT_KEY = "closed_at";
+
 /** دلیل دفتر کل برای بازگشت پیشنهاد جایگاه */
 export const ADSLOT_REFUND_REASON = "ADSLOT_REFUND";
 
 /**
  * پایان بازی: پیشنهادهایی که به نمایش نرسیدند (بازه‌شان بعد از پایان مسابقه بود یا اعلانشان نرفت) به
  * پیشنهاددهنده برمی‌گردد. idempotent است: هر جایگاه با گذر شرطی OPEN→REFUNDED فقط یک‌بار بازپرداخت می‌شود.
+ * now باید لحظهٔ پایان بازی باشد (CLOSED_AT_KEY)، نه اکنون: زمان‌بند پس از پایان دوباره اجرایش می‌کند.
  */
 export async function refundUndeliveredAdSlots(now: Date = new Date()): Promise<{ refunded: number; coins: number }> {
   const sold = await prisma.adSlot.findMany({ where: { winnerTeamId: { not: null }, status: "OPEN" } });
@@ -291,15 +295,22 @@ export async function refundUndeliveredAdSlots(now: Date = new Date()): Promise<
   const notifyTeams = new Map<string, number>();
   for (const slot of sold) {
     if (isAdSlotDelivered(slot, pushSentById.get(slot.id) ?? null, now.getTime())) continue;
-    const amount = await prisma.$transaction(async (tx) => {
-      const claimed = await tx.adSlot.updateMany({ where: { id: slot.id, status: "OPEN" }, data: { status: "REFUNDED" } });
-      if (claimed.count === 0 || !slot.winnerUserId || !slot.pricePaid) return 0;
-      await tx.user.update({ where: { id: slot.winnerUserId }, data: { buyWallet: { increment: slot.pricePaid } } });
-      await tx.ledgerEntry.create({
-        data: { userId: slot.winnerUserId, teamId: slot.winnerTeamId, wallet: "BUY", delta: slot.pricePaid, reason: ADSLOT_REFUND_REASON, refId: slot.id },
+    let amount = 0;
+    try {
+      amount = await prisma.$transaction(async (tx) => {
+        const claimed = await tx.adSlot.updateMany({ where: { id: slot.id, status: "OPEN" }, data: { status: "REFUNDED" } });
+        if (claimed.count === 0 || !slot.winnerUserId || !slot.pricePaid) return 0;
+        await tx.user.update({ where: { id: slot.winnerUserId }, data: { buyWallet: { increment: slot.pricePaid } } });
+        await tx.ledgerEntry.create({
+          data: { userId: slot.winnerUserId, teamId: slot.winnerTeamId, wallet: "BUY", delta: slot.pricePaid, reason: ADSLOT_REFUND_REASON, refId: slot.id },
+        });
+        return slot.pricePaid;
       });
-      return slot.pricePaid;
-    });
+    } catch (e) {
+      // شکست یک جایگاه بقیه را متوقف نمی‌کند؛ جایگاه OPEN می‌ماند و تیک بعدی زمان‌بند دوباره تلاش می‌کند.
+      console.error(`[adslots] بازپرداخت جایگاه ${slot.id} شکست خورد`, e);
+      continue;
+    }
     if (amount > 0) {
       refunded++;
       coins += amount;

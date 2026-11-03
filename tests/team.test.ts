@@ -466,6 +466,25 @@ describe("team.ts: قفل اعضا پس از ثبت نهایی محصول", () =
     expect((await team.joinMatchmaking(joiner.id)).ok).toBe(true);
     expect((await reload(joiner.id)).teamId).not.toBe(teamId);
   });
+
+  it("هم‌تیم‌سازی برگزارکننده: تیم قفل و تیم بی‌عضو را کنار می‌گذارد و به ادمین/کادر/مسدود تیم نمی‌دهد", async () => {
+    const { teamId: lockedId } = await hostTeam("تیم قفل برگزارکننده");
+    await makeProduct(lockedId);
+    const empty = await prisma.team.create({ data: { name: "تیم بی‌عضو", slug: `empty-team-${++counter}` } });
+    const admin = await prisma.user.update({ where: { id: (await makeUser()).id }, data: { isAdmin: true } });
+    const judge = await prisma.user.update({ where: { id: (await makeUser()).id }, data: { staffRole: "JUDGE" } });
+    const blocked = await prisma.user.update({ where: { id: (await makeUser()).id }, data: { blockedAt: new Date() } });
+    const player = await makeUser("STORYTELLER");
+
+    await team.autoComposeTeams();
+
+    expect(await prisma.user.count({ where: { teamId: lockedId } })).toBe(1);
+    expect(await prisma.user.count({ where: { teamId: empty.id } })).toBe(0);
+    for (const u of [admin, judge, blocked]) expect((await reload(u.id)).teamId).toBeNull();
+    const placed = await reload(player.id);
+    expect(placed.teamId).not.toBeNull();
+    expect([lockedId, empty.id]).not.toContain(placed.teamId);
+  });
 });
 
 describe("team.ts: استثنای بخش تیم برای یک تیم", () => {

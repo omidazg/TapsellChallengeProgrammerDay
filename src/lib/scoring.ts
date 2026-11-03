@@ -3,7 +3,7 @@ import { defaultConfig, juryRawScore, scoreGame } from "./economy/engine";
 import type { EconomyConfig, ScoreOutput, TeamInput } from "./economy/types";
 import { entryKey } from "./economy/types";
 import { DEFAULTS } from "./constants";
-import { getSettingInt } from "./phase";
+import { getPhase, getSettingInt } from "./phase";
 import { cached } from "./ttl-cache";
 import { computeAwards as computeAwardsPure, type Award, type PrizeRow } from "./prizes";
 import { entryCategory, parseCriteria, parseWeights, type TrackWeights } from "./tracks";
@@ -68,7 +68,7 @@ export async function computeScores(opts: { includeJury?: boolean } = {}): Promi
   const config = await configFromSettings();
 
   // ترتیب ثابت (نه ترتیب دلخواه پایگاه‌داده)؛ رتبه‌بندی خودش هم قطعی است (compareRank).
-  const [teams, tracks] = await Promise.all([
+  const [teams, tracks, { phase }] = await Promise.all([
     prisma.team.findMany({
       orderBy: { id: "asc" },
       include: {
@@ -84,7 +84,11 @@ export async function computeScores(opts: { includeJury?: boolean } = {}): Promi
       },
     }),
     prisma.track.findMany({ select: { id: true, status: true, category: true, juryCriteria: true } }),
+    getPhase(),
   ]);
+  // پس از پایان، اگر ارزیابی نهایی دست‌کم برای یک محصول اجرا شده باشد فقط همان حساب است
+  // (بازخورد موقت معیار دیگری دارد)؛ اگر هنوز اجرا نشده (یا هوش مصنوعی تنظیم نیست) همه با بازخورد موقت می‌مانند.
+  const finalOnly = phase === "CLOSED" && teams.some((t) => t.products.some((p) => p.aiFinal != null));
   const trackById = new Map(tracks.map((t) => [t.id, t]));
 
   const inputs: TeamInput[] = [];
@@ -110,8 +114,8 @@ export async function computeScores(opts: { includeJury?: boolean } = {}): Promi
           ...(p?.purchases ?? []).map((x) => ({ userId: x.userId, amount: x.amount })),
         ],
         juryRaw: includeJury && p ? juryRawScore(p.juryScores.map((j) => parseJson(j.scores)), criteria) : null,
-        // ارزیابی نهایی جای بازخورد موقت را می‌گیرد.
-        aiQuality: p?.aiFinal ?? p?.aiQuality ?? null,
+        // ارزیابی نهایی جای بازخورد موقت را می‌گیرد؛ در حالت finalOnly محصول بی‌ارزیابی نهایی null (صفر) می‌گیرد.
+        aiQuality: finalOnly ? (p?.aiFinal ?? null) : (p?.aiFinal ?? p?.aiQuality ?? null),
         stats: p?.bazaarStat
           ? {
               activeInstalls: p.bazaarStat.activeInstalls,

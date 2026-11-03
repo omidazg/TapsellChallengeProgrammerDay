@@ -31,7 +31,7 @@
 ماژول‌هایی که با «کلاینت» مشخص شده‌اند به دیتابیس وابسته نیستند و در کامپوننت‌های کلاینت هم قابل استفاده‌اند.
 
 ### بازی، فاز و تنظیمات
-- `phases.ts` (کلاینت): `PHASES`, `Phase`, `PHASE_LABEL`, `PHASE_DESC`, `phaseIndex`, `phaseAtLeast`.
+- `phases.ts` (کلاینت): `PHASES`, `Phase`, `PHASE_LABEL`, `PHASE_DESC`.
 - `phase.ts`: همهٔ `phases.ts` به‌علاوهٔ `getPhase()` → `{ phase, endsAt }`, `setPhase`, `getSetting`, `getSettingInt`, `getSettingFloat`.
 - `phase-transition.ts`: `transitionTo(phase, endsAt)` → `{ settleFailed? }` — اعلان سراسری؛ در `CLOSED` حراج‌ها را می‌بندد (`closeAuctionsForGameEnd`) و `settleGame()` را اجرا می‌کند.
 - `scheduler.ts`: `runScheduledTasks()` (هر ۳۰ ثانیه از `instrumentation.ts`: پیشروی خودکار فاز، تسویهٔ حراج تمام‌شده و شروع خودکار حراج بعدی صف در `MARKET`، ارسال اعلان جایگاه‌های PUSH)، `getLastSchedulerTickAt`, `cleanupOldNotifications`.
@@ -53,8 +53,8 @@
 
 ### خرج کردن سکه
 - `invest.ts` (دور حمایت): `investCore(prisma, userId, ideaId, amount)` → `{ ok: true, investmentId, selfFunded } | { ok: false, error }`، `investedByUserOnIdea`, `totalInvestedByUser`, `validateInvestment`. حمایت از تیم خود ممنوع؛ سقفی روی هدف نیست؛ کاربر بی‌تیم هم می‌تواند حمایت کند.
-- `idea.ts`: `IdeaCardData` / `IdeaDetail` (شامل `aiTag`)، `getIdeasForFloor(filter)`, `FLOOR_FILTERS`, `parseFloorFilter`, `getIdeaDetail(id, viewerId)`, `raisedFor`, `isHttpUrl`.
-- `market.ts` (روز بازار): `getMarketProducts(sort, viewer?)` → `MarketCard[]` (با `live` و `bought`)، `purchaseProduct(userId, productId)` → `{ ok: true, purchaseId, amount } | { ok: false, error }` (قیمت کامل، بدون سقف)، `spendableBuyCoins`, `salesSummary`, `userSpentOn`, `getBuyers`, `hasPurchased`, `hasHearted`, `getCurrentAdSlotWinners`, `getTicker`, `validatePurchase`.
+- `idea.ts`: `IdeaCardData` / `IdeaDetail` (شامل `aiTag`)، `getIdeasForFloor(filter)`, `FLOOR_FILTERS`, `parseFloorFilter`, `getIdeaDetail(id, viewerId)`.
+- `market.ts` (روز بازار): `getMarketProducts(sort, viewer?)` → `MarketCard[]` (با `live` و `bought`)، `purchaseProduct(userId, productId)` → `{ ok: true, purchaseId, amount } | { ok: false, error }` (قیمت کامل، بدون سقف)، `spendableBuyCoins`, `salesSummary`, `userSpentOn`, `getBuyers`, `hasHearted`, `getCurrentAdSlotWinners`, `getTicker`, `validatePurchase`.
 - `auction.ts` (حراج داخل روز بازار): `enqueueAuction(userId)` → `{ ok: true, auctionId, position } | { ok: false, error }` (هر عضو تیم؛ تا `auctionEnqueueCutoffMin` دقیقه پیش از پایان `MARKET`)، `placeBid(auctionId, userId, amount)`, `getBidBudget`, `getAuctionState`, `getPublicAuctionState`, `listAuctions`, `currentOrNextAuctionId`, `getLiveAuctionIdCached`, `startNextAuction`, `settleAuction`, `settleIfEnded`, `closeAuctionsForGameEnd`، ابزار ادمین `ensureAuctions()` (همهٔ محصولات باقی‌مانده را به ته صف می‌افزاید)، `clampAuctionDuration`, `shuffleOrder`. برد حراج یک `Purchase` می‌سازد. `auction-events.ts`: پخش SSE (`auctionBroadcaster`, `publishAuctionChange`). `reservations.ts`: `reservedBuyCoins(tx, userId, excludeAuctionId?)`.
 - `adslots.ts` (ساخت محصول + روز بازار، قیمت ثابت، اول‌آمده‌اول‌برده): `buyAdSlot(userId, slotId)` → `{ ok: true, price } | { ok: false, error }`، `adSlotPrices()` → `{ BANNER, FEATURED, PUSH }`، `slotsGrid(myTeamId)` → `SlotCell { id, kind, hourStart, state: "OPEN"|"SOLD"|"PAST", price, winnerTeamId, winnerTeamName, pricePaid, mine }[]`، `ensureAdSlots`, `marketStartFromSettings`, `currentAdWinners`, `sendDuePushSlots`. سقف هر تیم `adslot_max_per_team`؛ نیازمند محصول ثبت‌شده؛ اثری در امتیاز ندارد.
 
@@ -72,7 +72,7 @@
 - `hall.ts`: `getHallPayloadCached()` — پیش از `CLOSED` فقط «تعداد حامی» (`supporters`، برابری با `coinsReceived`)، پس از آن امتیاز کل.
 
 ### زیرساخت
-- `auth.ts`, `audit.ts`, `whitelist.ts`, `otp.ts`, `sms.ts`, `phone.ts`, `rate-limit.ts`, `notifications.ts` (`notifyUser/Users/Team/All`، اطلاعیه‌ها)، `push.ts`, `feed.ts`, `timeline.ts`, `badges.ts`, `analytics.ts`, `uploads.ts`, `thumb.ts`, `ttl-cache.ts` (`cached`, `invalidate`)، `log.ts`, `alert.ts`, `persian.ts`, `pillars.ts`, `clipboard.ts`, `db.ts`.
+- `auth.ts`, `audit.ts`, `whitelist.ts`, `otp.ts`, `sms.ts`, `phone.ts`, `rate-limit.ts`, `notifications.ts` (`notifyUser/Users/Team/All`، اطلاعیه‌ها)، `push.ts`, `feed.ts`, `badges.ts`, `analytics.ts`, `uploads.ts`, `thumb.ts`, `ttl-cache.ts` (`cached`, `invalidate`)، `log.ts`, `alert.ts`, `persian.ts`, `pillars.ts`, `clipboard.ts`, `db.ts`.
 
 ### ماژول‌های حذف‌شده (دوباره نسازید)
 - `src/lib/leader.ts` (سرپرست/رأی‌گیری) ← `team-access.ts`؛ `src/lib/loadout.ts` (انتخاب قدرت)؛ `src/lib/shield.ts` و `src/lib/shield-reminders.ts`؛ کامپوننت‌های `LeaderNotice`, `LoadoutPicker`, `UnspentReminder`.

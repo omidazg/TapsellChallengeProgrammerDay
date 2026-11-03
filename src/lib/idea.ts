@@ -4,25 +4,6 @@ import { ideaAiTag, type AiTagInfo } from "./ai-tag";
 // فهرست میزبان‌های مجاز next/image و قاعدهٔ نشانی تصویر در product-utils (قابل‌استفاده در کلاینت) است.
 export { isNextImageHost } from "./product-utils";
 
-/** آیا نشانی جلد یک نشانی معتبر http(s) است؟ */
-export function isHttpUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    return u.protocol === "http:" || u.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-/** جمع سکهٔ حمایتیِ جذب‌شدهٔ یک ایده */
-export async function raisedFor(ideaId: string): Promise<number> {
-  const agg = await prisma.investment.aggregate({
-    where: { ideaId },
-    _sum: { amount: true },
-  });
-  return agg._sum.amount ?? 0;
-}
-
 export type IdeaCardData = {
   id: string;
   trackId: string;

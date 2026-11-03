@@ -36,26 +36,6 @@
  *   - همه چیز در یک تراکنش Prisma اجرا می‌شود؛ اگر جایی خطا بدهد، هیچ‌چیز
  *     تغییر نمی‌کند.
  */
-import { createRequire } from "node:module";
-import path from "node:path";
-
-// `src/lib/db` (و ماژول‌های وابسته) ممکن است `server-only` را import کنند
-// که بیرون از Next خطا می‌دهد؛ آن را قبل از import واقعی خنثی می‌کنیم.
-const nodeRequire = createRequire(__filename);
-try {
-  const id = nodeRequire.resolve("server-only");
-  nodeRequire.cache[id] = {
-    id,
-    filename: id,
-    path: path.dirname(id),
-    loaded: true,
-    exports: {},
-    children: [],
-    paths: [],
-  } as unknown as NodeJS.Module;
-} catch {
-  // نصب نیست؛ کاری لازم نیست
-}
 
 const args = process.argv.slice(2);
 const YES = args.includes("--yes");

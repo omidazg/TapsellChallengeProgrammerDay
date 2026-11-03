@@ -31,9 +31,10 @@ export async function setLiveStatusAction(prevState: StudioActionState, formData
 
   const before = await prisma.product.findUnique({
     where: { id: productId },
-    select: { liveStatus: true, liveUrl: true, liveAdminNote: true },
+    select: { liveStatus: true, liveUrl: true, liveAdminNote: true, teamId: true },
   });
   if (!before) return { error: "محصول پیدا نشد" };
+  if (before.teamId === admin.teamId) return { error: "وضعیت محصول تیم خودت را نمی‌توانی تغییر دهی" };
 
   const res = await adminSetLiveStatus(productId, { status, liveUrl, note });
   if (res.error) return { error: res.error };

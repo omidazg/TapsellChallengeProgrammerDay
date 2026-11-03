@@ -163,13 +163,18 @@ export async function createCoinOrder(userId: string, coinsWanted: number, callb
 }
 
 /**
- * پرداخت‌شده کردن سفارش و افزودن سکه‌ها — idempotent: فقط گذر PENDING→PAID سکه اضافه می‌کند.
+ * پرداخت‌شده کردن سفارش و افزودن سکه‌ها — idempotent: فقط گذر from→PAID (پیش‌فرض PENDING) سکه اضافه می‌کند.
  * true یعنی همین فراخوانی سکه‌ها را اضافه کرد.
  */
-async function markPaidAndCredit(orderId: string, refId: string, note?: string): Promise<boolean> {
+async function markPaidAndCredit(
+  orderId: string,
+  refId: string,
+  note?: string,
+  from: CoinOrderStatus[] = ["PENDING"]
+): Promise<boolean> {
   const credited = await prisma.$transaction(async (tx) => {
     const claimed = await tx.coinOrder.updateMany({
-      where: { id: orderId, status: "PENDING" },
+      where: { id: orderId, status: { in: from } },
       data: { status: "PAID", refId, paidAt: new Date(), ...(note !== undefined ? { note } : {}) },
     });
     if (claimed.count === 0) return null;
@@ -208,8 +213,19 @@ export async function verifyCoinOrder(gateway: string, authority: string, params
     await prisma.coinOrder.updateMany({ where: { id: order.id, status: "PENDING" }, data: { status: "FAILED", note: result.error } });
     return { ok: false, error: result.error, orderId: order.id };
   }
-  const credited = await markPaidAndCredit(order.id, result.refId);
-  return { ok: true, orderId: order.id, coins: order.coins, alreadyPaid: !credited };
+  // پرداخت ثابت شده است: لغوی که کاربر وسط تأیید درگاه زده مانع اعتبار سکه نمی‌شود.
+  if (await markPaidAndCredit(order.id, result.refId, undefined, ["PENDING", "CANCELED"])) {
+    return { ok: true, orderId: order.id, coins: order.coins, alreadyPaid: false };
+  }
+  const latest = await prisma.coinOrder.findUniqueOrThrow({ where: { id: order.id } });
+  if (latest.status === "PAID") return { ok: true, orderId: order.id, coins: order.coins, alreadyPaid: true };
+  // مثلاً برگزارکننده وسط تأیید ردش کرد: کد پیگیری درگاه گم نشود تا با adminMarkOrderPaid پیگیری شود.
+  const followUp = `پرداخت در درگاه تأیید شد (کد پیگیری ${result.refId}) ولی سفارش ${latest.status} بود؛ نیاز به پیگیری`;
+  await prisma.coinOrder.updateMany({
+    where: { id: order.id, status: { not: "PAID" } },
+    data: { refId: result.refId, note: latest.note ? `${latest.note} — ${followUp}` : followUp },
+  });
+  return { ok: false, error: "پرداخت انجام شد ولی سفارش همین حالا تغییر کرد؛ با برگزارکننده تماس بگیر", orderId: order.id };
 }
 
 /** لغو سفارش در انتظار توسط خود کاربر */

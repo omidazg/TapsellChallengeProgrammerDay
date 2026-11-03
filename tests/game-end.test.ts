@@ -6,7 +6,7 @@
  *  - تسویهٔ زودهنگام که با رسیدن به CLOSED دوباره و قطعی انجام می‌شود (settlement / phase-transition)
  * سناریو ترتیبی است (تسویه در کل پایگاه‌داده محاسبه می‌شود).
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTempDb, type TempDb } from "../scripts/lib/temp-db";
 
 let db: TempDb;
@@ -208,5 +208,38 @@ describe("پایان بازی (سناریوی ترتیبی)", () => {
     const res = await transition.transitionTo("CLOSED", null);
     expect(res.settleFailed).toBeUndefined();
     expect(await settlement.isFinalSettled()).toBe(true);
+  });
+
+  it("شکست بازپرداخت یک جایگاه بقیه را متوقف نمی‌کند و زمان‌بند با مبنای لحظهٔ پایان دوباره (فقط یک‌بار) بازپرداخت می‌کند", async () => {
+    const closedAt = new Date((await prisma.setting.findUniqueOrThrow({ where: { key: adslots.CLOSED_AT_KEY } })).value);
+    expect(Number.isNaN(closedAt.getTime())).toBe(false);
+
+    // اول جایگاهی که بازپرداختش خطا می‌دهد (پیشنهاددهنده‌ای که وجود ندارد)، بعد یک جایگاه سالم.
+    const broken = await prisma.adSlot.create({
+      data: { kind: "BANNER", hourStart: new Date(Date.now() + 10 * HOUR), winnerTeamId: buyer.teamId, winnerUserId: "ghost-user", winnerProductId: buyerProductId, pricePaid: 3 },
+    });
+    // بازه‌اش بعد از پایان بازی شروع شد (ولی پیش از اکنون): با مبنای closedAt تحویل‌نشده است.
+    const afterClose = await makeWonSlot("FEATURED", new Date(closedAt.getTime() + 1), buyer, buyerProductId, 6);
+    const walletBefore = (await prisma.user.findUniqueOrThrow({ where: { id: buyer.id } })).buyWallet;
+
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(await adslots.refundUndeliveredAdSlots(closedAt)).toEqual({ refunded: 1, coins: 6 });
+    } finally {
+      vi.restoreAllMocks();
+    }
+    expect((await prisma.adSlot.findUniqueOrThrow({ where: { id: broken.id } })).status).toBe("OPEN");
+    expect((await prisma.adSlot.findUniqueOrThrow({ where: { id: afterClose.id } })).status).toBe("REFUNDED");
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: buyer.id } })).buyWallet).toBe(walletBefore + 6);
+
+    // مشکل رفع شد؛ تیک زمان‌بند در CLOSED جامانده را بازپرداخت می‌کند و تیک بعدی هیچ چیز را دوباره نه.
+    await prisma.adSlot.update({ where: { id: broken.id }, data: { winnerUserId: buyer.id } });
+    await scheduler.runScheduledTasks();
+    await scheduler.runScheduledTasks();
+    expect((await prisma.adSlot.findUniqueOrThrow({ where: { id: broken.id } })).status).toBe("REFUNDED");
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: buyer.id } })).buyWallet).toBe(walletBefore + 9);
+    for (const id of [broken.id, afterClose.id]) {
+      expect(await prisma.ledgerEntry.count({ where: { reason: adslots.ADSLOT_REFUND_REASON, refId: id } })).toBe(1);
+    }
   });
 });

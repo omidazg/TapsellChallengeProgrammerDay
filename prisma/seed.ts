@@ -17,8 +17,7 @@ async function main() {
   const envPassword = process.env.ADMIN_PASSWORD;
   const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } });
   if (existing) {
-    // رمز ادمین موجود دست نمی‌خورد؛ فقط دسترسی ادمین تضمین می‌شود
-    await prisma.user.update({ where: { email }, data: { isAdmin: true } });
+    // حساب موجود دست نمی‌خورد: seed در هر deploy اجرا می‌شود و isAdmin دادن، ادمینِ عزل‌شده را دوباره ادمین می‌کرد
     console.log("admin exists:", email);
   } else if (process.env.NODE_ENV === "production" && (!envPassword || envPassword.length < 8)) {
     // رمز پیش‌فرض عمومی (admin1234) در production یعنی تصاحب پنل ادمین؛ ساخت ادمین را رد کن

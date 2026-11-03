@@ -20,7 +20,8 @@
 #      you to edit it before the app will work correctly.
 #   4. Pulls the prebuilt web/migrate images for that tag from ghcr.io (this
 #      server's network can't reliably reach registry.npmjs.org, so building
-#      the Dockerfile here is unreliable), briefly stops the services holding
+#      the Dockerfile here is unreliable), takes a fresh db backup (aborts,
+#      with nothing stopped, if that fails), briefly stops the services holding
 #      the sqlite file so migrations can run, then starts everything with
 #      IMAGE_TAG exported in the remote shell (the server's .env is never
 #      modified for this).
@@ -160,7 +161,8 @@ rollback_now() {
   ensure_tag "$PREV_TAG" || true
   if start_without_migrate "$PREV_TAG" && wait_web_healthy "$PREV_TAG"; then
     echo "==> Rolled back: $PREV_TAG is running and healthy. The failed tag was $IMAGE_TAG." >&2
-    echo "   (Database migrations applied by $IMAGE_TAG, if any, were NOT reverted.)" >&2
+    echo "   (Database migrations applied by $IMAGE_TAG, if any, were NOT reverted. If $PREV_TAG" >&2
+    echo "    misbehaves on the new schema, restore the pre-deploy backup with deploy/restore.sh.)" >&2
   else
     echo "!! Rollback to $PREV_TAG did not become healthy either -- the site may be DOWN." >&2
   fi
@@ -177,6 +179,21 @@ rollback_now() {
 # `_prisma_migrations`, and the deploy dies with "database is locked".
 # Stopping them first makes every deploy behave like a cold start. `up -d`
 # below starts them again the moment the migration finishes.
+#
+# First, a fresh backup: the newest periodic one can be 15 minutes old, and
+# migrations are NOT always additive (v2 drops/rebuilds tables, deletes rows),
+# so an auto-rollback below may need this to restore from.
+BACKUP_RUNNING="$(rc "$IMAGE_TAG" "docker compose ps -q --status running backup" | tr -d '\r\n ')"
+if [ -n "$BACKUP_RUNNING" ]; then
+  echo "==> Taking a fresh db backup before stopping anything"
+  rc "$IMAGE_TAG" "docker compose exec -T -u node backup node /app/scripts/backup.mjs --once" || {
+    echo "!! Pre-deploy backup failed -- aborting; nothing was stopped, the old build is still running." >&2
+    exit 1
+  }
+else
+  echo "    backup service not running (first deploy?) -- skipping the pre-deploy backup"
+fi
+
 rc "$IMAGE_TAG" "docker compose stop web backup"
 
 echo "==> Starting $IMAGE_TAG (migrate runs first)"

@@ -241,6 +241,54 @@ describe("coins.ts: verifyCoinOrder (بازگشت از درگاه آزمایشی
     expect(await walletOf(u.id)).toBe(200);
   });
 
+  /** وضعیت سفارش درست بعد از بررسی PENDING و پیش از ادعای PAID (وسط تأیید درگاه) عوض می‌شود. */
+  function changeDuringVerify(change: () => Promise<unknown>) {
+    const findUnique = prisma.coinOrder.findUnique.bind(prisma.coinOrder);
+    return vi.spyOn(prisma.coinOrder, "findUnique").mockImplementationOnce((async (args: Parameters<typeof findUnique>[0]) => {
+      const row = await findUnique(args);
+      await change();
+      return row;
+    }) as never);
+  }
+
+  it("لغو کاربر وسط تأیید درگاه: پرداخت ثابت‌شده سکه را اضافه می‌کند", async () => {
+    const u = await makeUser(0);
+    const { orderId, authority } = await fakeOrder(u.id, 30);
+    const spy = changeDuringVerify(() => coins.cancelCoinOrder(u.id, orderId));
+    try {
+      const res = await coins.verifyCoinOrder("fake", authority, { status: "OK" });
+      expect(res).toEqual({ ok: true, orderId, coins: 30, alreadyPaid: false });
+    } finally {
+      spy.mockRestore();
+    }
+    const order = await orderOf(orderId);
+    expect(order.status).toBe("PAID");
+    expect(order.refId).toMatch(/^FAKE-/);
+    expect(await walletOf(u.id)).toBe(30);
+    expect(await prisma.ledgerEntry.count({ where: { userId: u.id, reason: "COIN_PURCHASE" } })).toBe(1);
+  });
+
+  it("رد برگزارکننده وسط تأیید درگاه: موفق گزارش نمی‌شود و کد پیگیری در سفارش می‌ماند", async () => {
+    const u = await makeUser(0);
+    const { orderId, authority } = await fakeOrder(u.id, 20);
+    const spy = changeDuringVerify(() => coins.adminRejectOrder(orderId, "رد"));
+    try {
+      const res = await coins.verifyCoinOrder("fake", authority, { status: "OK" });
+      expect(res.ok).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+    const order = await orderOf(orderId);
+    expect(order.status).toBe("FAILED");
+    expect(order.refId).toMatch(/^FAKE-/);
+    expect(order.note).toContain(order.refId!);
+    expect(await walletOf(u.id)).toBe(0);
+    // پیگیری برگزارکننده همان کد پیگیری را نگه می‌دارد
+    expect((await coins.adminMarkOrderPaid(orderId, "پیگیری شد")).ok).toBe(true);
+    expect((await orderOf(orderId)).refId).toBe(order.refId);
+    expect(await walletOf(u.id)).toBe(20);
+  });
+
   it("اطلاعات بازگشت نامعتبر رد می‌شود", async () => {
     const u = await makeUser();
     const { authority } = await fakeOrder(u.id, 20);

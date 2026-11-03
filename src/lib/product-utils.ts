@@ -156,11 +156,6 @@ export function imageUrlError(raw: string): string | null {
   return null;
 }
 
-/** نسخهٔ بولی {@link imageUrlError} برای اعتبارسنجی سرور */
-export function isAllowedImageUrl(v: string): boolean {
-  return imageUrlError(v) === null;
-}
-
 /** تشخیص نوع تیزر و ساخت آدرس embed مناسب */
 export function parseTeaser(url: string): { kind: TeaserKind; embedSrc?: string } {
   const u = (url || "").trim();

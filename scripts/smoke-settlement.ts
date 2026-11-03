@@ -12,25 +12,6 @@
  */
 
 import { createTempDb, isTempDatabaseUrl } from "./lib/temp-db";
-import { createRequire } from "node:module";
-import path from "node:path";
-
-// `src/lib/db` پکیج `server-only` را import می‌کند که بیرون از Next خطا می‌دهد.
-const nodeRequire = createRequire(__filename);
-try {
-  const id = nodeRequire.resolve("server-only");
-  nodeRequire.cache[id] = {
-    id,
-    filename: id,
-    path: path.dirname(id),
-    loaded: true,
-    exports: {},
-    children: [],
-    paths: [],
-  } as unknown as NodeJS.Module;
-} catch {
-  // نصب نیست؛ کاری لازم نیست
-}
 
 // DATABASE_URL باید پیش از import شدن src/lib/db تنظیم شود؛ اگر از قبل به یک
 // پایگاه‌دادهٔ موقت اشاره می‌کند (اجرا از run-smokes) همان استفاده می‌شود.
@@ -113,6 +94,8 @@ async function main() {
           price: t.price,
           submittedAt: new Date(),
           aiQuality: t.ai,
+          // پس از CLOSED فقط ارزیابی نهایی حساب است؛ همان نمره تا امتیاز پیش و پس از پایان یکی بماند.
+          aiFinal: t.ai,
         },
       });
       productIds[t.key] = product.id;

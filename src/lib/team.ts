@@ -684,12 +684,20 @@ export type AutoComposeSummary = {
  * با جای خالی (حتی با تکرار نقش)، و در نهایت تیم تازه‌ای برایش ساخته می‌شود.
  */
 export async function autoComposeTeams(): Promise<AutoComposeSummary> {
-  const teamless = await prisma.user.findMany({ where: { teamId: null }, orderBy: { createdAt: "asc" } });
+  // ادمین، کادر (داور/اپراتور استودیو) و کاربر مسدود شرکت‌کننده نیستند و تیم نمی‌گیرند.
+  const teamless = await prisma.user.findMany({
+    where: { teamId: null, isAdmin: false, staffRole: "", blockedAt: null },
+    orderBy: { createdAt: "asc" },
+  });
 
-  const teamsRaw = await prisma.team.findMany({ where: { solo: false }, include: { members: { select: { role: true } } } });
+  // همان قاعدهٔ joinMatchmaking: تیمِ دارای محصول ثبت‌نهایی (فهرست قفل) و تیم بی‌عضو کنار گذاشته می‌شوند.
+  const teamsRaw = await prisma.team.findMany({
+    where: { solo: false, products: { none: { submittedAt: { not: null } } } },
+    include: { members: { select: { role: true } } },
+  });
   type TeamState = { id: string; name: string; roles: Set<string>; count: number };
   const teams: TeamState[] = teamsRaw
-    .filter((t) => t.members.length < TEAM_FULL)
+    .filter((t) => t.members.length > 0 && t.members.length < TEAM_FULL)
     .map((t) => ({ id: t.id, name: t.name, roles: new Set(t.members.map((m) => m.role)), count: t.members.length }));
 
   const assigned: AutoComposeSummary["assigned"] = [];

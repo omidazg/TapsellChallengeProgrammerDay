@@ -389,6 +389,32 @@ describe("scoring.ts: computeScores (داده‌ها از پایگاه‌داد�
     expect(find(out, ids.B).pts.ai).toBeCloseTo(300, 9);
   });
 
+  it("پس از پایان مسابقه فقط ارزیابی نهایی حساب است؛ بدون آن هوش مصنوعی صفر است", async () => {
+    await prisma.setting.upsert({ where: { key: "phase" }, update: { value: "CLOSED" }, create: { key: "phase", value: "CLOSED" } });
+    try {
+      const out = await scoring.computeScores();
+      expect(find(out, ids.A, "content").ai).toBe(80);
+      expect(find(out, ids.A).ai).toBeNull();
+      expect(find(out, ids.A).pts.ai).toBe(0);
+    } finally {
+      await prisma.setting.deleteMany({ where: { key: "phase" } });
+    }
+  });
+
+  it("پس از پایان، اگر ارزیابی نهایی هنوز برای هیچ محصولی اجرا نشده، بازخورد موقت می‌ماند", async () => {
+    const finals = await prisma.product.findMany({ where: { aiFinal: { not: null } }, select: { id: true, aiFinal: true } });
+    await prisma.product.updateMany({ data: { aiFinal: null } });
+    await prisma.setting.upsert({ where: { key: "phase" }, update: { value: "CLOSED" }, create: { key: "phase", value: "CLOSED" } });
+    try {
+      const out = await scoring.computeScores();
+      expect(find(out, ids.A).ai).not.toBeNull();
+      expect(find(out, ids.A).pts.ai).toBeGreaterThan(0);
+    } finally {
+      await prisma.setting.deleteMany({ where: { key: "phase" } });
+      for (const f of finals) await prisma.product.update({ where: { id: f.id }, data: { aiFinal: f.aiFinal } });
+    }
+  });
+
   it("وزن هر محور از خود محور خوانده می‌شود؛ محور محتوا بخش آمار بازار ندارد", async () => {
     const out = await scoring.computeScores();
     const content = find(out, ids.A, "content");

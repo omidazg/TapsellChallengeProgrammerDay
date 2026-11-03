@@ -319,6 +319,32 @@ describe("logRatio", () => {
     expect(logRatio(99, 9999)).toBeCloseTo(0.5, 9);
     expect(logRatio(10, 1000)).toBeGreaterThan(10 / 1000);
   });
+
+  it("از بهترین مقدار بیشتر شود باز هم یک است", () => {
+    expect(logRatio(9999, 99)).toBe(1);
+  });
+});
+
+describe("scoreGame: ثبت بی‌محصول بهترین مقدار محور را تعیین نمی‌کند", () => {
+  it("تیم فقط‌ایده با حمایت بیشتر سهم حمایت محصول واقعی را کم نمی‌کند", () => {
+    const out = scoreGame(defaultConfig(), [
+      team({ teamId: "A", supports: supporters("a", 4, 25) }),
+      team({ teamId: "I", productId: null, supports: supporters("i", 40, 50) }),
+    ]);
+    const supportPts = (DEFAULT_WEIGHTS.market * 10 * DEFAULT_WEIGHTS.marketSub.support) / 100;
+    expect(byId(out.teams, "A").marketDetail.support).toBeCloseTo(supportPts, 9);
+    // نسبت ثبت بی‌محصول هم از یک بیشتر نمی‌شود
+    expect(byId(out.teams, "I").marketDetail.support).toBeCloseTo(supportPts, 9);
+  });
+
+  it("اگر هیچ ثبتی محصول ندارد، بهترین مقدار از همهٔ ثبت‌ها می‌آید", () => {
+    const out = scoreGame(defaultConfig(), [
+      team({ teamId: "I1", productId: null, supports: supporters("x", 1, 25) }),
+      team({ teamId: "I2", productId: null, supports: supporters("y", 4, 25) }),
+    ]);
+    expect(byId(out.teams, "I2").marketDetail.support).toBeGreaterThan(byId(out.teams, "I1").marketDetail.support);
+    expect(byId(out.teams, "I1").marketDetail.support).toBeGreaterThan(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -106,6 +106,15 @@ describe("module-state: وضعیت بخش‌ها", () => {
     await phase.setPhase("CLOSED", null);
     for (const key of free) expect(await ms.getModuleStatus(key)).toBe("open");
   });
+
+  it("ددلاین گذشته پیش از تیک زمان‌بند (فاز هنوز LIVE) بخش‌های بازی را می‌بندد ولی ویترین باز می‌ماند", async () => {
+    await ms.setModuleStatus("build", "open");
+    await ms.setModuleStatus("showcase", "open");
+    await phase.setPhase("LIVE", new Date(Date.now() - 20_000));
+    expect(await ms.getModuleStatus("build")).toBe("ro");
+    expect(await ms.moduleOpen("build")).toBe(false);
+    expect(await ms.moduleOpen("showcase")).toBe(true);
+  });
 });
 
 describe("module-state: استثنای تیم", () => {
@@ -123,6 +132,28 @@ describe("module-state: استثنای تیم", () => {
     expect(await ms.moduleOpen("invest", null)).toBe(false);
     expect(await ms.moduleOpen("invest")).toBe(false);
     expect(await ms.moduleStatusFor("invest", plain.id)).toBe("closed");
+  });
+
+  it("استثنا در جریان مسابقه بخش بازی را باز می‌کند ولی پس از پایان یا ددلاین نه", async () => {
+    const team = await makeTeam();
+    await ms.setModuleStatus("market", "closed");
+    await ms.setModuleStatus("showcase", "closed");
+    await ms.addModuleException("market", team.id, "admin");
+    await ms.addModuleException("showcase", team.id, "admin");
+    await phase.setPhase("LIVE", new Date(Date.now() + 60_000));
+    expect(await ms.moduleOpen("market", team.id)).toBe(true);
+
+    await phase.setPhase("LIVE", new Date(Date.now() - 20_000));
+    expect(await ms.moduleOpen("market", team.id)).toBe(false);
+
+    await phase.setPhase("CLOSED", null);
+    expect(await ms.moduleOpen("market", team.id)).toBe(false);
+    expect(await ms.moduleGate("market", team.id)).toBe(ms.moduleClosedMessage("market"));
+    expect(await ms.moduleStatusFor("market", team.id)).toBe("closed");
+    expect((await ms.moduleStatusesFor(team.id)).market).toBe("closed");
+    // بخش خارج از فهرست انجماد: استثنا همچنان کار می‌کند
+    expect(await ms.moduleOpen("showcase", team.id)).toBe(true);
+    expect(await ms.moduleStatusFor("showcase", team.id)).toBe("open");
   });
 
   it("بخش مخفی برای تیم دارای استثنا دیده می‌شود", async () => {

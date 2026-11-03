@@ -15,18 +15,24 @@ export * from "./modules";
 
 const settingKey = (key: ModuleKey) => `module_${key}`;
 
+/** آیا مسابقه تمام شده است؟ ددلاین گذشته هم حساب است، حتی پیش از آنکه تیک زمان‌بند فاز را CLOSED کند. */
+async function contestOver(): Promise<boolean> {
+  const { phase, endsAt } = await getPhase();
+  return phase === "CLOSED" || (!!endsAt && endsAt.getTime() <= Date.now());
+}
+
 /** وضعیت همهٔ بخش‌ها. پس از پایان مسابقه، بخش‌های بازی اگر باز باشند فقط‌خواندنی می‌شوند. */
 export async function getModuleStatuses(): Promise<Record<ModuleKey, ModuleStatus>> {
-  const [rows, { phase }] = await Promise.all([
+  const [rows, over] = await Promise.all([
     prisma.setting.findMany({ where: { key: { in: MODULE_KEYS.map(settingKey) } } }),
-    getPhase(),
+    contestOver(),
   ]);
   const map = new Map(rows.map((r) => [r.key, r.value]));
   const out = {} as Record<ModuleKey, ModuleStatus>;
   for (const key of MODULE_KEYS) {
     const stored = map.get(settingKey(key));
     let status: ModuleStatus = isModuleStatus(stored) ? stored : MODULE_DEFAULTS[key];
-    if (phase === "CLOSED" && status === "open" && MODULES_FROZEN_AT_END.includes(key)) status = "ro";
+    if (over && status === "open" && MODULES_FROZEN_AT_END.includes(key)) status = "ro";
     out[key] = status;
   }
   return out;
@@ -54,6 +60,8 @@ async function hasException(key: string, teamId?: string | null): Promise<boolea
 /** آیا این بخش برای این تیم قابل انجام است؟ (باز، یا استثنای همان تیم) */
 export async function moduleOpen(key: ModuleKey, teamId?: string | null): Promise<boolean> {
   if ((await getModuleStatus(key)) === "open") return true;
+  // پس از پایان، استثنای قدیمی نباید بخش‌های بازی را باز کند؛ وگرنه تسویهٔ دوباره رتبه‌ها را عوض می‌کند.
+  if (MODULES_FROZEN_AT_END.includes(key) && (await contestOver())) return false;
   return hasException(key, teamId);
 }
 
@@ -75,17 +83,23 @@ export async function moduleVisible(key: ModuleKey, teamId?: string | null): Pro
 
 /** وضعیت مؤثر یک بخش در صفحه‌ها از دید یک تیم: استثنای همان تیم بخش را برایش باز می‌کند. */
 export async function moduleStatusFor(key: ModuleKey, teamId?: string | null): Promise<ModuleStatus> {
-  if (await hasException(key, teamId)) return "open";
-  return getModuleStatus(key);
+  return (await moduleStatusesFor(teamId))[key];
 }
 
 /** وضعیت مؤثر همهٔ بخش‌ها از دید یک تیم (برای منو). */
 export async function moduleStatusesFor(teamId?: string | null): Promise<Record<ModuleKey, ModuleStatus>> {
   const statuses = await getModuleStatuses();
   if (!teamId) return statuses;
-  const rows = await prisma.moduleException.findMany({ where: { teamId }, select: { moduleKey: true } });
+  const [rows, over] = await Promise.all([
+    prisma.moduleException.findMany({ where: { teamId }, select: { moduleKey: true } }),
+    contestOver(),
+  ]);
   for (const r of rows) {
-    if ((MODULE_KEYS as readonly string[]).includes(r.moduleKey)) statuses[r.moduleKey as ModuleKey] = "open";
+    const key = r.moduleKey as ModuleKey;
+    if (!(MODULE_KEYS as readonly string[]).includes(key)) continue;
+    // همان قانون moduleOpen: پس از پایان، استثنا بخش بازی را باز نشان نمی‌دهد.
+    if (over && MODULES_FROZEN_AT_END.includes(key)) continue;
+    statuses[key] = "open";
   }
   return statuses;
 }

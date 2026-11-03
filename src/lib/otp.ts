@@ -2,6 +2,7 @@ import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { prisma } from "./db";
 import { fa } from "./persian";
 import { sendSms, otpEchoAllowed, smsEnabled } from "./sms";
+import { rateLimit, rateLimitMessage } from "./rate-limit";
 
 export type OtpPurpose = "LOGIN" | "REGISTER" | "PROFILE";
 
@@ -11,6 +12,8 @@ export const OTP_TTL_SEC = 120;
 export const OTP_RESEND_SEC = 60;
 /** سقف ارسال به یک شماره در یک ساعت */
 const OTP_MAX_PER_HOUR = 5;
+/** سقف کل پیامک‌های کد در یک ساعت (همهٔ شماره‌ها روی هم) */
+const OTP_GLOBAL_PER_HOUR = 300;
 /** سقف تلاش برای هر کد (پیش از مقایسه شمرده می‌شود)؛ بعد از آن کد باطل است */
 const OTP_MAX_ATTEMPTS = 5;
 const CODE_LEN = 6;
@@ -48,6 +51,9 @@ export async function requestOtp(phone: string, purpose: OtpPurpose): Promise<Ot
   if (recent.length >= OTP_MAX_PER_HOUR) {
     return { ok: false, error: "تعداد درخواست کد برای این شماره زیاد بوده؛ کمی بعد دوباره تلاش کن." };
   }
+  // سقف سراسری: بدون آن، ارسال به هزاران شمارهٔ تصادفی (هرکدام زیر سقف خودش) هزینهٔ پیامک را بالا می‌برد
+  const global = rateLimit("sms:global", "all", { limit: OTP_GLOBAL_PER_HOUR, windowMs: 60 * 60 * 1000 });
+  if (!global.ok) return { ok: false, error: rateLimitMessage(global.retryAfterSec), retryAfterSec: global.retryAfterSec };
 
   const code = String(randomInt(0, 10 ** CODE_LEN)).padStart(CODE_LEN, "0");
   await prisma.$transaction([

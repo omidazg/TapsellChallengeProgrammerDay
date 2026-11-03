@@ -16,8 +16,3 @@ export function normalizePhone(raw: string | null | undefined): string | null {
   else if (s.startsWith("9") && s.length === 10) s = "0" + s;
   return /^09\d{9}$/.test(s) ? s : null;
 }
-
-/** نمایش نیمه‌پوشیده برای پیام‌ها: ۰۹۱۲•••۴۵۶۷ */
-export function maskPhone(phone: string) {
-  return `${phone.slice(0, 4)}•••${phone.slice(-4)}`;
-}

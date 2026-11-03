@@ -33,10 +33,10 @@ function parseScores(raw: string): Record<string, number> {
   }
 }
 
-/** همهٔ محصول‌های ثبت‌نهایی‌شده (داوری روی همهٔ تیم‌ها انجام می‌شود) با نمرهٔ همین داور. */
+/** همهٔ محصول‌های ثبت‌نهایی‌شده (داوری روی همهٔ تیم‌ها انجام می‌شود) با نمرهٔ همین داور؛ محصول تیم خود داور نمی‌آید. */
 export async function listJuryRows(judgeId: string): Promise<JuryRow[]> {
   const products = await prisma.product.findMany({
-    where: { submittedAt: { not: null } },
+    where: { submittedAt: { not: null }, team: { members: { none: { id: judgeId } } } },
     include: {
       team: { select: { name: true } },
       track: { select: { id: true, juryCriteria: true, order: true } },
@@ -71,9 +71,11 @@ export async function saveJuryScore(
   if (gate) return { error: gate };
   const product = await prisma.product.findUnique({
     where: { id: productId },
-    select: { submittedAt: true, track: { select: { juryCriteria: true } } },
+    select: { submittedAt: true, teamId: true, track: { select: { juryCriteria: true } } },
   });
   if (!product?.submittedAt) return { error: "این محصول هنوز ثبت نهایی نشده است." };
+  const judge = await prisma.user.findUnique({ where: { id: judgeId }, select: { teamId: true } });
+  if (judge?.teamId === product.teamId) return { error: "نمی‌توانی محصول تیم خودت را داوری کنی." };
 
   const scores: Record<string, number> = {};
   for (const c of parseCriteria(product.track.juryCriteria)) {

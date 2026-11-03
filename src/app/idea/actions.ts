@@ -77,13 +77,11 @@ export async function saveIdeaAction(prevState: IdeaActionState, formData: FormD
 
   const intent = String(formData.get("intent") ?? "draft");
 
-  // ایدهٔ ثبت‌نهایی‌شده فقط پس از «ویرایش» (باز کردن قفل) با پیش‌نویس عوض می‌شود؛
-  // وگرنه یک تب قدیمی می‌تواند محتوا را بی‌صدا و بدون تحلیل دوباره تغییر دهد.
-  if (intent !== "submit") {
-    const existing = await prisma.idea.findUnique({ where: { teamId_trackId: { teamId: user.teamId, trackId } }, select: { submittedAt: true } });
-    if (existing?.submittedAt) {
-      return { error: "ایده ثبت نهایی شده است؛ برای تغییر، صفحه را تازه کن و ابتدا «ویرایش» را بزن", values };
-    }
+  // ایدهٔ ثبت‌نهایی‌شده (چه پیش‌نویس چه ثبت دوباره) فقط پس از «ویرایش» (باز کردن قفل) عوض می‌شود؛
+  // وگرنه یک تب قدیمی می‌تواند محتوا را بی‌صدا و بدون ثبت در تاریخچه تغییر دهد.
+  const existing = await prisma.idea.findUnique({ where: { teamId_trackId: { teamId: user.teamId, trackId } }, select: { submittedAt: true } });
+  if (existing?.submittedAt) {
+    return { error: "ایده ثبت نهایی شده است؛ برای تغییر، صفحه را تازه کن و ابتدا «ویرایش» را بزن", values };
   }
 
   const parsed = (intent === "submit" ? ideaSchema : draftSchema).safeParse({

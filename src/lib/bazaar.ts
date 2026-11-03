@@ -77,16 +77,19 @@ export async function setBazaarFlag(productId: string, flagged: boolean, note: s
 
 export type BazaarImportRow = { key: string } & Partial<Record<keyof BazaarMetrics, unknown>>;
 
-/** ورود گروهی از اکسل؛ هر ردیف با شناسهٔ بسته یا نشانی محصول پیدا می‌شود. */
-export async function importBazaarRows(rows: BazaarImportRow[]): Promise<{ saved: number; skipped: string[] }> {
+/**
+ * ورود گروهی از اکسل؛ هر ردیف با شناسهٔ بسته یا نشانی محصول پیدا می‌شود.
+ * ردیف محصول تیم خودِ واردکننده (ownTeamId) رد می‌شود — همان قاعدهٔ ثبت دستی آمار.
+ */
+export async function importBazaarRows(rows: BazaarImportRow[], ownTeamId: string | null = null): Promise<{ saved: number; skipped: string[] }> {
   let saved = 0;
   const skipped: string[] = [];
   for (const row of rows) {
     const key = row.key.trim();
     const product = key
-      ? await prisma.product.findFirst({ where: { OR: [{ bazaarPackage: key }, { slug: key }] }, select: { id: true } })
+      ? await prisma.product.findFirst({ where: { OR: [{ bazaarPackage: key }, { slug: key }] }, select: { id: true, teamId: true } })
       : null;
-    if (!product) {
+    if (!product || (ownTeamId && product.teamId === ownTeamId)) {
       skipped.push(key || "(ردیف بدون شناسه)");
       continue;
     }

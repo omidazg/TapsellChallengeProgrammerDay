@@ -123,6 +123,16 @@ describe("saveJuryScore", () => {
     expect(await prisma.juryScore.count({ where: { productId: product.id } })).toBe(0);
   });
 
+  it("داور محصول تیم خودش را نه می‌بیند و نه نمره می‌دهد", async () => {
+    const judge = await makeUser();
+    const { team, product } = await makeProduct();
+    await prisma.user.update({ where: { id: judge.id }, data: { teamId: team.id } });
+    const keys = await criterionKeys();
+    expect((await jury.saveJuryScore(judge.id, product.id, { scores: uniform(keys, 10) })).error).toBeTruthy();
+    expect(await prisma.juryScore.count({ where: { productId: product.id } })).toBe(0);
+    expect((await jury.listJuryRows(judge.id)).some((r) => r.productId === product.id)).toBe(false);
+  });
+
   it("کلید خارج از معیارهای محور ذخیره نمی‌شود", async () => {
     const judge = await makeUser();
     const { product } = await makeProduct();
