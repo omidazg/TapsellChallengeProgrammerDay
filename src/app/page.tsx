@@ -34,6 +34,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ w
     getModuleStatuses(),
   ]);
   const trackById = new Map(tracks.map((t) => [t.id, t]));
+  const communityLinks = COMMUNITY_LINKS.filter((l) => statusVisible(modules[l.key]));
   // جایزهٔ محور مخفی نباید پیش از باز شدن محور دیده شود.
   const prizes = allPrizes.filter((p) => trackById.has(p.trackId));
   const closed = phase === "CLOSED";
@@ -48,6 +49,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ w
         tracks={tracks}
         prizes={prizes}
         registrationOpen={modules.registration === "open"}
+        communityLinks={communityLinks}
       />
     );
   }
@@ -184,6 +186,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ w
         <h2 className="text-lg font-black text-brand-navy">جوایز</h2>
         <PrizeGrid prizes={prizes} trackById={trackById} />
       </section>
+
+      {communityLinks.length > 0 && <CommunityStrip links={communityLinks} />}
 
       <LiveFeed />
     </Container>
@@ -377,6 +381,28 @@ const FAQ: { q: string; a: string | ((v: GameValues) => string) }[] = [
   },
 ];
 
+type CommunityLink = { href: string; label: string; desc: string; key: ModuleKey };
+
+/** بخش‌های عمومی که بعد از مسابقه هم باز می‌مانند */
+const COMMUNITY_LINKS: CommunityLink[] = [
+  { href: "/showcase", label: "🛍️ ویترین محصولات", desc: "محصول‌های ساخته‌شده با نام سازنده‌ها؛ رأی بده.", key: "showcase" },
+  { href: "/board", label: "📰 بورد خبر", desc: "پیشرفت، لانچ و درس‌آموخته‌های تیم‌ها.", key: "board" },
+  { href: "/learn", label: "🎓 آموزش", desc: "ساخت محصول با ابزارهای ساده و هوش مصنوعی.", key: "learn" },
+];
+
+function CommunityStrip({ links }: { links: CommunityLink[] }) {
+  return (
+    <section aria-label="ویترین، بورد و آموزش" className="grid gap-4 sm:grid-cols-3">
+      {links.map((l) => (
+        <Link key={l.href} href={l.href} className="card p-5 anim-rise hover:border-brand-cyan transition">
+          <div className="font-black text-brand-navy">{l.label}</div>
+          <p className="mt-1 text-sm text-brand-slate">{l.desc}</p>
+        </Link>
+      ))}
+    </section>
+  );
+}
+
 function LoggedOutLanding({
   closed,
   statusLabel,
@@ -385,6 +411,7 @@ function LoggedOutLanding({
   tracks,
   prizes,
   registrationOpen,
+  communityLinks,
 }: {
   closed: boolean;
   statusLabel: string;
@@ -393,6 +420,7 @@ function LoggedOutLanding({
   tracks: TrackInfo[];
   prizes: PrizeRow[];
   registrationOpen: boolean;
+  communityLinks: CommunityLink[];
 }) {
   const trackById = new Map(tracks.map((t) => [t.id, t]));
   return (
@@ -420,6 +448,13 @@ function LoggedOutLanding({
                 <Link href="/login" className="btn-ghost">ورود</Link>
                 <Link href="/guide" className="btn-ghost">📖 راهنمای کامل بازی</Link>
               </div>
+              {communityLinks.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-3">
+                  {communityLinks.map((l) => (
+                    <Link key={l.href} href={l.href} className="btn-ghost">{l.label}</Link>
+                  ))}
+                </div>
+              )}
             </div>
             <HeroIllustration />
           </div>

@@ -16,6 +16,7 @@ import { PushPrompt } from "./PushPrompt";
 import { PillarStrip } from "./PillarLogos";
 import { ConfirmProvider } from "./ConfirmDialog";
 import { GROUP_NAME } from "@/lib/pillars";
+import { statusVisible } from "@/lib/modules";
 
 /** buyWallet همان «کیف سکه» است (تنها کیف بازی) */
 type ShellUser = { id: string; nickname: string; panelHref: string | null; buyWallet: number; teamName: string | null; avatarSeed: string };
@@ -141,6 +142,8 @@ function Shell({ user, phase, phaseEndsAt, modules, aiOff = false, children }: S
             ) : (
               <>
                 <ThemeToggle className="hidden sm:inline-flex" />
+                {statusVisible(modules.showcase) && <Link href="/showcase" className="hidden md:inline-flex btn-ghost !py-1.5 !px-4">ویترین</Link>}
+                {statusVisible(modules.learn) && <Link href="/learn" className="hidden md:inline-flex btn-ghost !py-1.5 !px-4">آموزش</Link>}
                 <Link href="/guide" className="hidden sm:inline-flex btn-ghost !py-1.5 !px-4">راهنمای بازی</Link>
                 <Link href="/login" className="btn-ghost !py-1.5 !px-4">ورود</Link>
                 {modules.registration !== "hidden" && <Link href="/register" className="btn-primary !py-1.5 !px-4">ثبت‌نام</Link>}

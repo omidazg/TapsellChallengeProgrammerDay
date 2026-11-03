@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { teamManageError } from "@/lib/team-access";
 import { requestGoLive, cancelGoLive } from "@/lib/studio";
+import { requestShowcase, withdrawShowcase } from "@/lib/showcase";
 import { getPhase } from "@/lib/phase";
 import { moduleGate, trackGate } from "@/lib/module-state";
 import { DEFAULTS } from "@/lib/constants";
@@ -318,5 +319,24 @@ export async function cancelGoLiveAction(trackId: string): Promise<StudioActionS
   const result = await cancelGoLive(user, trackId);
   if (result.error) return { error: result.error };
   revalidatePath("/build");
+  return { ok: true };
+}
+
+/** درخواست نمایش محصول در ویترین عمومی — هر عضو تیم */
+export async function requestShowcaseAction(trackId: string): Promise<StudioActionState> {
+  const user = await requireUser();
+  const result = await requestShowcase(user, String(trackId ?? ""));
+  if (result.error) return { error: result.error };
+  revalidatePath("/build");
+  return { ok: true };
+}
+
+/** لغو درخواست یا بیرون آوردن محصول از ویترین */
+export async function withdrawShowcaseAction(trackId: string): Promise<StudioActionState> {
+  const user = await requireUser();
+  const result = await withdrawShowcase(user, String(trackId ?? ""));
+  if (result.error) return { error: result.error };
+  revalidatePath("/build");
+  revalidatePath("/showcase");
   return { ok: true };
 }

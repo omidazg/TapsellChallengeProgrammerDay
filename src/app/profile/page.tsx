@@ -8,6 +8,7 @@ import { computeBadges } from "@/lib/badges";
 import { isTeamSettingsOpen } from "@/lib/team-settings";
 import { BadgeGrid } from "./BadgeGrid";
 import { EditProfileForm } from "./EditProfileForm";
+import { DisplayNameForm } from "./DisplayNameForm";
 import { SkillPicker } from "./SkillPicker";
 import { ShareCard } from "./ShareCard";
 import { PhoneCard } from "./PhoneCard";
@@ -89,6 +90,13 @@ export default async function ProfilePage() {
                 nickname={user.nickname}
                 stats={{ coffee: user.coffee, bugs: user.bugs, sleep: user.sleep, confidence: user.confidence }}
               />
+            </div>
+            <div className="card p-6 anim-rise scroll-mt-24" id="display-name">
+              <h2 className="mb-1 text-lg font-black text-brand-navy">نام نمایشی در ویترین</h2>
+              <p className="mb-4 text-sm text-brand-slate">
+                اگر بخواهی محصول‌هایت با نام واقعی‌ات در ویترین و بورد خبر دیده شوند، اینجا وارد کن. خالی بماند، نام مستعارت نمایش داده می‌شود.
+              </p>
+              <DisplayNameForm displayName={user.displayName} />
             </div>
             <PhoneCard phone={user.phone} smsEnabled={smsEnabled()} />
             <div className="card p-6 anim-rise">

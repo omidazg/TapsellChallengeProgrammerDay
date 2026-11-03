@@ -16,6 +16,9 @@ export const MODULE_KEYS = [
   "jury",
   "leaderboard",
   "results",
+  "showcase",
+  "board",
+  "learn",
 ] as const;
 export type ModuleKey = (typeof MODULE_KEYS)[number];
 
@@ -43,6 +46,9 @@ export const MODULE_LABEL: Record<ModuleKey, string> = {
   jury: "داوری نهایی (پنل داوران)",
   leaderboard: "جدول امتیاز",
   results: "نتایج و برندگان",
+  showcase: "ویترین محصولات و رأی مردمی",
+  board: "بورد خبر تیم‌ها",
+  learn: "آموزش",
 };
 
 export const MODULE_DEFAULTS: Record<ModuleKey, ModuleStatus> = {
@@ -59,6 +65,10 @@ export const MODULE_DEFAULTS: Record<ModuleKey, ModuleStatus> = {
   jury: "closed",
   leaderboard: "ro",
   results: "hidden",
+  // ویترین، بورد و آموزش بعد از ددلاین هم باز می‌مانند تا محصول‌ها زنده بمانند.
+  showcase: "open",
+  board: "open",
+  learn: "open",
 };
 
 /** بخش‌هایی که پایان مسابقه آن‌ها را فقط‌خواندنی می‌کند (داوری، ارزیابی و نتایج بعد از ددلاین ادامه دارند). */

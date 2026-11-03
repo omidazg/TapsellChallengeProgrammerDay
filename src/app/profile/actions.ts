@@ -56,6 +56,18 @@ export async function updateProfileAction(input: z.infer<typeof updateSchema>): 
   return { ok: true };
 }
 
+/** نام واقعی برای ویترین و بورد خبر؛ خالی یعنی نام مستعار نمایش داده شود */
+export async function updateDisplayNameAction(raw: string): Promise<{ error?: string; ok?: boolean }> {
+  const user = await requireUser();
+  const displayName = String(raw ?? "").trim().replace(/\s+/g, " ");
+  if (displayName.length > 60) return { error: "نام نمایشی حداکثر ۶۰ نویسه است." };
+  await prisma.user.update({ where: { id: user.id }, data: { displayName } });
+  revalidatePath("/profile");
+  revalidatePath("/showcase");
+  revalidatePath("/board");
+  return { ok: true };
+}
+
 /** تغییر مهارت اصلی (فقط برچسب پروفایل) — تا پایان «اتاق ایده» */
 export async function updateSkillAction(role: string): Promise<TeamSettingsResult> {
   const user = await requireUser();

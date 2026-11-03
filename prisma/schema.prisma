@@ -31,6 +31,8 @@ model User {
   // نقش محدود در پنل: "" | JUDGE (فقط داوری) | STUDIO_OP (فقط بازار استودیو و آمار بازار)
   staffRole    String   @default("")
   department   String   @default("")
+  // نام واقعی برای ویترین و بورد؛ خالی یعنی فرد نخواسته نامش عمومی نمایش داده شود
+  displayName  String   @default("")
   createdAt    DateTime @default(now())
 
   // با هر بازنشانی رمز یا مسدودسازی یک واحد بالا می‌رود تا نشست‌های قدیمی باطل شوند
@@ -56,6 +58,9 @@ model User {
   surveyResponse    SurveyResponse?
   coinOrders        CoinOrder[]
   juryScores        JuryScore[]
+  showcaseVotes     ShowcaseVote[]
+  boardPosts        BoardPost[]
+  boardReports      BoardReport[]
 
   @@index([teamId])
 }
@@ -85,6 +90,7 @@ model Team {
   adSlotBids      AdSlotBid[]
   scores          TeamScore[]
   flags           CollusionFlag[]
+  boardPosts      BoardPost[]
 }
 
 model TeamInvite {
@@ -157,7 +163,7 @@ model Idea {
   oneLiner           String
   problem            String
   audience           String
-  buildPlan          String // چه چیزی در ۴۸ ساعت ساخته می‌شود
+  buildPlan          String // چه چیزی ساخته می‌شود
   coverUrl           String                @default("")
   fundingCap         Int // قدیمی (هدف جذب سرمایه)؛ ایده‌های تازه ۰
   revenueShare       Int // قدیمی (درصد سود سرمایه‌گذار)؛ ایده‌های تازه ۰
@@ -263,13 +269,20 @@ model Product {
   liveAdminNote   String     @default("")
   liveRequestedAt DateTime?
   liveAt          DateTime?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-  purchases       Purchase[]
-  hearts          Heart[]
-  auction         Auction?
-  juryScores      JuryScore[]
-  bazaarStat      BazaarStat?
+  // ویترین عمومی: "" | REQUESTED | APPROVED | REJECTED (درخواست تیم، تأیید ادمین)
+  showcaseStatus   String          @default("")
+  showcaseFeatured Boolean         @default(false) // «انتخاب کمیته»
+  showcaseNote     String          @default("") // یادداشت ادمین هنگام رد
+  showcaseAt       DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  purchases        Purchase[]
+  hearts           Heart[]
+  auction          Auction?
+  juryScores       JuryScore[]
+  bazaarStat       BazaarStat?
+  showcaseVotes    ShowcaseVote[]
+  boardPosts       BoardPost[]
 
   @@unique([teamId, trackId])
   @@index([trackId])
@@ -649,4 +662,66 @@ model CoinOrder {
   @@unique([gateway, authority])
   @@index([userId, createdAt])
   @@index([status])
+}
+
+// ─── ویترین عمومی: رأی مردمی ───
+// جدا از قلب بازار است و در امتیاز ۳۰/۳۰/۴۰ اثری ندارد؛ فقط مبنای جایزهٔ ویژهٔ «انتخاب مردمی».
+model ShowcaseVote {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([productId, userId])
+  @@index([createdAt])
+}
+
+// ─── بورد خبر: پست‌های پیشرفت تیم‌ها ───
+model BoardPost {
+  id        String        @id @default(cuid())
+  teamId    String
+  team      Team          @relation(fields: [teamId], references: [id])
+  authorId  String
+  author    User          @relation(fields: [authorId], references: [id])
+  productId String?
+  product   Product?      @relation(fields: [productId], references: [id])
+  kind      String // PROGRESS | LAUNCH | FEEDBACK | LESSON
+  body      String
+  imageUrl  String        @default("")
+  linkUrl   String        @default("")
+  hidden    Boolean       @default(false) // پنهان‌شده توسط ادمین
+  featured  Boolean       @default(false) // «آپدیت هفته»
+  createdAt DateTime      @default(now())
+  reports   BoardReport[]
+
+  @@index([hidden, createdAt])
+  @@index([teamId, createdAt])
+}
+
+model BoardReport {
+  id        String    @id @default(cuid())
+  postId    String
+  post      BoardPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  reason    String    @default("")
+  createdAt DateTime  @default(now())
+
+  @@unique([postId, userId])
+}
+
+// ─── آموزش: درس‌های ویدیویی ───
+model Lesson {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @default("")
+  instructor  String   @default("")
+  videoUrl    String   @default("") // ترجیحاً آپارات
+  links       String   @default("") // هر خط یک لینک (ابزارهای معرفی‌شده)
+  order       Int      @default(0)
+  published   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

@@ -5,6 +5,7 @@
  */
 import { prisma } from "./db";
 import { cached } from "./ttl-cache";
+import { BOARD_KIND_LABEL, isBoardKind } from "./community";
 
 export type FeedEvent = {
   id: string;
@@ -21,7 +22,7 @@ const PER_SOURCE_LIMIT = FEED_LIMIT;
 
 /** ساخت فهرست رویدادهای عمومی از جدول‌های موجود (بدون تغییر اسکیما). */
 export async function buildFeed(limit = FEED_LIMIT): Promise<FeedEvent[]> {
-  const [teams, ideas, investments, purchases, wonAuctions, phaseChanges] = await Promise.all([
+  const [teams, ideas, investments, purchases, wonAuctions, phaseChanges, boardPosts] = await Promise.all([
     prisma.team.findMany({
       orderBy: { createdAt: "desc" },
       take: PER_SOURCE_LIMIT,
@@ -66,6 +67,12 @@ export async function buildFeed(limit = FEED_LIMIT): Promise<FeedEvent[]> {
       orderBy: { createdAt: "desc" },
       take: PER_SOURCE_LIMIT,
       select: { id: true, action: true, target: true, createdAt: true },
+    }),
+    prisma.boardPost.findMany({
+      where: { hidden: false },
+      orderBy: { createdAt: "desc" },
+      take: PER_SOURCE_LIMIT,
+      select: { id: true, kind: true, createdAt: true, team: { select: { name: true } } },
     }),
   ]);
 
@@ -123,6 +130,11 @@ export async function buildFeed(limit = FEED_LIMIT): Promise<FeedEvent[]> {
     // مرحلهٔ سراسری وجود ندارد؛ تنها خبر عمومی، پایان مسابقه است.
     if (c.action !== "contest.end" && c.target !== "CLOSED") continue;
     events.push({ id: `phase:${c.id}`, emoji: "🏁", text: "مسابقه به پایان رسید", at: c.createdAt.toISOString() });
+  }
+
+  for (const p of boardPosts) {
+    const kind = isBoardKind(p.kind) ? BOARD_KIND_LABEL[p.kind] : BOARD_KIND_LABEL.PROGRESS;
+    events.push({ id: `board:${p.id}`, emoji: "📰", text: `تیم «${p.team.name}» در بورد خبر نوشت: ${kind.label}`, at: p.createdAt.toISOString() });
   }
 
   events.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());

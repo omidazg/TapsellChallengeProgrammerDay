@@ -14,6 +14,8 @@ import { getBazaarSource } from "@/lib/bazaar";
 import { BuildForm } from "./BuildForm";
 import { ChecklistCard } from "./ChecklistCard";
 import { StudioCard } from "./StudioCard";
+import { ShowcaseCard } from "./ShowcaseCard";
+import type { ShowcaseStatus } from "@/lib/community";
 
 export const metadata = { title: "مرکز ساخت" };
 
@@ -55,7 +57,7 @@ export default async function BuildPage({ searchParams }: { searchParams: Promis
   }
 
   const key = { teamId_trackId: { teamId: user.teamId, trackId: track.id } };
-  const [product, idea, trackError, { canManage, reason }, maxPrice, bazaarSource, studioStatus, aiStatus, osIssues] = await Promise.all([
+  const [product, idea, trackError, { canManage, reason }, maxPrice, bazaarSource, studioStatus, aiStatus, osIssues, showcaseStatus] = await Promise.all([
     prisma.product.findUnique({ where: key }),
     prisma.idea.findUnique({ where: key, select: { submittedAt: true } }),
     trackGate(track.id, user.teamId),
@@ -67,6 +69,7 @@ export default async function BuildPage({ searchParams }: { searchParams: Promis
     track.kind === "OS"
       ? prisma.osIssue.findMany({ where: { active: true }, orderBy: { createdAt: "asc" }, select: { id: true, title: true, url: true } })
       : Promise.resolve([]),
+    moduleStatusFor("showcase", user.teamId),
   ]);
 
   const ideaSubmitted = !!idea?.submittedAt;
@@ -209,6 +212,18 @@ export default async function BuildPage({ searchParams }: { searchParams: Promis
               canManage={canManage}
               open={studioOpen}
               closedNote={studioClosedNote}
+            />
+          )}
+          {product && showcaseStatus !== "hidden" && (
+            <ShowcaseCard
+              key={`showcase-${track.id}`}
+              trackId={track.id}
+              slug={product.slug}
+              status={product.showcaseStatus as ShowcaseStatus}
+              note={product.showcaseNote}
+              submitted={!!product.submittedAt}
+              canManage={canManage}
+              open={showcaseStatus === "open"}
             />
           )}
         </div>

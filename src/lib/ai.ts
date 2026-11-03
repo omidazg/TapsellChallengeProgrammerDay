@@ -234,7 +234,7 @@ export function dueDiligencePrompt(
 یک‌خطی: ${stripPromptTags(idea.oneLiner)}
 مسئله: ${stripPromptTags(idea.problem)}
 مخاطب: ${stripPromptTags(idea.audience)}
-برنامهٔ ساخت ۴۸ ساعته: ${stripPromptTags(idea.buildPlan)}
+برنامهٔ ساخت: ${stripPromptTags(idea.buildPlan)}
 </idea>
 
 <question>

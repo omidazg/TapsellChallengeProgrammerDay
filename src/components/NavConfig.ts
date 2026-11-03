@@ -16,6 +16,9 @@ export const NAV: NavItem[] = [
   { href: "/adslots", label: "جایگاه تبلیغاتی", short: "تبلیغ", icon: "📣", module: "adslots" },
   { href: "/leaderboard", label: "جدول", icon: "🏆", module: "leaderboard" },
   { href: "/results", label: "نتایج", icon: "🏁", module: "results" },
+  { href: "/showcase", label: "ویترین", icon: "🛍️", module: "showcase" },
+  { href: "/board", label: "بورد خبر", short: "بورد", icon: "📰", module: "board" },
+  { href: "/learn", label: "آموزش", icon: "🎓", module: "learn" },
   { href: "/guide", label: "راهنما", icon: "📖" },
 ];
 
