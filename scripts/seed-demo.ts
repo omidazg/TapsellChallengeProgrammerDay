@@ -5,7 +5,7 @@
  *   DATABASE_URL=file:/abs/path/demo.db npx tsx scripts/seed-demo.ts [stage]
  *
  * stage:
- *   market  (پیش‌فرض) — ۱۰ تیم، ایده، حمایت، محصول، نمرهٔ داور، فروش و قلب؛ مسابقه در جریان
+ *   market  (پیش‌فرض) — ۱۰ تیم، ایده، حمایت، محصول، نمرهٔ داور، فروش و قلب، ویترین و بورد خبر و آموزش؛ مسابقه در جریان
  *   auction — به‌علاوهٔ حراج‌های تمام‌شده و یک حراج زنده؛ مسابقه در جریان
  *   closed  — تسویهٔ نهایی و نتایج؛ مسابقه پایان‌یافته
  *
@@ -385,6 +385,7 @@ async function main() {
 
   const already = await prisma.team.count();
   if (already === 0) await seedBase(prisma, investCore, purchaseProduct);
+  await seedCommunity(prisma);
   if (stage === "auction" || stage === "closed") await seedAuctions(prisma);
   if (stage === "closed") {
     const { settleGame } = await import("../src/lib/settlement");
@@ -645,6 +646,111 @@ async function seedSurvey(prisma: Prisma) {
       .create({ data: { userId: u.id, rating: ri(4, 5), fun: ri(3, 5), learned: ri(3, 5), comment: comments[i % comments.length] } })
       .catch(() => {});
   }
+}
+
+const BOARD_POSTS: [team: string, kind: string, body: string, age: number, withProduct?: boolean][] = [
+  ["simorgh", "LAUNCH", "نسخهٔ اول تبلیغ‌سنج بالا آمد! بنرت را آپلود کن و نرخ کلیک پیش‌بینی‌شده را ببین. منتظر نظرهایتان هستیم.", 0.2, true],
+  ["kahkeshan", "PROGRESS", "امروز بخش هدف پس‌انداز را تمام کردیم؛ بچه‌ها با هر قدم یک نشان می‌گیرند. فردا گزارش هفتگی والدین.", 0.5],
+  ["parvaz", "FEEDBACK", "صفحهٔ رزرو صف‌یار را روی موبایل امتحان کنید؛ دکمهٔ «نوبت بگیر» به نظرتان به اندازهٔ کافی دیده می‌شود؟", 0.8, true],
+  ["alborz", "LESSON", "درس امروز: قبل از ساخت شش نمودار، با سه فروشنده حرف بزنید. دو نمودار از شش‌تا اصلاً لازم نبود!", 1.1],
+  ["atash", "PROGRESS", "اولین پادکستر واقعی ثبت‌نام کرد 🎙️ حالا روی گزارش شنیده‌شدن برای برندها کار می‌کنیم.", 1.4],
+  ["setareh", "LAUNCH", "هم‌قدم آماده است: مسیر آشنایی روز اول، چک‌لیست تجهیزات و دستیار پاسخ به سؤال‌های پرتکرار.", 1.9, true],
+  ["darya", "FEEDBACK", "تشخیص گونهٔ گیاه از روی عکس هنوز روی کاکتوس‌ها خطا دارد. کسی دیتاست خوب سراغ دارد؟", 2.3],
+  ["tondar", "PROGRESS", "لینک پرداخت فاکتور وصل شد و یادآوری سررسید خودکار کار می‌کند. قدم بعد: قالب‌های فاکتور.", 2.8],
+  ["ghoghnoos", "LESSON", "خلاصهٔ صوتی ده‌دقیقه‌ای را با هوش مصنوعی ساختیم؛ درس ما: صدای طبیعی از متن خوب می‌آید، نه از مدل بهتر.", 3.2, true],
+  ["kavir", "PROGRESS", "تطبیق هم‌مسیرها حالا ساعت حرکت را هم در نظر می‌گیرد. هفت نفر از مجتمع خودمان امتحانش کردند.", 3.7],
+  ["simorgh", "LESSON", "اول فکر می‌کردیم مشتری ما آژانس‌هاست؛ بعد از پنج مصاحبه فهمیدیم فروشگاه‌های اینستاگرامی بیشتر نیاز دارند.", 4.3],
+  ["kahkeshan", "FEEDBACK", "اسم «جیب‌پول» را دوست دارید یا «پول‌توجیبی»؟ در نظرسنجی کوچک ما شرکت کنید.", 4.8],
+  ["parvaz", "PROGRESS", "پنل مدیریت روزانه برای آرایشگاه‌ها آماده شد؛ نوبت‌های لغوشده خودکار به نفر بعدی می‌رسد.", 5.4],
+  ["alborz", "LAUNCH", "داده‌نما به ووکامرس وصل می‌شود! پنج دقیقه تا اولین داشبورد فروش.", 6.1, true],
+  ["atash", "LESSON", "برندها به عدد اعتماد می‌کنند؛ گزارش پخش را از روز اول طراحی کنید، نه آخر کار.", 6.9],
+];
+
+const LESSONS = [
+  {
+    title: "از ایده تا نمونهٔ اولیه با ابزارهای هوش مصنوعی",
+    description: "چطور در چند ساعت یک نسخهٔ قابل‌لمس از محصولت بسازی: نوشتن توضیح دقیق، ساخت رابط کاربری و انتشار یک لینک قابل اشتراک.",
+    instructor: "تیم برگزاری",
+    links: "https://claude.ai\nhttps://lovable.dev\nhttps://v0.dev",
+  },
+  {
+    title: "صفحهٔ معرفی محصول که دیده شود",
+    description: "عنوان، جملهٔ کوتاه معرفی و تصویر خوب؛ سه چیزی که داور و خریدار در ده ثانیهٔ اول می‌بینند.",
+    instructor: "تیم برگزاری",
+    links: "https://www.canva.com\nhttps://www.figma.com",
+  },
+  {
+    title: "گرفتن بازخورد از کاربر واقعی",
+    description: "پنج سؤال ساده برای مصاحبه با کاربر، و اینکه چطور بازخورد را در بورد خبر به اشتراک بگذاری تا بقیه هم کمکت کنند.",
+    instructor: "تیم برگزاری",
+    links: "https://forms.google.com\nhttps://porsline.ir",
+  },
+];
+
+/** ویترین، رأی مردمی، بورد خبر، آموزش و حساب‌های نقش‌های پنل (یک‌بار؛ اجرای دوباره کاری نمی‌کند) */
+async function seedCommunity(prisma: Prisma) {
+  if ((await prisma.boardPost.count()) > 0) return;
+  const hash = await bcrypt.hash(PASSWORD, 10);
+  for (const [email, nickname, staffRole] of [
+    [`studio@${DOMAIN}`, "اپراتور استودیو", "STUDIO_OP"],
+    [`visitor@${DOMAIN}`, "مهمان نمونه", ""],
+  ] as const) {
+    if (await prisma.user.findUnique({ where: { email } })) continue;
+    await prisma.user.create({ data: { email, passwordHash: hash, nickname, role: "BUILDER", power: "", staffRole, avatarSeed: `demo-${email}` } });
+  }
+
+  const teams = await prisma.team.findMany({
+    where: { slug: { in: TEAMS.map((t) => t.slug) } },
+    select: { id: true, slug: true, members: { select: { id: true } }, products: { select: { id: true }, take: 1 } },
+  });
+  const bySlug = new Map(teams.map((t) => [t.slug, t]));
+  const players = await prisma.user.findMany({ where: { isAdmin: false, staffRole: "", email: { endsWith: `@${DOMAIN}` } }, select: { id: true, teamId: true } });
+
+  // نام نمایشی واقعی برای سازنده‌ها (نام مستعار دمو خودش نام کامل است)
+  for (const u of await prisma.user.findMany({ where: { teamId: { in: teams.map((t) => t.id) } }, select: { id: true, nickname: true } })) {
+    await prisma.user.update({ where: { id: u.id }, data: { displayName: u.nickname } });
+  }
+
+  // ویترین: هفت تیم تأییدشده (دو انتخاب کمیته)، یک درخواست در انتظار بررسی
+  for (const [i, t] of TEAMS.entries()) {
+    const product = bySlug.get(t.slug)?.products[0];
+    if (!product || i > 7) continue;
+    const approved = i < 7;
+    await prisma.product.update({
+      where: { id: product.id },
+      data: {
+        showcaseStatus: approved ? "APPROVED" : "REQUESTED",
+        showcaseFeatured: i === 0 || i === 4,
+        showcaseAt: approved ? new Date(Date.now() - (7 - i) * HOUR) : null,
+      },
+    });
+    if (!approved) continue;
+    const owner = bySlug.get(t.slug)!.id;
+    const voters = shuffled(players.filter((p) => p.teamId !== owner)).slice(0, ri(4, 18));
+    for (const v of voters) {
+      await prisma.showcaseVote.create({ data: { productId: product.id, userId: v.id, createdAt: new Date(Date.now() - rand() * (7 - i) * HOUR) } });
+    }
+  }
+
+  // بورد خبر
+  for (const [i, [slug, kind, body, age, withProduct]] of BOARD_POSTS.entries()) {
+    const team = bySlug.get(slug);
+    if (!team) continue;
+    await prisma.boardPost.create({
+      data: {
+        teamId: team.id,
+        authorId: team.members[i % team.members.length].id,
+        productId: withProduct ? (team.products[0]?.id ?? null) : null,
+        kind,
+        body,
+        featured: i === 0 || i === 3,
+        // در طول ۳۵ ساعت اخیر (تیم‌ها ۴۰ ساعت پیش ثبت‌نام کرده‌اند)
+        createdAt: new Date(Date.now() - age * 5 * HOUR),
+      },
+    });
+  }
+
+  for (const [order, l] of LESSONS.entries()) await prisma.lesson.create({ data: { ...l, order } });
 }
 
 main().catch((e) => {
