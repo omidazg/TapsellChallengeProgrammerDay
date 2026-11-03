@@ -79,6 +79,7 @@ export async function deleteTeamAction(prevState: TeamsActionState, formData: Fo
       await tx.collusionFlag.deleteMany({ where: { OR: [{ teamId: team.id }, { otherTeamId: team.id }] } });
       await tx.teamScore.deleteMany({ where: { teamId: team.id } });
       await tx.moduleException.deleteMany({ where: { teamId: team.id } });
+      await tx.boardPost.deleteMany({ where: { teamId: team.id } });
       await tx.team.delete({ where: { id: team.id } });
     });
   } catch (e) {

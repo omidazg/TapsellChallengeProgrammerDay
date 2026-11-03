@@ -270,7 +270,11 @@ export async function unsubmitProductAction(trackId: string): Promise<ProductAct
   const product = await prisma.product.findUnique({ where: { teamId_trackId: { teamId: user.teamId, trackId } } });
   if (!product) return { error: "هنوز محصولی ثبت نکرده‌ای" };
 
-  await prisma.product.update({ where: { id: product.id }, data: { submittedAt: null } });
+  await prisma.product.update({
+    where: { id: product.id },
+    // محتوای تأییدشدهٔ ویترین عوض می‌شود؛ پس از ثبت دوباره، ادمین باید دوباره تأیید کند
+    data: { submittedAt: null, ...(product.showcaseStatus === "APPROVED" ? { showcaseStatus: "REQUESTED" } : {}) },
+  });
   revalidatePath("/build");
   return { ok: true };
 }

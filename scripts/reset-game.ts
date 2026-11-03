@@ -160,6 +160,8 @@ async function main() {
     await tx.juryScore.deleteMany({});
     await tx.bazaarStat.deleteMany({});
     await tx.ideaRevision.deleteMany({});
+    await tx.showcaseVote.deleteMany({});
+    await tx.boardPost.deleteMany({}); // گزارش‌ها با Cascade پاک می‌شوند
 
     // ۲) خودِ Auction/Product/Idea/AdSlot (بعد از پاک‌شدن فرزندانشان).
     await tx.auction.deleteMany({});

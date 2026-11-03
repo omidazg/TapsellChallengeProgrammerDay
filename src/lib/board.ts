@@ -144,8 +144,9 @@ export async function reportBoardPost(user: { id: string }, postId: string, reas
   if (!post) return { error: "پست پیدا نشد." };
   try {
     await prisma.boardReport.create({ data: { postId, userId: user.id, reason: reason.trim().slice(0, 300) } });
-  } catch {
-    return { error: "این پست را قبلاً گزارش داده‌ای." };
+  } catch (e) {
+    if ((e as { code?: string }).code === "P2002") return { error: "این پست را قبلاً گزارش داده‌ای." };
+    throw e;
   }
   return { ok: true };
 }

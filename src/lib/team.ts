@@ -198,6 +198,7 @@ async function deleteEmptyTeamTx(tx: Prisma.TransactionClient, teamId: string): 
   await tx.collusionFlag.deleteMany({ where: { OR: [{ teamId }, { otherTeamId: teamId }] } });
   await tx.teamScore.deleteMany({ where: { teamId } });
   await tx.teamLeaderVote.deleteMany({ where: { teamId } });
+  await tx.boardPost.deleteMany({ where: { teamId } }); // گزارش‌های پست با Cascade پاک می‌شوند
   await tx.team.delete({ where: { id: teamId } });
   return true;
 }
@@ -628,6 +629,8 @@ export async function adminMergeTeams(teamAId: string, teamBId: string): Promise
   try {
     await prisma.$transaction(async (tx) => {
       await tx.user.updateMany({ where: { teamId: teamBId }, data: { teamId: teamAId } });
+      // پست‌های بورد همراه نویسنده‌ها به تیم A می‌روند (تیم B ایده/محصول ندارد، پس پست به محصولی وصل نیست)
+      await tx.boardPost.updateMany({ where: { teamId: teamBId }, data: { teamId: teamAId } });
       await tx.team.update({ where: { id: teamAId }, data: { solo: false } });
       // اگر تیم B در همین فاصله ایده/محصول ثبت کرده باشد حذف نمی‌شود و ادغام لغو می‌شود
       if (!(await deleteEmptyTeamTx(tx, teamBId))) throw new Error("RACED");

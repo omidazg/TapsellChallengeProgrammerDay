@@ -142,6 +142,25 @@ describe("بورد خبر", () => {
     expect(await prisma.boardReport.count({ where: { postId: id! } })).toBe(0);
   });
 
+  it("تیم دارای پست: با رفتن آخرین عضو حذف می‌شود و در ادغام پست‌ها به تیم مقصد می‌روند", async () => {
+    const { leaveTeam, adminMergeTeams } = await import("../src/lib/team");
+    const solo = await prisma.team.create({ data: { name: `تیم تکی ${++counter}`, slug: `solo-${counter}` } });
+    const alone = await makeUser(solo.id);
+    const { id } = await board.createBoardPost(alone, post());
+    await board.reportBoardPost(await makeUser(null), id!, "");
+    expect(await leaveTeam(alone.id)).toEqual({ ok: true });
+    expect(await prisma.team.findUnique({ where: { id: solo.id } })).toBeNull();
+    expect(await prisma.boardPost.count({ where: { id: id! } })).toBe(0);
+
+    const a = await prisma.team.create({ data: { name: `تیم الف ${++counter}`, slug: `a-${counter}` } });
+    const b = await prisma.team.create({ data: { name: `تیم ب ${++counter}`, slug: `b-${counter}` } });
+    await makeUser(a.id);
+    const writer = await makeUser(b.id);
+    const moved = await board.createBoardPost(writer, post());
+    expect(await adminMergeTeams(a.id, b.id)).toEqual({ ok: true });
+    expect((await prisma.boardPost.findUnique({ where: { id: moved.id! } }))?.teamId).toBe(a.id);
+  });
+
   it("بورد بسته اجازهٔ نوشتن نمی‌دهد", async () => {
     const { member } = await makeTeamWithProduct();
     await ms.setModuleStatus("board", "closed");
