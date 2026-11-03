@@ -16,7 +16,7 @@ export function Gallery({ images, seed, name }: { images: string[]; seed: string
         {/* متن جایگزین: نام محصول + شمارهٔ تصویر؛ sizes واکنش‌گرا تا گوشی تصویر ۸۰۰ پیکسلی دانلود نکند */}
         <Image
           src={list[active]}
-          alt={list.length > 1 ? `${name} — تصویر ${fa(active + 1)} از ${fa(list.length)}` : name}
+          alt={list.length > 1 ? `${name}، تصویر ${fa(active + 1)} از ${fa(list.length)}` : name}
           fill
           sizes="(max-width: 768px) 100vw, 800px"
           className="object-cover"
@@ -34,7 +34,7 @@ export function Gallery({ images, seed, name }: { images: string[]; seed: string
               aria-pressed={idx === active}
               className={`relative size-16 sm:size-auto sm:aspect-square shrink-0 rounded-xl overflow-hidden border-2 transition ${idx === active ? "border-brand-red" : "border-transparent opacity-80 hover:opacity-100"}`}
             >
-              <Image src={thumbUrl(url)} alt={`${name} — تصویر ${fa(idx + 1)}`} fill sizes="120px" className="object-cover" unoptimized={!isLocalUploadUrl(url)} />
+              <Image src={thumbUrl(url)} alt={`${name}، تصویر ${fa(idx + 1)}`} fill sizes="120px" className="object-cover" unoptimized={!isLocalUploadUrl(url)} />
             </button>
           ))}
         </div>

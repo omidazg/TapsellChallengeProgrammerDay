@@ -19,7 +19,7 @@ export default async function AdminPrizesPage() {
     }),
   ]);
   const trackOptions = tracks.map((t) => ({ id: t.id, name: t.name, mixed: t.category === "MIXED" }));
-  const productOptions = products.map((p) => ({ id: p.id, label: `${p.name} — ${p.team.name}`, trackId: p.trackId }));
+  const productOptions = products.map((p) => ({ id: p.id, label: `${p.name} · ${p.team.name}`, trackId: p.trackId }));
 
   // هر ثبت حداکثر یک جایزهٔ ویژه می‌برد؛ جایزهٔ دوم به همان محصول اهدا نمی‌شود.
   const specialCount = new Map<string, number>();

@@ -44,7 +44,7 @@ export function SkillPicker({ role: initialRole }: { role: RoleKey | null }) {
                 type="button"
                 onClick={() => setRole(k)}
                 aria-pressed={active}
-                className={`rounded-2xl border-2 p-3 text-right transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan ${active ? "border-brand-red bg-red-50" : "border-brand-mist bg-white hover:border-brand-cyan"}`}
+                className={`rounded-2xl border-2 p-3 text-start transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan ${active ? "border-brand-red bg-red-50" : "border-brand-mist bg-white hover:border-brand-cyan"}`}
               >
                 <div className="text-xl" aria-hidden>{ROLES[k].emoji}</div>
                 <div className="mt-1 text-sm font-black text-brand-navy">{ROLES[k].label}</div>

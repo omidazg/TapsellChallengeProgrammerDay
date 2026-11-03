@@ -117,7 +117,7 @@ export function PrizeForm({
               defaultValue={trackId === prize?.trackId ? (prize?.winnerProductId ?? "") : ""}
               className="input !py-2 !px-3 w-full"
             >
-              <option value="">— هنوز انتخاب نشده —</option>
+              <option value="">هنوز انتخاب نشده</option>
               {options.map((p) => (
                 <option key={p.id} value={p.id}>{p.label}</option>
               ))}

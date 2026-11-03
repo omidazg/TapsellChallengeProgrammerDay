@@ -29,7 +29,7 @@ export default async function FakeGatewayPage({ searchParams }: { searchParams: 
             🧪
           </div>
           <h1 className="text-2xl font-black text-brand-navy">درگاه پرداخت آزمایشی</h1>
-          <span className="chip-gold">فقط برای تست — هیچ پولی جابه‌جا نمی‌شود</span>
+          <span className="chip-gold">فقط برای تست؛ هیچ پولی جابه‌جا نمی‌شود</span>
         </div>
 
         <dl className="rounded-2xl bg-brand-ice p-4 space-y-2 text-sm">

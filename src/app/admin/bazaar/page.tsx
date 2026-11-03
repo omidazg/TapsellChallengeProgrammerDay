@@ -58,7 +58,7 @@ export default async function AdminBazaarPage() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <h3 id={`bazaar-${r.productId}-title`} className="font-black text-brand-navy break-words">
-                        {r.productName} <span className="text-xs font-normal text-brand-slate">— {r.teamName}</span>
+                        {r.productName} <span className="text-xs font-normal text-brand-slate">· {r.teamName}</span>
                       </h3>
                       <div className="text-xs text-brand-slate">
                         {trackName.get(r.trackId) ?? r.trackId}

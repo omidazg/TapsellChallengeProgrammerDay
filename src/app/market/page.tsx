@@ -128,8 +128,8 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
                 >
                   <div className="relative aspect-[8/5]">
                     <Image src={thumbUrl(p.cover)} alt={p.name} fill sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 400px" className="object-cover group-hover:scale-[1.03] transition" unoptimized={!isLocalUploadUrl(p.cover)} />
-                    {isFeatured && <span className="chip-gold absolute top-2 right-2">ویژه</span>}
-                    {p.live && <span className="chip-ok absolute top-2 left-2">🚀 لایو</span>}
+                    {isFeatured && <span className="chip-gold absolute top-2 start-2">ویژه</span>}
+                    {p.live && <span className="chip-ok absolute top-2 end-2">🚀 لایو</span>}
                   </div>
                   <div className="p-4 space-y-2">
                     <div className="flex flex-wrap items-center gap-2 text-xs text-brand-slate">

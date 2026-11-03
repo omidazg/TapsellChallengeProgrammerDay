@@ -55,7 +55,7 @@ export default async function AdminFlagsPage() {
               <table className="w-full text-sm min-w-[640px]">
                 <caption className="sr-only">پرچم‌های خرید/حمایت متقابل مشکوک بین تیم‌ها</caption>
                 <thead>
-                  <tr className="text-right text-brand-slate border-b border-brand-mist">
+                  <tr className="text-start text-brand-slate border-b border-brand-mist">
                     <th scope="col" className="px-4 py-3 font-bold">تیم اول</th>
                     <th scope="col" className="px-4 py-3 font-bold">تیم دوم</th>
                     <th scope="col" className="px-4 py-3 font-bold">خرج تیم اول به دوم</th>

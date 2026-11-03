@@ -196,7 +196,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
               <table className="w-full text-sm min-w-[720px]">
                 <caption className="sr-only">{view.track ? `جدول امتیازات ${view.track.name}` : "جدول امتیازات همهٔ محورها"}</caption>
                 <thead>
-                  <tr className="text-right text-brand-slate border-b border-brand-mist">
+                  <tr className="text-start text-brand-slate border-b border-brand-mist">
                     <th scope="col" className="px-4 py-3 font-bold">رتبه</th>
                     <th scope="col" className="px-4 py-3 font-bold">تیم و محصول</th>
                     {categories.map((k) => (

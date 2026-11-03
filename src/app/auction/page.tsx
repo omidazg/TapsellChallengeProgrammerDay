@@ -139,7 +139,7 @@ function EndedList({ ended, title, empty }: { ended: AuctionItem[]; title: strin
               <span className="font-bold text-brand-navy break-words">
                 {a.product.specialName} <span className="text-brand-slate font-medium">· {a.product.teamName}</span>
               </span>
-              <span className="text-left">
+              <span className="text-end">
                 {a.winnerNickname ? (
                   <>
                     <div className="text-xs text-brand-slate">{a.winnerNickname}</div>

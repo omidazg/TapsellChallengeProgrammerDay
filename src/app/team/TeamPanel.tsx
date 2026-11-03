@@ -132,7 +132,7 @@ export function TeamPanel({
                   <Avatar seed={m.avatarSeed || m.id} size={56} />
                   <div className="mt-2 font-black text-brand-navy break-words">
                     {m.nickname}
-                    {m.id === currentUserId && <span className="mr-1.5 text-xs font-bold text-brand-slate">(خودت)</span>}
+                    {m.id === currentUserId && <span className="ms-1.5 text-xs font-bold text-brand-slate">(خودت)</span>}
                   </div>
                   {ROLES[role] && (
                     <div className="mt-1 flex flex-wrap gap-1 text-xs">
@@ -381,9 +381,9 @@ function LeaveButton({ lastMember }: { lastMember: boolean }) {
   }
 
   return (
-    <div className="border-t border-brand-mist pt-4 text-left">
+    <div className="border-t border-brand-mist pt-4 text-end">
       {error && (
-        <div className="mb-2 text-right">
+        <div className="mb-2 text-start">
           <Alert kind="error">{error}</Alert>
         </div>
       )}

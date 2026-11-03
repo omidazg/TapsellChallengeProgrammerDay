@@ -110,7 +110,7 @@ function Shell({ user, phase, phaseEndsAt, modules, aiOff = false, children }: S
             </span>
           </Link>
 
-          <div className="mr-auto flex items-center gap-1.5 sm:gap-2 min-w-0">
+          <div className="ms-auto flex items-center gap-1.5 sm:gap-2 min-w-0">
             {/* برای مهمان روی موبایل جا تنگ است و خود صفحهٔ فرود وضعیت را نشان می‌دهد */}
             <span className={user ? "contents" : "hidden sm:contents"}>
               <PhasePill phase={phase} endsAt={phase === "CLOSED" ? null : phaseEndsAt} />
@@ -173,7 +173,7 @@ function Shell({ user, phase, phaseEndsAt, modules, aiOff = false, children }: S
                 <Link
                   href={user.panelHref}
                   aria-current={isActive(path, user.panelHref) ? "page" : undefined}
-                  className={`mr-auto rounded-pill px-3.5 py-1.5 text-sm font-bold whitespace-nowrap ${isActive(path, user.panelHref) ? "bg-brand-red text-white" : "text-brand-red hover:bg-red-50"}`}
+                  className={`ms-auto rounded-pill px-3.5 py-1.5 text-sm font-bold whitespace-nowrap ${isActive(path, user.panelHref) ? "bg-brand-red text-white" : "text-brand-red hover:bg-red-50"}`}
                 >
                   برگزارکننده
                 </Link>
@@ -239,7 +239,7 @@ function Shell({ user, phase, phaseEndsAt, modules, aiOff = false, children }: S
       {surveyNudge && (
         <div className="bg-brand-ice border-b border-brand-mist text-center px-3 py-2 text-xs sm:text-sm">
           <Link href="/survey" className="font-bold text-brand-cyan-dark hover:underline">
-            📝 نظرسنجی پایان بازی — نظرت را بگو
+            📝 نظرسنجی پایان بازی: نظرت را بگو
           </Link>
         </div>
       )}

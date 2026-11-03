@@ -43,7 +43,7 @@ export function BoardPostCard({ post, full = false, hideProduct = false }: { pos
           </a>
         )}
         {!full && (
-          <Link href={`/board/${post.id}`} className="mr-auto text-xs font-bold text-brand-cyan-dark hover:underline">
+          <Link href={`/board/${post.id}`} className="ms-auto text-xs font-bold text-brand-cyan-dark hover:underline">
             مشاهده و اشتراک‌گذاری ←
           </Link>
         )}

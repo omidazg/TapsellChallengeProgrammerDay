@@ -94,7 +94,7 @@ function SpendPanel({ title, pct, buckets }: { title: string; pct: number; bucke
             <span className="flex-1 h-3 rounded-full bg-brand-mist overflow-hidden">
               <span className="block h-full rounded-full bg-brand-cyan-dark" style={{ width: `${(b.count / max) * 100}%` }} />
             </span>
-            <span className="w-6 shrink-0 text-left text-xs font-bold text-brand-navy fa-num">{fa(b.count)}</span>
+            <span className="w-6 shrink-0 text-end text-xs font-bold text-brand-navy fa-num">{fa(b.count)}</span>
           </li>
         ))}
       </ul>
@@ -114,7 +114,7 @@ function DistPanel({ title, dist }: { title: string; dist: number[] }) {
             <span className="flex-1 h-2.5 rounded-full bg-brand-mist overflow-hidden">
               <span className="block h-full rounded-full bg-brand-red" style={{ width: `${(count / max) * 100}%` }} />
             </span>
-            <span className="w-5 shrink-0 text-left text-xs font-bold text-brand-navy fa-num">{fa(count)}</span>
+            <span className="w-5 shrink-0 text-end text-xs font-bold text-brand-navy fa-num">{fa(count)}</span>
           </li>
         ))}
       </ul>

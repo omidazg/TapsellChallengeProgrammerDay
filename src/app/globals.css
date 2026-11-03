@@ -21,6 +21,19 @@
 
   --font-sans: var(--font-vazir), Tahoma, sans-serif;
 
+  /* نقطه‌ها و دندانه‌های فارسی جای عمودی بیشتری از لاتین می‌خواهند؛ پیش‌فرض Tailwind (۱٫۳۳ تا ۱٫۵) برای لاتین است.
+     متن ۱٫۶ تا ۱٫۸، تیترها ۱٫۲ تا ۱٫۵ (هرگز زیر ۱٫۱۵). دکمه، چیپ، فیلد و برچسب جدا ۱٫۵ می‌گیرند. */
+  --text-xs--line-height: 1.6;
+  --text-sm--line-height: 1.7;
+  --text-base--line-height: 1.8;
+  --text-lg--line-height: 1.7;
+  --text-xl--line-height: 1.5;
+  --text-2xl--line-height: 1.35;
+  --text-3xl--line-height: 1.25;
+  --text-4xl--line-height: 1.2;
+  --text-5xl--line-height: 1.2;
+  --text-6xl--line-height: 1.2;
+
   --radius-pill: 999px;
   --shadow-card: 0 1px 2px rgba(0, 45, 71, 0.06), 0 10px 30px -12px rgba(0, 45, 71, 0.22);
   --shadow-lift: 0 18px 40px -16px rgba(0, 45, 71, 0.35);
@@ -86,6 +99,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-sans);
+  line-height: 1.8;
   font-feature-settings: "ss01";
   -webkit-font-smoothing: antialiased;
 }
@@ -135,7 +149,7 @@ kbd,
 .skip-link {
   position: absolute;
   top: -999px;
-  right: -999px;
+  inset-inline-start: -999px;
   z-index: 100;
   width: 1px;
   height: 1px;
@@ -144,7 +158,7 @@ kbd,
 .skip-link:focus {
   position: fixed;
   top: 0.75rem;
-  right: 0.75rem;
+  inset-inline-start: 0.75rem;
   width: auto;
   height: auto;
   overflow: visible;
@@ -233,8 +247,8 @@ kbd,
 /* دکمه‌ها به سبک تپسل
    نکته: کلاس‌های سفارشی داخل @layer components هستند تا utilityهای Tailwind
    (مثل lg:hidden یا !px-3) بتوانند آن‌ها را override کنند. */
-@utility btn { @apply inline-flex items-center justify-center gap-2 rounded-pill px-6 py-2.5 font-bold transition-all duration-200 select-none disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap; }
-@utility chip { @apply inline-flex items-center gap-1 rounded-pill px-3 py-1 text-xs font-bold whitespace-nowrap; }
+@utility btn { @apply inline-flex items-center justify-center gap-2 rounded-pill px-6 py-2.5 font-bold leading-normal transition-all duration-200 select-none disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap; }
+@utility chip { @apply inline-flex items-center gap-1 rounded-pill px-3 py-1 text-xs leading-normal font-bold whitespace-nowrap; }
 
 @layer components {
   .btn-primary { @apply btn bg-brand-red text-white hover:bg-brand-red-dark hover:shadow-lift active:scale-[0.98]; }
@@ -253,8 +267,8 @@ kbd,
 
   /* فوکوس: حلقهٔ پایهٔ :focus-visible (outline با --focus-ring، ≥۳:۱) دیگر با outline-none حذف نمی‌شود؛
      حلقهٔ قبلی ring-brand-cyan/40 فقط ~۱٫۵:۱ کنتراست داشت. */
-  .input { @apply w-full rounded-2xl border border-brand-mist bg-white px-4 py-3 text-base text-brand-navy placeholder:text-brand-slate/90 focus:border-brand-cyan-dark transition; }
-  .label { @apply block text-sm font-bold text-brand-navy mb-1.5; }
+  .input { @apply w-full rounded-2xl border border-brand-mist bg-white px-4 py-3 text-base leading-normal text-brand-navy placeholder:text-brand-slate/90 focus:border-brand-cyan-dark transition; }
+  .label { @apply block text-sm leading-normal font-bold text-brand-navy mb-1.5; }
 
   /* اسکرول افقی بدون نوار اسکرول (برای منوها و تب‌ها در موبایل) */
   .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }

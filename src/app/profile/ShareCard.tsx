@@ -161,7 +161,7 @@ export function ShareCard({
         </button>
       </div>
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-navy to-brand-red p-5 sm:p-8 text-white shadow-lift sm:aspect-[600/340]">
-        <div className="flex flex-col sm:flex-row sm:h-full items-center sm:items-start gap-4 sm:gap-6 text-center sm:text-right pb-8">
+        <div className="flex flex-col sm:flex-row sm:h-full items-center sm:items-start gap-4 sm:gap-6 text-center sm:text-start pb-8">
           <Avatar seed={avatarSeed} size={88} className="ring-4 ring-white/70 sm:size-[110px] shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="text-xl sm:text-2xl font-black break-words">{nickname}</div>
@@ -177,7 +177,7 @@ export function ShareCard({
             </div>
           </div>
         </div>
-        <div className="absolute bottom-4 left-4 text-left leading-tight">
+        <div className="absolute bottom-4 end-4 text-end leading-tight">
           <div className="text-xs font-black">میدان بنیان‌گذاران</div>
           <div className="text-xs font-bold text-white/80">گروه پگاه</div>
         </div>

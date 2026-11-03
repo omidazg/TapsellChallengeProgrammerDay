@@ -112,7 +112,7 @@ export default async function AdminSettlementPage() {
                       {award ? (
                         <span className="text-emerald-700">
                           {award.teamName}
-                          {award.productName && <> — {award.productName}</>}
+                          {award.productName && <> · {award.productName}</>}
                         </span>
                       ) : (
                         <span className="text-brand-slate">{p.kind === "SPECIAL" ? "هنوز انتخاب نشده" : "—"}</span>
@@ -140,7 +140,7 @@ export default async function AdminSettlementPage() {
                   <table className="w-full text-sm min-w-[960px]">
                     <caption className="sr-only">امتیاز ثبت‌های {track.name}</caption>
                     <thead>
-                      <tr className="text-right text-brand-slate border-b border-brand-mist">
+                      <tr className="text-start text-brand-slate border-b border-brand-mist">
                         <th scope="col" className="px-3 py-3 font-bold">رتبه</th>
                         <th scope="col" className="px-3 py-3 font-bold">تیم</th>
                         <th scope="col" className="px-3 py-3 font-bold">محصول</th>

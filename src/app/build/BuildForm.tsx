@@ -375,7 +375,7 @@ function ImagesField({ images, setImages, disabled, required }: { images: string
   return (
     <div>
       <label className="label" htmlFor="productImageUrl">
-        تصاویر ({required ? "حداقل ۳، " : "اختیاری، "}حداکثر {fa(MAX_IMAGES)}) — {fa(images.length)} تصویر افزوده شده
+        تصاویر ({required ? "حداقل ۳، " : "اختیاری، "}حداکثر {fa(MAX_IMAGES)})؛ {fa(images.length)} تصویر افزوده شده
       </label>
       {images.map((url) => (
         <input key={url} type="hidden" name="images" value={url} />
@@ -429,7 +429,7 @@ function ImagesField({ images, setImages, disabled, required }: { images: string
                 <button
                   type="button"
                   onClick={() => removeImage(idx)}
-                  className="absolute top-0 left-0 isolate size-11 flex items-center justify-center text-white text-xs before:absolute before:inset-2 before:-z-10 before:rounded-full before:bg-brand-navy/80 hover:before:bg-brand-red"
+                  className="absolute top-0 end-0 isolate size-11 flex items-center justify-center text-white text-xs before:absolute before:inset-2 before:-z-10 before:rounded-full before:bg-brand-navy/80 hover:before:bg-brand-red"
                   aria-label={`حذف تصویر ${fa(idx + 1)}`}
                 >
                   ✕

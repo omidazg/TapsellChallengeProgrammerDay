@@ -316,7 +316,7 @@ export function RegisterWizard({
             {smsEnabled && (
               <div>
                 <PhoneVerify
-                  label="شمارهٔ موبایل (اختیاری — برای ورود با کد پیامکی)"
+                  label="شمارهٔ موبایل (اختیاری، برای ورود با کد پیامکی)"
                   initialPhone={phoneInput}
                   verifiedPhone={phone}
                   onSend={requestRegisterOtpAction}
@@ -358,7 +358,7 @@ export function RegisterWizard({
                     type="button"
                     onClick={() => setRole(k)}
                     aria-pressed={active}
-                    className={`rounded-2xl border-2 p-5 text-right transition anim-rise focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan ${active ? "border-brand-red bg-red-50 shadow-lift" : "border-brand-mist bg-white hover:border-brand-cyan"}`}
+                    className={`rounded-2xl border-2 p-5 text-start transition anim-rise focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan ${active ? "border-brand-red bg-red-50 shadow-lift" : "border-brand-mist bg-white hover:border-brand-cyan"}`}
                   >
                     <div className="text-3xl">{r.emoji}</div>
                     <div className="mt-2 font-black text-brand-navy">{r.label}</div>
@@ -400,7 +400,7 @@ export function RegisterWizard({
             <h2 className="mb-4 text-xl font-black text-brand-navy">پیش‌نمایش شخصیت</h2>
             <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
               <Avatar seed={avatarSeed} size={120} className="shrink-0" />
-              <div className="flex-1 min-w-0 text-center sm:text-right">
+              <div className="flex-1 min-w-0 text-center sm:text-start">
                 <div className="text-2xl font-black text-brand-navy break-words">{nickname}</div>
                 <div className="mt-1 flex flex-wrap justify-center sm:justify-start gap-2">
                   <span className="chip-cyan" title="مهارت اصلی">{ROLES[role].emoji} {ROLES[role].label}</span>
@@ -508,7 +508,7 @@ function CodeRow({
   last?: boolean;
 }) {
   return (
-    <div className="pr-4">
+    <div className="ps-4">
       {"  \""}
       {label}
       {'": '}

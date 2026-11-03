@@ -37,7 +37,7 @@ export async function AnnouncementBar() {
           <span className="flex-1 break-words">{a.text}</span>
           <button
             type="button"
-            className="announcement-dismiss shrink-0 -my-1 inline-flex size-8 items-center justify-center rounded-full text-base leading-none opacity-80 hover:opacity-100"
+            className="announcement-dismiss shrink-0 -my-2.5 inline-flex size-11 items-center justify-center rounded-full text-base leading-none opacity-80 hover:opacity-100"
             data-dismiss-id={a.id}
             aria-label="بستن اطلاعیه"
           >

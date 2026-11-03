@@ -77,7 +77,7 @@ export default async function AdSlotsPage() {
               <li key={k} className="flex flex-wrap items-center justify-between gap-2">
                 <span>
                   <span aria-hidden>{AD_SLOT_KINDS[k].emoji}</span> <b>{AD_SLOT_KINDS[k].label}</b>
-                  <span className="text-brand-slate"> — {KIND_HINT[k]}</span>
+                  <span className="text-brand-slate">: {KIND_HINT[k]}</span>
                 </span>
                 <span className="fa-num font-black">حداقل پیشنهاد {coins(prices[k])}</span>
               </li>

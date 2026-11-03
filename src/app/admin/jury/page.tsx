@@ -121,7 +121,7 @@ export default async function AdminJuryPage() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0">
                           <h3 id={`product-${r.productId}`} className="font-black text-brand-navy break-words">
-                            {r.productName} <span className="text-xs text-brand-slate font-normal">— {r.teamName}</span>
+                            {r.productName} <span className="text-xs text-brand-slate font-normal">· {r.teamName}</span>
                           </h3>
                           {p?.tagline && <div className="text-sm text-brand-slate break-words">{p.tagline}</div>}
                           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs font-bold">

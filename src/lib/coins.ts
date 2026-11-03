@@ -223,7 +223,7 @@ export async function verifyCoinOrder(gateway: string, authority: string, params
   const followUp = `پرداخت در درگاه تأیید شد (کد پیگیری ${result.refId}) ولی سفارش ${latest.status} بود؛ نیاز به پیگیری`;
   await prisma.coinOrder.updateMany({
     where: { id: order.id, status: { not: "PAID" } },
-    data: { refId: result.refId, note: latest.note ? `${latest.note} — ${followUp}` : followUp },
+    data: { refId: result.refId, note: latest.note ? `${latest.note}؛ ${followUp}` : followUp },
   });
   return { ok: false, error: "پرداخت انجام شد ولی سفارش همین حالا تغییر کرد؛ با برگزارکننده تماس بگیر", orderId: order.id };
 }

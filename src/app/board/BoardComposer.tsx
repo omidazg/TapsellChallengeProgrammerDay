@@ -63,7 +63,7 @@ export function BoardComposer({ products }: { products: { id: string; name: stri
           className="input w-full"
           placeholder="امروز چه ساختید؟ چه چیزی یاد گرفتید؟ از بقیه چه بازخوردی می‌خواهید؟"
         />
-        <div className="mt-1 text-xs text-brand-slate fa-num text-left" dir="ltr">
+        <div className="mt-1 text-xs text-brand-slate fa-num text-start" dir="ltr">
           {body.length}/{BOARD_BODY_MAX}
         </div>
       </div>

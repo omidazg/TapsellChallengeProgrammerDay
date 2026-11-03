@@ -508,7 +508,7 @@ function LoggedOutLanding({
         <div className="flex flex-wrap justify-center gap-3 stagger">
           {SCORE_ITEMS.map((k) => (
             <span key={k} className="chip-navy !text-sm !px-4 !py-2">
-              {SCORE_CATEGORY_LABELS[k].emoji} {SCORE_CATEGORY_LABELS[k].label} <b className="fa-num mr-1">{fa(SCORE_WEIGHTS[k])}</b>
+              {SCORE_CATEGORY_LABELS[k].emoji} {SCORE_CATEGORY_LABELS[k].label} <b className="fa-num ms-1">{fa(SCORE_WEIGHTS[k])}</b>
             </span>
           ))}
         </div>
@@ -559,10 +559,10 @@ function HeroIllustration() {
       <div className="absolute inset-0 flex items-center justify-center anim-float">
         <RocketShape />
       </div>
-      <CoinShape className="absolute top-6 left-10 anim-float" style={{ animationDelay: "0.3s" }} size={44} />
-      <ChartShape className="absolute bottom-8 right-6 anim-float" style={{ animationDelay: "0.6s" }} />
-      <CoinShape className="absolute top-16 right-16 anim-float" style={{ animationDelay: "0.9s" }} size={54} />
-      <CoinShape className="absolute bottom-20 left-16 anim-float" style={{ animationDelay: "1.2s" }} size={38} />
+      <CoinShape className="absolute top-6 end-10 anim-float" style={{ animationDelay: "0.3s" }} size={44} />
+      <ChartShape className="absolute bottom-8 start-6 anim-float" style={{ animationDelay: "0.6s" }} />
+      <CoinShape className="absolute top-16 start-16 anim-float" style={{ animationDelay: "0.9s" }} size={54} />
+      <CoinShape className="absolute bottom-20 end-16 anim-float" style={{ animationDelay: "1.2s" }} size={38} />
     </div>
   );
 }

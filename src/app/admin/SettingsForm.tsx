@@ -5,6 +5,7 @@ import { useFormStatus } from "react-dom";
 import { Alert } from "@/components/ui";
 import { updateSettingsAction, type AdminActionState } from "./actions";
 import { localInputToIso, toLocalInputValue } from "./datetime-local";
+import { JalaliDateTimeInput } from "./JalaliDateTimeInput";
 
 // هیچ چیزی از `@/lib/admin` وارد نمی‌شود: آن ماژول به prisma وابسته است
 // و نباید در باندل کلاینت بیاید. فیلدها از صفحهٔ سرور می‌رسند.
@@ -89,11 +90,10 @@ export function SettingsForm({
                   {f.locked && " 🔒"}
                 </label>
                 {f.kind === "datetime" ? (
-                  <input
+                  <JalaliDateTimeInput
                     key={hydrated ? "client" : "server"}
                     id={f.key}
                     name={f.key}
-                    type="datetime-local"
                     defaultValue={datetimeValue(f.value)}
                     readOnly={f.locked}
                     aria-readonly={f.locked || undefined}

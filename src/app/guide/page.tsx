@@ -182,7 +182,7 @@ function Section({ id, emoji, title, desc, children }: { id: string; emoji: stri
 
 function List({ items }: { items: React.ReactNode[] }) {
   return (
-    <ul className="space-y-1.5 list-disc pr-5 marker:text-brand-cyan-dark">
+    <ul className="space-y-1.5 list-disc ps-5 marker:text-brand-cyan-dark">
       {items.map((it, i) => (
         <li key={i}>{it}</li>
       ))}
@@ -234,10 +234,10 @@ const FLOW_STEPS: { emoji: string; title: string; desc: string; href: string }[]
 function FlowSection() {
   return (
     <Section id="flow" emoji="🧭" title="مسیر هر تیم" desc="زمان‌بندی مرحله‌ای وجود ندارد. هر تیم با سرعت خودش جلو می‌رود، فقط ترتیب داخلی خودش را طی می‌کند.">
-      <ol className="relative border-r-2 border-brand-mist pr-6 space-y-4">
+      <ol className="relative border-s-2 border-brand-mist ps-6 space-y-4">
         {FLOW_STEPS.map((s) => (
           <li key={s.title} className="relative">
-            <span className="absolute right-[-31px] top-1.5 size-4 rounded-full border-2 bg-white border-brand-mist" aria-hidden />
+            <span className="absolute start-[-31px] top-1.5 size-4 rounded-full border-2 bg-white border-brand-mist" aria-hidden />
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="text-lg" aria-hidden>{s.emoji}</span>
               <Link href={s.href} className="font-black text-brand-navy hover:text-brand-cyan-dark">{s.title}:</Link>
@@ -440,7 +440,7 @@ function ScoringSection({ values, tracks, live }: { values: GameValues; tracks: 
         <table className="w-full text-sm min-w-[420px]">
           <caption className="sr-only">وزن امتیازها در محور پیش‌فرض و محور بدون انتشار روی بازار</caption>
           <thead>
-            <tr className="text-right text-brand-slate border-b border-brand-mist">
+            <tr className="text-start text-brand-slate border-b border-brand-mist">
               <th scope="col" className="px-3 py-2 font-bold">بخش</th>
               {columns.map((c) => (
                 <th key={c.label} scope="col" className="px-3 py-2 font-bold">{c.label}</th>
@@ -451,7 +451,7 @@ function ScoringSection({ values, tracks, live }: { values: GameValues; tracks: 
             {SCORE_CATEGORY_ORDER.map((k) => (
               <>
                 <tr key={k} className="border-b border-brand-mist/60">
-                  <th scope="row" className="px-3 py-2 text-right font-bold text-brand-navy whitespace-nowrap">
+                  <th scope="row" className="px-3 py-2 text-start font-bold text-brand-navy whitespace-nowrap">
                     <span aria-hidden>{SCORE_CATEGORY_LABELS[k].emoji}</span> {SCORE_CATEGORY_LABELS[k].label}
                   </th>
                   {columns.map((c) => (
@@ -461,7 +461,7 @@ function ScoringSection({ values, tracks, live }: { values: GameValues; tracks: 
                 {k === "market" &&
                   MARKET_SUB_ORDER.map((s) => (
                     <tr key={s} className="border-b border-brand-mist/60">
-                      <th scope="row" className="px-3 py-1.5 pr-8 text-right font-normal text-brand-slate whitespace-nowrap">{MARKET_SUB_LABEL[s]}</th>
+                      <th scope="row" className="px-3 py-1.5 ps-8 text-start font-normal text-brand-slate whitespace-nowrap">{MARKET_SUB_LABEL[s]}</th>
                       {columns.map((c) => (
                         <td key={c.label} className="px-3 py-1.5 fa-num text-brand-slate">
                           {c.w.marketSub[s] > 0 ? fa((c.w.market * 10 * c.w.marketSub[s]) / 100) : "—"}
@@ -556,7 +556,7 @@ function JurySection() {
       />
       <div>
         <div className="font-bold text-brand-navy mb-1">معیارهای پیش‌فرض</div>
-        <ol className="list-decimal pr-5 space-y-0.5">
+        <ol className="list-decimal ps-5 space-y-0.5">
           {DEFAULT_JURY_CRITERIA.map((c) => (
             <li key={c.key}>{c.label}</li>
           ))}
@@ -593,7 +593,7 @@ function AwardsSection({ prizes, tracks, live }: { prizes: PrizeRow[]; tracks: T
           <table className="w-full text-sm min-w-[480px]">
             <caption className="sr-only">جوایز مسابقه، محور و مبلغ هرکدام</caption>
             <thead>
-              <tr className="text-right text-brand-slate border-b border-brand-mist">
+              <tr className="text-start text-brand-slate border-b border-brand-mist">
                 <th scope="col" className="px-3 py-2 font-bold">جایزه</th>
                 <th scope="col" className="px-3 py-2 font-bold">محور</th>
                 <th scope="col" className="px-3 py-2 font-bold">مبلغ</th>
@@ -604,7 +604,7 @@ function AwardsSection({ prizes, tracks, live }: { prizes: PrizeRow[]; tracks: T
                 <tr key={p.id} className="border-b border-brand-mist/60 last:border-0 align-top">
                   <td className="px-3 py-2 font-bold text-brand-navy">
                     <span aria-hidden>{p.emoji}</span> {p.label}
-                    {p.kind === "SPECIAL" && <span className="chip-gold !text-xs mr-1.5">جایزهٔ ویژه</span>}
+                    {p.kind === "SPECIAL" && <span className="chip-gold !text-xs ms-1.5">جایزهٔ ویژه</span>}
                   </td>
                   <td className="px-3 py-2 text-brand-slate whitespace-nowrap">
                     {trackName.get(p.trackId)}

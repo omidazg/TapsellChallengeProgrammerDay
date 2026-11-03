@@ -65,7 +65,7 @@ export default async function AdminBoardPage({ searchParams }: { searchParams: P
                 </div>
                 <p className="text-sm text-brand-navy whitespace-pre-line break-words">{p.body}</p>
                 {p.reports.some((r) => r.reason) && (
-                  <ul className="text-xs text-brand-red list-disc pr-5">
+                  <ul className="text-xs text-brand-red list-disc ps-5">
                     {p.reports.filter((r) => r.reason).map((r, i) => <li key={i}>{r.reason}</li>)}
                   </ul>
                 )}

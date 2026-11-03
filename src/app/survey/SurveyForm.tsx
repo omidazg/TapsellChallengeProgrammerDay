@@ -97,7 +97,7 @@ export function SurveyForm({ initial }: { initial: Initial }) {
           onChange={(e) => setComment(e.target.value)}
           placeholder="هر چیزی که فکر می‌کنی به دردمان می‌خورد…"
         />
-        <div className="mt-1 text-left text-xs text-brand-slate fa-num">{fa(comment.length)}/{fa(1000)}</div>
+        <div className="mt-1 text-end text-xs text-brand-slate fa-num">{fa(comment.length)}/{fa(1000)}</div>
       </div>
 
       <SubmitButton pending={pending} />

@@ -12,7 +12,7 @@ export function AiTag({ tag, compact = false }: { tag: AiTagInfo | null; compact
   const chip = (
     <span className={TONE[tag.level]} title={tag.summary || undefined}>
       <span aria-hidden>🤖</span> {tag.label}
-      <span className="sr-only"> — ارزیابی هوش مصنوعی، نمرهٔ {fa(tag.score)} از ۱۰۰</span>
+      <span className="sr-only">، ارزیابی هوش مصنوعی، نمرهٔ {fa(tag.score)} از ۱۰۰</span>
     </span>
   );
   if (compact || !tag.summary) return chip;

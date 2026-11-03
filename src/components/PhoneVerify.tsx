@@ -126,7 +126,7 @@ export function PhoneVerify({
       )}
       {sent && devCode && (
         <p className="text-xs font-bold text-brand-cyan-dark">
-          محیط آزمایشی — کد: <span dir="ltr">{devCode}</span>
+          محیط آزمایشی، کد: <span dir="ltr">{devCode}</span>
         </p>
       )}
       {error && <Alert kind="error">{error}</Alert>}

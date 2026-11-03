@@ -116,7 +116,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             )}
 
             <div className="flex items-center gap-3">
-              <div className="flex -space-x-2 space-x-reverse">
+              <div className="flex *:not-first:-ms-2">
                 {product.members.map((m) => (
                   <Avatar key={m.id} seed={m.avatarSeed || m.id} size={36} className="ring-2 ring-white" />
                 ))}
@@ -196,7 +196,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               <div className="text-sm font-black text-brand-navy">خریداران ({fa(summary.buyersCount)})</div>
               <div className="flex flex-wrap gap-2">
                 {buyers.map((b) => (
-                  <div key={b.userId} title={`${b.nickname} — ${fa(b.amount)} سکه`} className="flex items-center gap-1.5 rounded-pill bg-brand-ice px-2 py-1">
+                  <div key={b.userId} title={`${b.nickname}: ${fa(b.amount)} سکه`} className="flex items-center gap-1.5 rounded-pill bg-brand-ice px-2 py-1">
                     <Avatar seed={b.avatarSeed || b.userId} size={24} />
                     <span className="text-xs font-bold text-brand-navy">{b.nickname}</span>
                   </div>

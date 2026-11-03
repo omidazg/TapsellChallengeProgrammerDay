@@ -22,7 +22,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const p = await getShowcaseProduct(slug);
   if (!p) return { title: "ویترین محصولات" };
   const makers = p.makers.map((m) => m.name).join("، ");
-  const description = `${p.tagline || p.name} — ساختهٔ ${makers} (${p.team.name}) در میدان بنیان‌گذاران`;
+  const description = `${p.tagline || p.name}؛ ساختهٔ ${makers} (${p.team.name}) در میدان بنیان‌گذاران`;
   return {
     title: p.name,
     description,

@@ -90,7 +90,7 @@ function LedgerTable({ entries }: { entries: { id: string; delta: number; reason
       <table className="w-full text-sm">
         <caption className="sr-only">تراکنش‌های کیف سکه</caption>
         <thead>
-          <tr className="text-right text-brand-slate border-b border-brand-mist">
+          <tr className="text-start text-brand-slate border-b border-brand-mist">
             <th scope="col" className="px-4 py-3 font-bold">دلیل</th>
             <th scope="col" className="px-4 py-3 font-bold">تغییر</th>
             <th scope="col" className="px-4 py-3 font-bold">زمان</th>

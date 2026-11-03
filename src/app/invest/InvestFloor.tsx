@@ -69,7 +69,7 @@ export function InvestFloor({
               >
                 <div className="relative w-full aspect-[8/5] bg-brand-sky">
                   <Cover src={thumbUrl(idea.coverUrl)} alt={idea.title} sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 400px" />
-                  {isOwn && <span className="absolute top-3 right-3 chip bg-white/90 text-brand-red">تیم خودت</span>}
+                  {isOwn && <span className="absolute top-3 start-3 chip bg-white/90 text-brand-red">تیم خودت</span>}
                 </div>
                 <div className="p-4 flex flex-col gap-3 flex-1">
                   <div className="flex items-center gap-2">

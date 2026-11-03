@@ -5,6 +5,7 @@ import { Alert } from "@/components/ui";
 import { useConfirmSubmit } from "@/components/ConfirmDialog";
 import { BAZAAR_SOURCES, BAZAAR_SOURCE_LABEL, MODULE_STATUSES, MODULE_STATUS_LABEL, type BazaarSource } from "@/lib/modules";
 import { localInputToIso, toLocalInputValue } from "../datetime-local";
+import { JalaliDateTimeInput } from "../JalaliDateTimeInput";
 import {
   addExceptionAction,
   endContestAction,
@@ -89,17 +90,18 @@ export function DeadlineForm({ endsAt, closed }: { endsAt: string | null; closed
   return (
     <form action={formAction} className="space-y-2">
       <label className="label" htmlFor="endsAt">ددلاین نهایی</label>
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          key={`${hydrated ? "client" : "server"}|${endsAt ?? ""}`}
-          id="endsAt"
-          name="endsAt"
-          type="datetime-local"
-          defaultValue={hydrated && endsAt ? toLocalInputValue(new Date(endsAt)) : ""}
-          disabled={closed}
-          aria-describedby="endsAt-hint"
-          className="input !w-auto flex-1 min-w-48"
-        />
+      <div className="flex flex-wrap items-start gap-2">
+        <div className="flex-1 min-w-48">
+          <JalaliDateTimeInput
+            key={`${hydrated ? "client" : "server"}|${endsAt ?? ""}`}
+            id="endsAt"
+            name="endsAt"
+            defaultValue={hydrated && endsAt ? toLocalInputValue(new Date(endsAt)) : ""}
+            disabled={closed}
+            aria-describedby="endsAt-hint"
+            className="input"
+          />
+        </div>
         <button type="submit" disabled={pending || closed} className="btn-ghost min-h-10">
           {pending ? "…" : "ذخیره"}
         </button>

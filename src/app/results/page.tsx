@@ -187,7 +187,7 @@ export default async function ResultsPage({ searchParams }: { searchParams: Prom
                       ) : (
                         <span className="text-brand-slate">{pending}</span>
                       )}
-                      {mine && <span className="chip-red !text-xs mr-1.5">تیم تو</span>}
+                      {mine && <span className="chip-red !text-xs ms-1.5">تیم تو</span>}
                     </div>
                   </div>
                 );
@@ -216,7 +216,7 @@ export default async function ResultsPage({ searchParams }: { searchParams: Prom
                 <table className="w-full text-sm min-w-[760px]">
                   <caption className="sr-only">رتبه‌بندی با ریزامتیاز داوری، بازار و هوش مصنوعی</caption>
                   <thead>
-                    <tr className="text-right text-brand-slate border-b border-brand-mist">
+                    <tr className="text-start text-brand-slate border-b border-brand-mist">
                       <th scope="col" className="px-4 py-3 font-bold">رتبه</th>
                       <th scope="col" className="px-4 py-3 font-bold">تیم و محصول</th>
                       <th scope="col" className="px-4 py-3 font-bold">{SCORE_CATEGORY_LABELS.jury.emoji} {SCORE_CATEGORY_LABELS.jury.label}</th>

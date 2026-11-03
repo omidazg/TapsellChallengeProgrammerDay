@@ -253,7 +253,7 @@ function PhoneLogin({ next }: { next?: string | null }) {
             <p className="mt-1.5 text-xs text-brand-slate">کد شش‌رقمی به شماره‌ات پیامک شد و دو دقیقه اعتبار دارد.</p>
             {devCode && (
               <p className="mt-1.5 text-xs font-bold text-brand-cyan-dark">
-                محیط آزمایشی — کد: <span className="fa-num" dir="ltr">{devCode}</span>
+                محیط آزمایشی، کد: <span className="fa-num" dir="ltr">{devCode}</span>
               </p>
             )}
           </div>

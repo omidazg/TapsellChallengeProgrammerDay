@@ -65,11 +65,11 @@ function StatusMessage({ result }: { result: AccessStatusResult & { email: strin
   );
   switch (result.status) {
     case "PENDING":
-      return <Alert kind="info">در انتظار بررسی — درخواستت در صف است و هنوز برگزارکننده بررسی‌اش نکرده.</Alert>;
+      return <Alert kind="info">در انتظار بررسی: درخواستت در صف است و هنوز برگزارکننده بررسی‌اش نکرده.</Alert>;
     case "ALLOWED":
       return (
         <div className="space-y-3">
-          <Alert kind="ok">تأیید شده — می‌توانی با همین ایمیل ثبت‌نام کنی.{closed}</Alert>
+          <Alert kind="ok">تأیید شده؛ می‌توانی با همین ایمیل ثبت‌نام کنی.{closed}</Alert>
           {result.registrationOpen && (
             <Link href={`/register?email=${encodeURIComponent(result.email)}`} className="btn-primary w-full">
               ثبت‌نام
@@ -80,7 +80,7 @@ function StatusMessage({ result }: { result: AccessStatusResult & { email: strin
     case "REJECTED":
       return (
         <Alert kind="error">
-          رد شده — اگر فکر می‌کنی اشتباهی رخ داده، با برگزارکننده تماس بگیر.
+          رد شده؛ اگر فکر می‌کنی اشتباهی رخ داده، با برگزارکننده تماس بگیر.
         </Alert>
       );
     case "HAS_ACCOUNT":

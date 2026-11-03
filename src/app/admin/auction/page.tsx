@@ -101,7 +101,7 @@ export default async function AdminAuctionPage() {
             <Alert kind={wontFit ? "error" : "info"}>
               برآورد صف: {fa(pendingCount)} حراج باقی‌مانده × {fa(auctionDurationSec)} ثانیه ≈ {fmtDuration(estimatedSec)}
               {secondsLeft !== null && <> · زمان باقی‌مانده تا ددلاین نهایی: {fmtDuration(secondsLeft)}</>}
-              {wontFit && " — با این مدت همهٔ حراج‌ها تا ددلاین جا نمی‌شوند؛ مدت هر حراج هنگام شروع به‌صورت خودکار کوتاه‌تر می‌شود تا جا شود."}
+              {wontFit && "؛ با این مدت همهٔ حراج‌ها تا ددلاین جا نمی‌شوند؛ مدت هر حراج هنگام شروع به‌صورت خودکار کوتاه‌تر می‌شود تا جا شود."}
             </Alert>
           )}
           {auctions.length === 0 ? (
@@ -135,7 +135,7 @@ export default async function AdminAuctionPage() {
                 <table className="w-full text-sm min-w-[720px]">
                   <caption className="sr-only">صف حراج نسخه‌های ویژه</caption>
                   <thead>
-                    <tr className="text-right text-brand-slate border-b border-brand-mist">
+                    <tr className="text-start text-brand-slate border-b border-brand-mist">
                       <th scope="col" className="px-3 py-2 font-bold">ترتیب</th>
                       <th scope="col" className="px-3 py-2 font-bold">محصول</th>
                       <th scope="col" className="px-3 py-2 font-bold">تیم</th>
@@ -211,7 +211,7 @@ export default async function AdminAuctionPage() {
               <table className="w-full text-sm min-w-[480px]">
                 <caption className="sr-only">جایگاه‌های دارای پیشنهاد</caption>
                 <thead>
-                  <tr className="text-right text-brand-slate border-b border-brand-mist">
+                  <tr className="text-start text-brand-slate border-b border-brand-mist">
                     <th scope="col" className="px-3 py-2 font-bold">شروع بازه</th>
                     <th scope="col" className="px-3 py-2 font-bold">نوع</th>
                     <th scope="col" className="px-3 py-2 font-bold">تیم</th>

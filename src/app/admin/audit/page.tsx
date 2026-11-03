@@ -108,7 +108,7 @@ export default async function AdminAuditPage({
               <table className="w-full text-sm min-w-[820px]">
                 <caption className="sr-only">تاریخچهٔ کارهای انجام‌شده توسط برگزارکنندگان، تازه‌ترین در بالا</caption>
                 <thead>
-                  <tr className="text-right text-brand-slate border-b border-brand-mist">
+                  <tr className="text-start text-brand-slate border-b border-brand-mist">
                     <th scope="col" className="px-4 py-3 font-bold">زمان</th>
                     <th scope="col" className="px-4 py-3 font-bold">عامل</th>
                     <th scope="col" className="px-4 py-3 font-bold">کنش</th>

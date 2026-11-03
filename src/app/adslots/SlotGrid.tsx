@@ -101,9 +101,9 @@ export function SlotGrid({
           <caption className="sr-only">جایگاه‌های تبلیغاتی به تفکیک بازه و نوع</caption>
           <thead>
             <tr>
-              <th scope="col" className="text-right text-xs font-bold text-brand-slate">شروع بازه</th>
+              <th scope="col" className="text-start text-xs font-bold text-brand-slate">شروع بازه</th>
               {KINDS.map((k) => (
-                <th key={k} scope="col" className="text-right text-xs font-bold text-brand-slate">
+                <th key={k} scope="col" className="text-start text-xs font-bold text-brand-slate">
                   <span aria-hidden>{AD_SLOT_KINDS[k].emoji}</span> {AD_SLOT_KINDS[k].label}
                 </th>
               ))}

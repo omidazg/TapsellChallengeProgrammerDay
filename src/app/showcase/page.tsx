@@ -74,7 +74,7 @@ export default async function ShowcasePage({ searchParams }: { searchParams: Pro
               </Link>
             ))}
             {tracks.length > 1 && (
-              <span className="mr-auto flex flex-wrap gap-2">
+              <span className="ms-auto flex flex-wrap gap-2">
                 <Link href={sortHref(sort)} className={`chip-navy ${!track ? "" : "opacity-60"}`}>همهٔ محورها</Link>
                 {tracks.map((t) => (
                   <Link key={t.id} href={sortHref(sort, t.id)} className={`chip-cyan ${track === t.id ? "" : "opacity-60"}`}>
@@ -106,8 +106,8 @@ function Card({ card, rank }: { card: ShowcaseCard; rank?: number }) {
     <Link href={`/showcase/${card.slug}`} className="card overflow-hidden flex flex-col h-full group anim-rise">
       <div className="relative w-full aspect-[8/5] bg-brand-ice">
         <Image src={thumbUrl(card.image)} alt={card.name} fill sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 400px" className="object-cover group-hover:scale-[1.03] transition" unoptimized={!isLocalUploadUrl(card.image)} />
-        {rank && <span className="absolute top-2 right-2 chip-navy fa-num">#{fa(rank)}</span>}
-        {card.isLive && <span className="absolute top-2 left-2 chip-ok">🚀 لایو</span>}
+        {rank && <span className="absolute top-2 start-2 chip-navy fa-num">#{fa(rank)}</span>}
+        {card.isLive && <span className="absolute top-2 end-2 chip-ok">🚀 لایو</span>}
       </div>
       <div className="p-4 flex-1 flex gap-3">
         <div className="min-w-0 flex-1 space-y-1">

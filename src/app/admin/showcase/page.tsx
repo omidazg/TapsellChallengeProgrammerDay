@@ -51,7 +51,7 @@ export default async function AdminShowcasePage() {
                   {showcaseStatusLabel(p.showcaseStatus)}
                 </span>
                 {p.showcaseFeatured && <span className="chip-gold">⭐ انتخاب کمیته</span>}
-                <span className="mr-auto text-sm font-bold text-brand-navy">▲ {fa(p._count.showcaseVotes)} رأی</span>
+                <span className="ms-auto text-sm font-bold text-brand-navy">▲ {fa(p._count.showcaseVotes)} رأی</span>
               </div>
               <p className="text-sm text-brand-slate">{p.tagline}</p>
               <p className="text-xs text-brand-slate">

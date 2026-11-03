@@ -67,7 +67,7 @@ export function ScoreBreakdown({
     <table className="w-full text-sm">
       <caption className="sr-only">{caption}</caption>
       <thead>
-        <tr className="text-right text-brand-slate border-b border-brand-mist">
+        <tr className="text-start text-brand-slate border-b border-brand-mist">
           <th scope="col" className="px-3 py-2 font-bold">معیار</th>
           <th scope="col" className="px-3 py-2 font-bold">جزئیات</th>
           <th scope="col" className="px-3 py-2 font-bold">امتیاز</th>
@@ -104,13 +104,13 @@ export function ScoreBreakdown({
         />
         {result.cheatPenalty > 0 && (
           <tr className="border-b border-brand-mist bg-red-50">
-            <th scope="row" className="px-3 py-2 text-right font-bold text-brand-red">⚠️ کسر تقلب</th>
+            <th scope="row" className="px-3 py-2 text-start font-bold text-brand-red">⚠️ کسر تقلب</th>
             <td className="px-3 py-2 text-brand-red">{cheatNote || "با تصمیم برگزارکننده"}</td>
             <td className="px-3 py-2 font-black text-brand-red fa-num whitespace-nowrap">−{fa(result.cheatPenalty)}</td>
           </tr>
         )}
         <tr className="bg-brand-ice">
-          <th scope="row" className="px-3 py-2 text-right font-black text-brand-navy">امتیاز کل</th>
+          <th scope="row" className="px-3 py-2 text-start font-black text-brand-navy">امتیاز کل</th>
           <td className="px-3 py-2" />
           <td className="px-3 py-2 font-black text-brand-navy fa-num whitespace-nowrap">
             {fa(Math.round(result.total))} <span className="font-normal text-brand-slate">/ {fa(total)}</span>
@@ -124,7 +124,7 @@ export function ScoreBreakdown({
 function Row({ label, detail, pts, max, sub }: { label: string; detail: React.ReactNode; pts: number; max: number; sub?: boolean }) {
   return (
     <tr className="border-b border-brand-mist align-top">
-      <th scope="row" className={`px-3 py-2 text-right whitespace-nowrap ${sub ? "pr-8 font-normal text-brand-slate" : "font-bold text-brand-navy"}`}>
+      <th scope="row" className={`px-3 py-2 text-start whitespace-nowrap ${sub ? "ps-8 font-normal text-brand-slate" : "font-bold text-brand-navy"}`}>
         {label}
       </th>
       <td className={`px-3 py-2 text-brand-slate fa-num ${sub ? "text-xs" : ""}`}>{detail}</td>

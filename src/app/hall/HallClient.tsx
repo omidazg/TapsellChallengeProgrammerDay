@@ -145,7 +145,7 @@ function HallHeader({
       </div>
       <div className="flex items-center gap-4 sm:gap-6 shrink-0">
         {/* جای بلوک وضعیت از اول رزرو می‌شود (حداقل پهنا و ارتفاع ثابت) تا با رسیدن داده سرصفحه جابه‌جا نشود */}
-        <div className="text-left min-w-[8.5rem] sm:min-w-[13rem]">
+        <div className="text-end min-w-[8.5rem] sm:min-w-[13rem]">
           <div className="text-xs sm:text-sm text-brand-cyan font-bold min-h-4 sm:min-h-5">{phaseLabel ?? "\u00a0"}</div>
           <div className="min-h-9 sm:min-h-12 flex items-center justify-end">
             {noDeadline ? (

@@ -133,7 +133,7 @@ export function PurchasePanel({
             aria-describedby={walletShort ? "purchase-blocked-reason" : undefined}
             className={`btn-primary w-full ${justBought ? "anim-pop" : ""}`}
           >
-            {pending ? "در حال خرید…" : `خرید — ${coins(price)}`}
+            {pending ? "در حال خرید…" : `خرید با ${coins(price)}`}
           </button>
 
           {walletShort && (

@@ -460,7 +460,7 @@ export function AuctionStage({
             🔨
           </span>
           <p className="flex-1 min-w-0 leading-6 break-words">
-            <b>حراج قبلی:</b> {prevResult.productName} —{" "}
+            <b>حراج قبلی:</b> {prevResult.productName}؛{" "}
             {prevResult.winnerNickname ? (
               <>
                 برنده: <b>{prevResult.winnerNickname}</b>
@@ -477,7 +477,7 @@ export function AuctionStage({
             type="button"
             onClick={() => setPrevResult(null)}
             aria-label="بستن نتیجهٔ حراج قبلی"
-            className="-m-1 grid h-8 w-8 shrink-0 place-items-center rounded-full text-brand-slate hover:bg-brand-mist hover:text-brand-navy"
+            className="-m-2.5 grid size-11 shrink-0 place-items-center rounded-full text-brand-slate hover:bg-brand-mist hover:text-brand-navy"
           >
             <span aria-hidden>✕</span>
           </button>
@@ -585,7 +585,7 @@ export function AuctionStage({
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-1 font-bold text-brand-slate">هنوز پیشنهادی ثبت نشده — شروع از {coins(current.nextMin)}</div>
+                  <div className="mt-1 font-bold text-brand-slate">هنوز پیشنهادی ثبت نشده؛ شروع از {coins(current.nextMin)}</div>
                 )}
               </div>
             ) : current.status === "ENDED" ? (

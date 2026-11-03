@@ -38,7 +38,7 @@ export default async function AdminExportPage() {
           <div>
             <div className="font-black text-brand-navy">خروجی کامل اکسل (XLSX)</div>
             <div className="text-xs text-brand-slate break-words">
-              امتیاز ثبت‌ها، نمرهٔ هر داور، کاربران (بدون رمز)، ایده‌ها، حمایت‌ها، خریدها، پیشنهادهای حراج، دفتر کل و سفارش‌های سکه — در یک فایل با چند شیت
+              امتیاز ثبت‌ها، نمرهٔ هر داور، کاربران (بدون رمز)، ایده‌ها، حمایت‌ها، خریدها، پیشنهادهای حراج، دفتر کل و سفارش‌های سکه، در یک فایل با چند شیت
             </div>
           </div>
         </a>
